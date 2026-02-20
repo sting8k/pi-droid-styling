@@ -19,7 +19,7 @@ interface AnyContainer extends AnyComponent {
 }
 
 /** Number of recent children to keep "live" (re-rendered each frame) */
-const ACTIVE_TAIL = 15;
+const ACTIVE_TAIL = 6;
 
 /**
  * Find the chatContainer in TUI's direct children.
