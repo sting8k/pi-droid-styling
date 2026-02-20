@@ -46,10 +46,17 @@ export function installCompactToolSpacing(): void {
 	const baseRender = proto.render;
 	if (typeof baseRender !== "function") return;
 
+	// Cache divider per width to keep stable string references across frames
+	let cachedDivider = "";
+	let cachedDividerWidth = -1;
+
 	proto.render = function patchedToolRender(this: any, width: number): string[] {
 		const lines = baseRender.call(this, width);
 		if (lines.length === 0 || width <= 0) return lines;
-		const divider = buildDividerLine(width);
-		return [divider, ...lines, ""];
+		if (cachedDividerWidth !== width) {
+			cachedDivider = buildDividerLine(width);
+			cachedDividerWidth = width;
+		}
+		return [cachedDivider, ...lines, ""];
 	};
 }
