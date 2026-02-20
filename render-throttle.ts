@@ -10,8 +10,8 @@
 
 const PATCHED = Symbol("render-throttle");
 
-/** Default frame interval in ms (16ms ≈ 60fps) */
-const DEFAULT_FRAME_MS = 16;
+/** Default frame interval in ms (25ms ≈ 40fps) */
+const DEFAULT_FRAME_MS = 25;
 
 export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_MS): void {
 	if (tui[PATCHED]) return;
