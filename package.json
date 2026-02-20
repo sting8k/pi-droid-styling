@@ -1,0 +1,10 @@
+{
+  "name": "@anthropic/pi-droid-styling",
+  "version": "1.0.0",
+  "description": "Custom UI styling for pi — boxed editor, tool badges, message prefixes, chat virtualization. Works with any theme.",
+  "main": "index.ts",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
