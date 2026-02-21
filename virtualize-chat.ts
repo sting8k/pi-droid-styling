@@ -1,9 +1,8 @@
 /**
- * Virtualize chat rendering: freeze old children into a cached line array,
- * only re-render recent children each frame.
+ * Virtualize chat rendering: only render the latest N children,
+ * hide older ones with a compact indicator line.
  *
- * Prevents UI lag in long sessions by avoiding O(N) component traversal
- * and O(N) line-array building every render cycle.
+ * Prevents UI lag in long sessions by skipping old components entirely.
  */
 
 interface AnyComponent {
@@ -18,8 +17,8 @@ interface AnyContainer extends AnyComponent {
 	clear(): void;
 }
 
-/** Number of recent children to keep "live" (re-rendered each frame) */
-const ACTIVE_TAIL = 30;
+/** Number of recent children to render */
+const VISIBLE_TAIL = 50;
 
 /**
  * Find the chatContainer in TUI's direct children.
@@ -40,48 +39,12 @@ export function virtualizeChatContainer(tui: AnyContainer): void {
 	if (!chatContainer || (chatContainer as any)[PATCHED]) return;
 	(chatContainer as any)[PATCHED] = true;
 
-	let frozenLines: string[] = [];
-	let frozenCount = 0; // number of children whose output is in frozenLines
-	let frozenWidth = -1;
-
-	function resetFrozen() {
-		frozenLines = [];
-		frozenCount = 0;
-		frozenWidth = -1;
-	}
-
-	// --- Wrap clear() ---
-	const origClear = chatContainer.clear.bind(chatContainer);
-	chatContainer.clear = function () {
-		resetFrozen();
-		origClear();
-	};
-
-	// --- Wrap removeChild() ---
-	const origRemove = chatContainer.removeChild.bind(chatContainer);
-	chatContainer.removeChild = function (c: AnyComponent) {
-		const idx = chatContainer.children.indexOf(c);
-		if (idx !== -1 && idx < frozenCount) {
-			resetFrozen(); // frozen region affected, must rebuild
-		}
-		origRemove(c);
-	};
-
-	// --- Wrap invalidate() ---
-	const origInvalidate = chatContainer.invalidate?.bind(chatContainer);
-	chatContainer.invalidate = function () {
-		resetFrozen();
-		origInvalidate?.();
-	};
-
-	// --- Replace render() ---
 	chatContainer.render = function (width: number): string[] {
 		const children = chatContainer.children;
 		const total = children.length;
 
-		// Too few children — just render normally
-		if (total <= ACTIVE_TAIL) {
-			resetFrozen();
+		// Few enough children — render all
+		if (total <= VISIBLE_TAIL) {
 			const lines: string[] = [];
 			for (let i = 0; i < total; i++) {
 				const cl = children[i].render(width);
@@ -90,28 +53,13 @@ export function virtualizeChatContainer(tui: AnyContainer): void {
 			return lines;
 		}
 
-		const freezeTarget = total - ACTIVE_TAIL;
+		// Build indicator
+		const hidden = total - VISIBLE_TAIL;
+		const indicator = `\x1b[2m  ··· ${hidden} older messages hidden ···\x1b[0m`;
 
-		// Width changed — invalidate frozen cache
-		if (frozenWidth !== -1 && frozenWidth !== width) {
-			resetFrozen();
-		}
-
-		// Freeze more children (only appends, never re-renders already-frozen)
-		if (freezeTarget > frozenCount) {
-			for (let i = frozenCount; i < freezeTarget; i++) {
-				const cl = children[i].render(width);
-				for (let j = 0; j < cl.length; j++) frozenLines.push(cl[j]);
-			}
-			frozenCount = freezeTarget;
-			frozenWidth = width;
-		}
-
-		// Build output: frozen prefix + live tail
-		const lines: string[] = new Array(frozenLines.length);
-		for (let i = 0; i < frozenLines.length; i++) lines[i] = frozenLines[i];
-
-		for (let i = frozenCount; i < total; i++) {
+		// Render only the tail
+		const lines: string[] = [indicator, ""];
+		for (let i = total - VISIBLE_TAIL; i < total; i++) {
 			const cl = children[i].render(width);
 			for (let j = 0; j < cl.length; j++) lines.push(cl[j]);
 		}
