@@ -19,7 +19,7 @@ type SlashAutocompleteModel = {
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
-	return clean.replace(/─/g, "") === "";
+	return clean.replace(/─/g, "").replace(/[↑↓]\s*\d+\s*more/g, "") === "";
 }
 
 function findLastBorderIndex(lines: string[]): number {
