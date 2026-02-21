@@ -17,6 +17,8 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 	inputBorderColor: "",
 	bashPromptColor: "",
 	tagBgColor: "",
+	parensTextColor: "",
+	parensBracketColor: "",
 	slashSelectedColor: "",
 	slashCommandColor: "",
 	slashDescriptionColor: "",

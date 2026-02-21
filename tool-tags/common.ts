@@ -63,7 +63,12 @@ export function badge(theme: any, label: string): string {
 }
 
 export function parens(theme: any, text: string): string {
-	return theme.fg("muted", "(") + theme.fg("toolOutput", text) + theme.fg("muted", ")");
+	const bracketColor = getThemeExtra(theme, "parensBracketColor");
+	const textColor = getThemeExtra(theme, "parensTextColor");
+	const openParen = bracketColor ? fgHex(theme, bracketColor, "(") : theme.fg("text", "(");
+	const closeParen = bracketColor ? fgHex(theme, bracketColor, ")") : theme.fg("text", ")");
+	const inner = textColor ? fgHex(theme, textColor, text) : theme.fg("text", text);
+	return `${openParen}${inner}${closeParen}`;
 }
 
 const MAX_RENDER_LINE_CHARS = 2000;
