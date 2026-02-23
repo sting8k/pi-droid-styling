@@ -63,10 +63,9 @@ export function installUserMessagePrefix(theme: any): void {
 			const prefixChar = getThemeExtra(activeTheme, "userPrefix");
 			const prefixColor = getThemeExtra(activeTheme, "userPrefixColor");
 			const border = activeTheme ? fgHex(activeTheme, prefixColor, prefixChar) : prefixChar;
-			const prefixWidth = visibleWidth(prefixChar) + 1; // char + space
 
 			result = output.map((line) => {
-				const remainder = dropLeadingColumns(line, prefixWidth);
+				const remainder = dropLeadingColumns(line, 1);
 				const quoted = `${border} ${remainder}`;
 				const bolded = activeTheme ? activeTheme.bold(quoted) : quoted;
 				return visibleWidth(bolded) > width ? truncateToWidth(bolded, width, "") : bolded;
