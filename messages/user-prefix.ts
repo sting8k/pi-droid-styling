@@ -56,18 +56,36 @@ export function installUserMessagePrefix(theme: any): void {
 			}
 		}
 
-		const prefixSegment = buildPrefixSegment();
-		const line = output[targetIndex] ?? "";
-		const remainder = dropLeadingColumns(line, 1);
-		output[targetIndex] = `${prefixSegment}${remainder}`;
+		const quoteStyle = getThemeExtra(activeTheme, "quoteStyle") === "true";
+		let result: string[];
 
-		const result = output.map((renderedLine) => {
-			const bolded = activeTheme ? activeTheme.bold(renderedLine) : renderedLine;
-			return visibleWidth(bolded) > width ? truncateToWidth(bolded, width, "") : bolded;
-		});
+		if (quoteStyle) {
+			const prefixChar = getThemeExtra(activeTheme, "userPrefix");
+			const prefixColor = getThemeExtra(activeTheme, "userPrefixColor");
+			const border = activeTheme ? fgHex(activeTheme, prefixColor, prefixChar) : prefixChar;
+			const prefixWidth = visibleWidth(prefixChar) + 1; // char + space
+
+			result = output.map((line) => {
+				const remainder = dropLeadingColumns(line, prefixWidth);
+				const quoted = `${border} ${remainder}`;
+				const bolded = activeTheme ? activeTheme.bold(quoted) : quoted;
+				return visibleWidth(bolded) > width ? truncateToWidth(bolded, width, "") : bolded;
+			});
+		} else {
+			const prefixSegment = buildPrefixSegment();
+			const line = output[targetIndex] ?? "";
+			const remainder = dropLeadingColumns(line, 1);
+			output[targetIndex] = `${prefixSegment}${remainder}`;
+
+			result = output.map((renderedLine) => {
+				const bolded = activeTheme ? activeTheme.bold(renderedLine) : renderedLine;
+				return visibleWidth(bolded) > width ? truncateToWidth(bolded, width, "") : bolded;
+			});
+		}
 
 		// Add turn divider before user message
 		const divider = buildDividerLine(width);
-		return [divider, "", ...result, ""];
+		const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
+		return showDivider ? [divider, "", ...result, ""] : ["", ...result, ""];
 	};
 }

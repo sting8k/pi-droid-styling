@@ -179,6 +179,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 		);
 
 		// Add turn divider before assistant message
-		return [divider, ...result, ""];
+		const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
+		return showDivider ? [divider, ...result, ""] : [...result, ""];
 	};
 }
