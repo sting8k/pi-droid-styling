@@ -118,10 +118,11 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				invalidate() {},
 				render(width: number): string[] {
 					const renderWidth = Math.max(1, width);
-					const lines = [truncateToWidth(firstLine, renderWidth, "…")];
+					const lines = [...wrapTextWithAnsi(firstLine, renderWidth)];
 					const showCount = Math.min(commandLines.length, maxCommandLines + 1);
 					for (let i = 1; i < showCount; i++) {
-						lines.push(theme.fg("toolOutput", truncateToWidth(commandLines[i], renderWidth, "…")));
+						const wrapped = wrapTextWithAnsi(theme.fg("toolOutput", commandLines[i]), renderWidth);
+						lines.push(...wrapped);
 					}
 					if (commandLines.length > maxCommandLines + 1) {
 						lines.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
