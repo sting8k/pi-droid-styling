@@ -65,9 +65,11 @@ export function badge(theme: any, label: string): string {
 export function parens(theme: any, text: string): string {
 	const bracketColor = getThemeExtra(theme, "parensBracketColor");
 	const textColor = getThemeExtra(theme, "parensTextColor");
-	const openParen = bracketColor ? fgHex(theme, bracketColor, "(") : theme.fg("text", "(");
-	const closeParen = bracketColor ? fgHex(theme, bracketColor, ")") : theme.fg("text", ")");
-	const inner = textColor ? fgHex(theme, textColor, text) : theme.fg("text", text);
+	const openParen = bracketColor ? fgHex(theme, bracketColor, "(") : "(";
+	const closeParen = bracketColor ? fgHex(theme, bracketColor, ")") : ")";
+	// When no explicit parensTextColor is provided, keep raw text so it matches
+	// the editor/native foreground instead of forcing theme "text" color.
+	const inner = textColor ? fgHex(theme, textColor, text) : text;
 	return `${openParen}${inner}${closeParen}`;
 }
 
