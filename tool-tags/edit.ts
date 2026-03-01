@@ -1,19 +1,17 @@
-import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { createEditTool, renderDiff } from "@mariozechner/pi-coding-agent";
+import type { EditToolDetails, ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import { createEditTool, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, getTextOutput, parens, renderLines, resolveRelativePath } from "./common.js";
-
-function countDiffChanges(diff: string): { added: number; removed: number } {
-	let added = 0;
-	let removed = 0;
-	for (const line of diff.split("\n")) {
-		if (/^\+\s*\d+\s/.test(line)) added++;
-		else if (/^-\s*\d+\s/.test(line)) removed++;
-	}
-	return { added, removed };
-}
+import {
+	SplitDiffComponent,
+	buildSplitRows,
+	countDiffStats,
+	extractEditedPath,
+	firstText,
+	renderDiffMeter,
+} from "../split-diff.js";
+import { badge, getTextOutput, parens, resolveRelativePath } from "./common.js";
 
 export function registerEditTool(pi: ExtensionAPI): void {
 	const baseEdit = createEditTool(process.cwd());
@@ -24,16 +22,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 		parameters: baseEdit.parameters,
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			const tool = createEditTool(ctx.cwd);
-			const rawPath = String((params as any)?.path ?? (params as any)?.file_path ?? "");
-			const relPath = resolveRelativePath(rawPath, ctx.cwd);
-			const result = await tool.execute(toolCallId, params as any, signal);
-			return {
-				...result,
-				details: {
-					...(result.details ?? {}),
-					__path: relPath,
-				},
-			};
+			return tool.execute(toolCallId, params as any, signal);
 		},
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
@@ -42,26 +31,57 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			return new Text(`${badge(theme, "EDIT")} ${parens(theme, detail)}`, 0, 0);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
+			// Handle partial/streaming state
+			if (options.isPartial) {
+				return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`, 0, 0);
+			}
+
+			// Handle errors
 			if (result.isError) {
 				const output = getTextOutput(result);
 				return new Text(`${theme.fg("error", stripAnsi(output).trim() || "Error")}`, 0, 0);
 			}
 
-			const diff = result.details?.diff as string | undefined;
+			// Extract diff from result details
+			const details = result.details as EditToolDetails | undefined;
+			const diff = details?.diff as string | undefined;
+
 			if (!diff) {
 				const output = stripAnsi(getTextOutput(result)).trim();
-				return new Text(output ? `${theme.fg("toolOutput", output)}` : "", 0, 0);
+				const fallback = output || "Edit applied";
+				return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", fallback)}`, 0, 0);
 			}
 
-			const { added, removed } = countDiffChanges(diff);
-			const summary = `↳ Succeeded. File edited. (+${added} added, -${removed} removed)`;
+			// Resolve language for syntax highlighting
+			const message = firstText(result.content);
+			const sourcePath = extractEditedPath(message);
+			const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
-			const renderedDiff = renderDiff(diff, { filePath: result.details?.__path });
-			const diffText = options.expanded
-				? renderedDiff
-				: renderLines(theme, renderedDiff, options, { maxLines: 20, color: "toolOutput" });
+			// Build summary header with diff stats and meter
+			const { additions, removals } = countDiffStats(diff);
+			const meter = renderDiffMeter(theme, additions, removals);
+			const summary =
+				`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
+				` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
+				` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
+				` ${theme.fg("muted", "split")}` +
+				(meter ? ` ${meter}` : "");
 
-			return new Text(`${theme.fg("dim", summary)}\n\n${diffText}`, 0, 0);
+			// Build split-diff rows and render component
+			const rows = buildSplitRows(diff);
+			const maxRows = options.expanded ? 160 : 36;
+			const split = new SplitDiffComponent(theme, rows, maxRows, language);
+
+			return {
+				render(width: number): string[] {
+					const safeWidth = Math.max(20, width - 1);
+					const headerLines = new Text(summary, 0, 0).render(safeWidth);
+					return [...headerLines, ...split.render(safeWidth)];
+				},
+				invalidate(): void {
+					split.invalidate();
+				},
+			};
 		},
 	});
 }
