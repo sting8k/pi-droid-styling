@@ -45,7 +45,7 @@ export function installLoaderAccent(): void {
 	const baseStart = proto.start;
 	proto.start = function patchedLoaderStart(this: any, ...args: any[]) {
 		this.frames = SPINNER_FRAMES;
-		this.messageColorFn = this.spinnerColorFn;
+		this.messageColorFn = (text: string) => this.spinnerColorFn(`\x1b[1m${text}\x1b[22m`);
 
 		const vibe = getRandomVibe();
 		if (vibe) {

@@ -67,9 +67,10 @@ export function parens(theme: any, text: string): string {
 	const textColor = getThemeExtra(theme, "parensTextColor");
 	const openParen = bracketColor ? fgHex(theme, bracketColor, "(") : "(";
 	const closeParen = bracketColor ? fgHex(theme, bracketColor, ")") : ")";
-	// When no explicit parensTextColor is provided, keep raw text so it matches
-	// the editor/native foreground instead of forcing theme "text" color.
-	const inner = textColor ? fgHex(theme, textColor, text) : text;
+	// Tool-call parameter text is bold; if a custom parens text color is set,
+	// apply that first and then wrap with bold so output styling stays unchanged.
+	const innerBase = textColor ? fgHex(theme, textColor, text) : text;
+	const inner = typeof theme?.bold === "function" ? theme.bold(innerBase) : `\x1b[1m${innerBase}\x1b[22m`;
 	return `${openParen}${inner}${closeParen}`;
 }
 

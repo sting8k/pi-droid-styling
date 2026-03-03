@@ -68,8 +68,8 @@ export function installUserMessagePrefix(theme: any): void {
 				const remainder = dropLeadingColumns(line, 1);
 				const plain = stripAnsi(remainder).trimEnd();
 				const colored = activeTheme
-					? `\x1b[3m${fgHex(activeTheme, quoteColor, plain)}\x1b[23m`
-					: plain;
+					? `\x1b[1m\x1b[3m${fgHex(activeTheme, quoteColor, plain)}\x1b[23m\x1b[22m`
+					: `\x1b[1m\x1b[3m${plain}\x1b[23m\x1b[22m`;
 				const quoted = `${border} ${colored}`;
 				return visibleWidth(quoted) > width ? truncateToWidth(quoted, width, "") : quoted;
 			});
