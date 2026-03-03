@@ -15,7 +15,7 @@ export function stripAnsi(str: string): string {
 // Color helpers (truecolor + 256color fallback)
 // ------------------------------------------------------------
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	const cleaned = hex.replace("#", "");
 	if (cleaned.length === 3) {
 		const r = Number.parseInt(cleaned[0]! + cleaned[0], 16);

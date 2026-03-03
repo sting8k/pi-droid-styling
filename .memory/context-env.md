@@ -1,11 +1,12 @@
 # Context & Environment
-_Last updated: 2025-02-21_
+_Last updated: 2026-02-25_
 
 ## Project
 - Name: `@anthropic/pi-droid-styling`
 - Description: Custom UI styling extension for pi coding agent — boxed editor, tool badges, message prefixes, chat virtualization
 - Entry: `index.ts`
 - Dependencies: `@mariozechner/pi-coding-agent`, `@mariozechner/pi-tui`
+- Package wiring: `package.json` exports extension via `pi.extensions: ["./index.ts"]`
 
 ## Structure
 ```

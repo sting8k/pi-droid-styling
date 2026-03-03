@@ -30,13 +30,14 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 };
 
 let cachedExtras: Record<string, string> | null = null;
+let cachedVars: Record<string, string> | null = null;
 let cachedThemeName: string | null = null;
 
 /**
  * Scan known theme directories for a JSON file whose "name" matches themeName.
  * Returns the parsed extras object, or null if not found.
  */
-function discoverThemeExtras(themeName: string): Record<string, string> | null {
+function discoverThemeExtras(themeName: string): { extras: Record<string, string> | null; vars: Record<string, string> | null } | null {
 	const searchDirs: string[] = [];
 
 	// 1. Global themes
@@ -86,8 +87,14 @@ function discoverThemeExtras(themeName: string): Record<string, string> | null {
 				const filePath = join(dir, file);
 				try {
 					const content = JSON.parse(readFileSync(filePath, "utf-8"));
-					if (content?.name === themeName && content?.extras && typeof content.extras === "object") {
-						return content.extras as Record<string, string>;
+					if (content?.name === themeName) {
+						const extras = content?.extras && typeof content.extras === "object"
+							? content.extras as Record<string, string>
+							: null;
+						const vars = content?.vars && typeof content.vars === "object"
+							? content.vars as Record<string, string>
+							: null;
+						if (extras || vars) return { extras, vars };
 					}
 				} catch {}
 			}
@@ -120,16 +127,20 @@ export function setFullTheme(theme: any): void {
 	if (themeName === cachedThemeName && cachedExtras !== null) return;
 
 	cachedThemeName = themeName;
-	cachedExtras = discoverThemeExtras(themeName);
+	const result = discoverThemeExtras(themeName);
+	cachedExtras = result?.extras ?? null;
+	cachedVars = result?.vars ?? null;
 }
 
 export function getThemeExtra(_theme: any, key: string): string {
 	// If extras haven't been loaded yet, try resolving from theme or settings
-	if (cachedExtras === null && cachedThemeName === null) {
+	if (cachedExtras === null && cachedVars === null && cachedThemeName === null) {
 		const themeName = resolveThemeName(_theme);
 		if (themeName) {
 			cachedThemeName = themeName;
-			cachedExtras = discoverThemeExtras(themeName);
+			const result = discoverThemeExtras(themeName);
+			cachedExtras = result?.extras ?? null;
+			cachedVars = result?.vars ?? null;
 		}
 	}
 
@@ -137,4 +148,11 @@ export function getThemeExtra(_theme: any, key: string): string {
 		return cachedExtras[key];
 	}
 	return HARDCODED_DEFAULTS[key] ?? "";
+}
+
+export function getThemeVar(key: string): string {
+	if (cachedVars && typeof cachedVars[key] === "string") {
+		return cachedVars[key];
+	}
+	return "";
 }
