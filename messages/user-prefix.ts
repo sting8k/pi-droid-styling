@@ -64,12 +64,68 @@ export function installUserMessagePrefix(theme: any): void {
 			const quoteColor = getThemeExtra(activeTheme, "quoteColor");
 			const border = activeTheme ? fgHex(activeTheme, quoteColor, prefixChar) : prefixChar;
 
-			result = output.map((line) => {
-				const remainder = dropLeadingColumns(line, 1);
-				const plain = stripAnsi(remainder).trimEnd();
+			// The base renderer produces a mix of line types:
+			//   - OSC escapes (invisible terminal markers)
+			//   - Padding lines (all spaces)
+			//   - Blockquote lines: "  │ content..." (│ at varying column positions)
+			//   - Plain content lines (no │) when message has no blockquote
+			//
+			// Strategy: find lines containing a vertical bar char, extract content
+			// from after it. For lines without │, extract visible text directly.
+			// Skip pure-blank and OSC-only lines.
+
+			const verticalBarChars = new Set([
+				"│", "┃", "¦", "║", "╎", "╏", "┆", "┇", "┊", "┋", "︱", "︲", "￨", "|",
+			]);
+
+			// Find the position of the first vertical-bar character in the stripped line
+			const findBarIndex = (stripped: string): number => {
+				for (let i = 0; i < stripped.length; i++) {
+					if (verticalBarChars.has(stripped[i]!)) return i;
+				}
+				return -1;
+			};
+
+			// Extract content lines, stripping blockquote structure
+			const contentLines: string[] = [];
+			for (const line of output) {
+				const stripped = stripAnsi(line);
+				const trimmed = stripped.trim();
+
+				// Skip empty / whitespace-only lines
+				if (trimmed.length === 0) continue;
+
+				// Skip lines that are ONLY vertical bar chars (structural border lines like "  │  ")
+				const withoutBarsAndSpaces = trimmed.replace(/[\s│┃¦║╎╏┆┇┊┋︱︲￨|]/gu, "");
+				if (withoutBarsAndSpaces.length === 0) continue;
+
+				// Has a vertical bar? Extract text after it
+				const barIdx = findBarIndex(stripped);
+				if (barIdx >= 0) {
+					const afterBar = stripped.slice(barIdx + 1);
+					const text = afterBar.trimEnd();
+					// Skip if nothing meaningful after bar
+					if (text.replace(/\s/g, "").length > 0) {
+						contentLines.push(text.startsWith(" ") ? text.slice(1) : text);
+					}
+				} else {
+					// No bar — use the visible text as-is (trimmed)
+					contentLines.push(trimmed);
+				}
+			}
+
+			// If extraction yielded nothing, fall back to showing all non-blank stripped lines
+			if (contentLines.length === 0) {
+				for (const line of output) {
+					const t = stripAnsi(line).trim();
+					if (t.length > 0) contentLines.push(t);
+				}
+			}
+
+			result = contentLines.map((text) => {
 				const colored = activeTheme
-					? `\x1b[1m\x1b[3m${fgHex(activeTheme, quoteColor, plain)}\x1b[23m\x1b[22m`
-					: `\x1b[1m\x1b[3m${plain}\x1b[23m\x1b[22m`;
+					? `\x1b[1m\x1b[3m${fgHex(activeTheme, quoteColor, text)}\x1b[23m\x1b[22m`
+					: `\x1b[1m\x1b[3m${text}\x1b[23m\x1b[22m`;
 				const quoted = `${border} ${colored}`;
 				return visibleWidth(quoted) > width ? truncateToWidth(quoted, width, "") : quoted;
 			});
