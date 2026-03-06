@@ -1,6 +1,6 @@
 /**
- * Set/restore terminal background and foreground colors using OSC escape sequences.
- * Works in most modern terminal emulators (iTerm2, kitty, alacritty, wezterm, etc.)
+ * Terminal background/foreground color management via OSC sequences.
+ * Compatible with iTerm2, kitty, alacritty, wezterm, ghostty, etc.
  */
 
 function hexToOscRgb(hex: string): string {

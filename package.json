@@ -4,6 +4,11 @@
   "description": "Custom UI styling for pi — boxed editor, tool badges, message prefixes, chat virtualization. Works with any theme.",
   "main": "index.ts",
   "keywords": ["pi-package"],
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "pi-ctx-kit": "file:../pi-ctx-kit"
+  },
   "pi": {
     "extensions": ["./index.ts"]
   }

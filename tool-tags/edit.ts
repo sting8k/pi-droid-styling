@@ -1,7 +1,9 @@
-import type { EditToolDetails, ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { createEditTool, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import { getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
+import type { EditToolResultDetails } from "pi-ctx-kit/edit-core";
+import { EDIT_TOOL_DESCRIPTION, EditArgsSchema, executeEnhancedEdit } from "pi-ctx-kit/edit-core";
 import { stripAnsi } from "../ansi.js";
 import {
 	SplitDiffComponent,
@@ -14,16 +16,12 @@ import {
 import { badge, getTextOutput, parens, resolveRelativePath } from "./common.js";
 
 export function registerEditTool(pi: ExtensionAPI): void {
-	const baseEdit = createEditTool(process.cwd());
 	pi.registerTool({
-		name: baseEdit.name,
-		label: baseEdit.label,
-		description: baseEdit.description,
-		parameters: baseEdit.parameters,
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
-			const tool = createEditTool(ctx.cwd);
-			return tool.execute(toolCallId, params as any, signal);
-		},
+		name: "edit",
+		label: "edit",
+		description: EDIT_TOOL_DESCRIPTION,
+		parameters: EditArgsSchema,
+		execute: executeEnhancedEdit,
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
@@ -43,7 +41,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			}
 
 			// Extract diff from result details
-			const details = result.details as EditToolDetails | undefined;
+			const details = result.details as EditToolResultDetails | undefined;
 			const diff = details?.diff as string | undefined;
 
 			if (!diff) {
@@ -54,7 +52,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 
 			// Resolve language for syntax highlighting
 			const message = firstText(result.content);
-			const sourcePath = extractEditedPath(message);
+			const sourcePath = details?.path ?? extractEditedPath(message);
 			const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
 			// Build summary header with diff stats and meter

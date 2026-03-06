@@ -382,7 +382,7 @@ export function renderDiffMeter(theme: Theme, additions: number, removals: numbe
 }
 
 export function extractEditedPath(message: string): string | undefined {
-	const m = message.match(/Successfully replaced text in (.+)\.$/);
+	const m = message.match(/Successfully replaced (?:text|lines L\d+-\d+) in (.+)\.$/);
 	return m?.[1];
 }
 
