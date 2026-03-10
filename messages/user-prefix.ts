@@ -60,25 +60,13 @@ export function installUserMessagePrefix(theme: any): void {
 		let result: string[];
 
 		if (quoteStyle) {
-			const prefixChar = getThemeExtra(activeTheme, "userPrefix");
 			const quoteColor = getThemeExtra(activeTheme, "quoteColor");
-			const border = activeTheme ? fgHex(activeTheme, quoteColor, prefixChar) : prefixChar;
-
-			// The base renderer produces a mix of line types:
-			//   - OSC escapes (invisible terminal markers)
-			//   - Padding lines (all spaces)
-			//   - Blockquote lines: "  │ content..." (│ at varying column positions)
-			//   - Plain content lines (no │) when message has no blockquote
-			//
-			// Strategy: find lines containing a vertical bar char, extract content
-			// from after it. For lines without │, extract visible text directly.
-			// Skip pure-blank and OSC-only lines.
+			const border = activeTheme && quoteColor ? fgHex(activeTheme, quoteColor, "│") : "│";
 
 			const verticalBarChars = new Set([
 				"│", "┃", "¦", "║", "╎", "╏", "┆", "┇", "┊", "┋", "︱", "︲", "￨", "|",
 			]);
 
-			// Find the position of the first vertical-bar character in the stripped line
 			const findBarIndex = (stripped: string): number => {
 				for (let i = 0; i < stripped.length; i++) {
 					if (verticalBarChars.has(stripped[i]!)) return i;
@@ -87,34 +75,30 @@ export function installUserMessagePrefix(theme: any): void {
 			};
 
 			// Extract content lines, stripping blockquote structure
+			// Also strip OSC sequences (e.g. shell integration markers \x1b]....\x07)
+			const stripOsc = (s: string) => s.replace(/\x1b\][^\x07]*\x07/g, "");
 			const contentLines: string[] = [];
 			for (const line of output) {
-				const stripped = stripAnsi(line);
+				const stripped = stripOsc(stripAnsi(line));
 				const trimmed = stripped.trim();
 
-				// Skip empty / whitespace-only lines
 				if (trimmed.length === 0) continue;
 
-				// Skip lines that are ONLY vertical bar chars (structural border lines like "  │  ")
-				const withoutBarsAndSpaces = trimmed.replace(/[\s│┃¦║╎╏┆┇┊┋︱︲￨|]/gu, "");
-				if (withoutBarsAndSpaces.length === 0) continue;
-
-				// Has a vertical bar? Extract text after it
 				const barIdx = findBarIndex(stripped);
 				if (barIdx >= 0) {
 					const afterBar = stripped.slice(barIdx + 1);
 					const text = afterBar.trimEnd();
-					// Skip if nothing meaningful after bar
 					if (text.replace(/\s/g, "").length > 0) {
 						contentLines.push(text.startsWith(" ") ? text.slice(1) : text);
 					}
 				} else {
-					// No bar — use the visible text as-is (trimmed)
-					contentLines.push(trimmed);
+					const meaningful = trimmed.replace(/[\s│┃¦║╎╏┆┇┊┋︱︲￨|>]/gu, "");
+					if (meaningful.length > 0) {
+						contentLines.push(trimmed);
+					}
 				}
 			}
 
-			// If extraction yielded nothing, fall back to showing all non-blank stripped lines
 			if (contentLines.length === 0) {
 				for (const line of output) {
 					const t = stripAnsi(line).trim();
@@ -123,7 +107,7 @@ export function installUserMessagePrefix(theme: any): void {
 			}
 
 			result = contentLines.map((text) => {
-				const colored = activeTheme
+				const colored = activeTheme && quoteColor
 					? `\x1b[1m\x1b[3m${fgHex(activeTheme, quoteColor, text)}\x1b[23m\x1b[22m`
 					: `\x1b[1m\x1b[3m${text}\x1b[23m\x1b[22m`;
 				const quoted = `${border} ${colored}`;
