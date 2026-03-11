@@ -4,6 +4,7 @@ import { relative, resolve } from "node:path";
 
 import { fgHex } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
+import { formatElapsed } from "./elapsed.js";
 
 export function shortenPath(path: string): string {
 	const home = homedir();
@@ -62,14 +63,20 @@ export function badge(theme: any, label: string): string {
 	return theme.inverse(fgHex(theme, tagBg, theme.bold(` ${label} `)));
 }
 
-export function parens(theme: any, text: string): string {
+export function parens(theme: any, text: string, skipTextColor?: boolean): string {
 	const bracketColor = getThemeExtra(theme, "parensBracketColor");
-	const textColor = getThemeExtra(theme, "parensTextColor");
 	const openParen = bracketColor ? fgHex(theme, bracketColor, "(") : "(";
 	const closeParen = bracketColor ? fgHex(theme, bracketColor, ")") : ")";
 	// Tool-call parameter text is bold; if a custom parens text color is set,
 	// apply that first and then wrap with bold so output styling stays unchanged.
-	const innerBase = textColor ? fgHex(theme, textColor, text) : text;
+	let innerBase: string;
+	if (skipTextColor) {
+		// When text already has ANSI styling (e.g. syntax-highlighted), skip parensTextColor
+		innerBase = text;
+	} else {
+		const textColor = getThemeExtra(theme, "parensTextColor");
+		innerBase = textColor ? fgHex(theme, textColor, text) : text;
+	}
 	const inner = typeof theme?.bold === "function" ? theme.bold(innerBase) : `\x1b[1m${innerBase}\x1b[22m`;
 	return `${openParen}${inner}${closeParen}`;
 }
@@ -106,4 +113,11 @@ export function renderLines(
 	output += theme.fg("muted", `\n\n... ${remaining} more lines, press Ctrl+o to expand`);
 
 	return output;
+}
+
+export function dimWithElapsed(theme: any, summary: string, result: AgentToolResult<any> | undefined): string {
+	const elapsed = formatElapsed(result);
+	return elapsed
+		? `${theme.fg("dim", summary)} ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}`
+		: theme.fg("dim", summary);
 }

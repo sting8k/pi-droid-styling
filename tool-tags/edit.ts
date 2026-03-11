@@ -13,7 +13,8 @@ import {
 	firstText,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { badge, getTextOutput, parens, resolveRelativePath } from "./common.js";
+import { badge, dimWithElapsed, getTextOutput, parens, resolveRelativePath } from "./common.js";
+import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerEditTool(pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -21,7 +22,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 		label: "edit",
 		description: EDIT_TOOL_DESCRIPTION,
 		parameters: EditArgsSchema,
-		execute: executeEnhancedEdit,
+		execute: wrapExecuteWithTiming(executeEnhancedEdit),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
@@ -46,8 +47,8 @@ export function registerEditTool(pi: ExtensionAPI): void {
 
 			if (!diff) {
 				const output = stripAnsi(getTextOutput(result)).trim();
-				const fallback = output || "Edit applied";
-				return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", fallback)}`, 0, 0);
+				const fallback = `↳ ${output || "Edit applied"}`;
+				return new Text(dimWithElapsed(theme, fallback, result), 0, 0);
 			}
 
 			// Resolve language for syntax highlighting
@@ -58,12 +59,14 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			// Build summary header with diff stats and meter
 			const { additions, removals } = countDiffStats(diff);
 			const meter = renderDiffMeter(theme, additions, removals);
+			const elapsed = formatElapsed(result);
 			const summary =
 				`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 				` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 				` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
 				` ${theme.fg("muted", "split")}` +
-				(meter ? ` ${meter}` : "");
+				(meter ? ` ${meter}` : "") +
+				(elapsed ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}` : "");
 
 			// Build split-diff rows and render component
 			const rows = buildSplitRows(diff);

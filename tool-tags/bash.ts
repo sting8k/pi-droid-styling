@@ -1,14 +1,26 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { createBashTool } from "@mariozechner/pi-coding-agent";
+import { createBashTool, highlightCode } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { badge, getTextOutput, parens, replaceTabs } from "./common.js";
+import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
 const MAX_LINE_CHARS = 2000;
 const BASH_TOOL_NOTICE_PATTERN = /^\[Showing (?:last|lines)\b.*\. Full output: .+\]$/;
+const BG_ANSI_PATTERN = /\x1b\[4[0-9;]*m/g;
+
+function highlightBashLine(line: string): string {
+	try {
+		const highlighted = highlightCode(line, "bash")[0] ?? line;
+		// Strip background colors to avoid clashing with badge/parens styling
+		return highlighted.replace(BG_ANSI_PATTERN, "");
+	} catch {
+		return line;
+	}
+}
 
 function clampLineLength(line: string, max: number = MAX_LINE_CHARS): string {
 	if (line.length <= max) return line;
@@ -103,25 +115,26 @@ export function registerBashTool(pi: ExtensionAPI): void {
 		label: baseBash.label,
 		description: baseBash.description,
 		parameters: baseBash.parameters,
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
 			const tool = createBashTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal, onUpdate);
-		},
+		}),
 		renderCall(args: any, theme: any) {
 			const rawCommand = String(args?.command ?? "...");
 			const timeout = args?.timeout;
 			const timeoutSuffix = timeout ? ` (timeout ${timeout}s)` : "";
 			const commandLines = rawCommand.split("\n");
 			const maxCommandLines = 5;
-			const firstLine = `${badge(theme, "EXECUTE")} ${parens(theme, commandLines[0] + (commandLines.length === 1 ? timeoutSuffix : ""))}`;
-			return {
+			const highlightedFirst = highlightBashLine(commandLines[0]);
+			const firstLine = `${badge(theme, "EXECUTE")} ${parens(theme, highlightedFirst + (commandLines.length === 1 ? timeoutSuffix : ""), true)}`;			return {
 				invalidate() {},
 				render(width: number): string[] {
 					const renderWidth = Math.max(1, width);
 					const lines = [...wrapTextWithAnsi(firstLine, renderWidth)];
 					const showCount = Math.min(commandLines.length, maxCommandLines + 1);
 					for (let i = 1; i < showCount; i++) {
-						const wrapped = wrapTextWithAnsi(theme.fg("toolOutput", commandLines[i]), renderWidth);
+						const highlighted = highlightBashLine(commandLines[i]);
+						const wrapped = wrapTextWithAnsi(highlighted, renderWidth);
 						lines.push(...wrapped);
 					}
 					if (commandLines.length > maxCommandLines + 1) {
@@ -136,9 +149,10 @@ export function registerBashTool(pi: ExtensionAPI): void {
 		},
 		renderResult(result, options, theme: any) {
 			const raw = getTextOutput(result);
+			const elapsed = formatElapsed(result);
+			const elapsedSuffix = elapsed ? theme.italic(theme.fg("muted", elapsed)) : "";
+
 			if (!options.expanded) {
-				// Collapsed: only strip ansi + notice on the tail portion
-				// Find last MAX_BASH_PREVIEW_LINES+5 newlines (extra buffer for notice lines)
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
 				let nlCount = 0;
 				let tailStart = 0;
@@ -153,10 +167,36 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				}
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
-				return createBashResultPreview(theme, tail, options, result.isError ? "error" : "toolOutput", totalLinesBefore);
+				const inner = createBashResultPreview(theme, tail, options, result.isError ? "error" : "toolOutput", totalLinesBefore);
+				if (!elapsedSuffix) return inner;
+				return {
+					invalidate() { inner.invalidate(); },
+					render(width: number): string[] {
+						const lines = inner.render(width);
+						if (lines.length > 0) {
+							lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
+						} else {
+							lines.push(elapsedSuffix);
+						}
+						return lines;
+					},
+				};
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
-			return createBashResultPreview(theme, output, options, result.isError ? "error" : "toolOutput", 0);
+			const inner = createBashResultPreview(theme, output, options, result.isError ? "error" : "toolOutput", 0);
+			if (!elapsedSuffix) return inner;
+			return {
+				invalidate() { inner.invalidate(); },
+				render(width: number): string[] {
+					const lines = inner.render(width);
+					if (lines.length > 0) {
+						lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
+					} else {
+						lines.push(elapsedSuffix);
+					}
+					return lines;
+				},
+			};
 		},
 	});
 }

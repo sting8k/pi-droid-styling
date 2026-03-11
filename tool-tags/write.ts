@@ -3,7 +3,8 @@ import { createWriteTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, getTextOutput, parens, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { badge, dimWithElapsed, getTextOutput, parens, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 function parseWriteSummary(output: string): string | undefined {
 	const normalized = stripTrailingNotice(stripAnsi(output ?? "")).trim();
@@ -35,10 +36,10 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 		label: baseWrite.label,
 		description: baseWrite.description,
 		parameters: baseWrite.parameters,
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createWriteTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
-		},
+		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
@@ -54,15 +55,12 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 
 			const summary = parseWriteSummary(output);
 			if (summary) {
-				return new Text(`${theme.fg("dim", summary)}`, 0, 0);
+				return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 			}
 
 			const normalized = stripTrailingNotice(stripAnsi(output)).trim();
-			if (normalized) {
-				return new Text(`${theme.fg("dim", `↳ ${normalized}`)}`, 0, 0);
-			}
-
-			return new Text(`${theme.fg("dim", "↳ Wrote file.")}`, 0, 0);
+			const fallback = normalized ? `↳ ${normalized}` : "↳ Wrote file.";
+			return new Text(dimWithElapsed(theme, fallback, result), 0, 0);
 		},
 	});
 }

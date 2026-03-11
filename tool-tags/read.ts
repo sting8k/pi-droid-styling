@@ -3,7 +3,8 @@ import { createReadTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerReadTool(pi: ExtensionAPI): void {
 	const baseRead = createReadTool(process.cwd());
@@ -12,10 +13,10 @@ export function registerReadTool(pi: ExtensionAPI): void {
 		label: baseRead.label,
 		description: baseRead.description,
 		parameters: baseRead.parameters,
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createReadTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
-		},
+		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const path = shortenPath(rawPath);
@@ -54,7 +55,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					: countLines(stripped);
 
 			const summary = `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`;
-			return new Text(`${theme.fg("dim", summary)}`, 0, 0);
+			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 		},
 	});
 }

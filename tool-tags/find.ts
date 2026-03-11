@@ -3,7 +3,8 @@ import { createFindTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerFindTool(pi: ExtensionAPI): void {
 	const baseFind = createFindTool(process.cwd());
@@ -12,10 +13,10 @@ export function registerFindTool(pi: ExtensionAPI): void {
 		label: baseFind.label,
 		description: baseFind.description,
 		parameters: baseFind.parameters,
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createFindTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
-		},
+		}),
 		renderCall(args: any, theme: any) {
 			const pattern = String(args?.pattern ?? "");
 			const rawPath = String(args?.path ?? ".");
@@ -39,7 +40,7 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			}
 
 			const summary = `↳ Found ${fileCount} ${fileCount === 1 ? "file" : "files"}.`;
-			return new Text(`${theme.fg("dim", summary)}`, 0, 0);
+			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 		},
 	});
 }

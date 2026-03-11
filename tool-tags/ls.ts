@@ -3,7 +3,8 @@ import { createLsTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerLsTool(pi: ExtensionAPI): void {
 	const baseLs = createLsTool(process.cwd());
@@ -12,10 +13,10 @@ export function registerLsTool(pi: ExtensionAPI): void {
 		label: baseLs.label,
 		description: baseLs.description,
 		parameters: baseLs.parameters,
-		async execute(toolCallId, params, signal, _onUpdate, ctx) {
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createLsTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
-		},
+		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
@@ -37,7 +38,7 @@ export function registerLsTool(pi: ExtensionAPI): void {
 			}
 
 			const summary = `↳ Listed ${itemCount} ${itemCount === 1 ? "item" : "items"}.`;
-			return new Text(`${theme.fg("dim", summary)}`, 0, 0);
+			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 		},
 	});
 }
