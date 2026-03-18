@@ -20,8 +20,7 @@ function buildDividerLine(width: number): string {
 }
 
 /**
- * Make tool blocks compact by removing Box/Text vertical padding.
- * Also adds a divider line before each tool call block.
+ * Adds a divider line before each tool call block.
  */
 export function installCompactToolSpacing(): void {
 	const globalState = globalThis as Record<string, unknown>;
@@ -29,18 +28,7 @@ export function installCompactToolSpacing(): void {
 	globalState[PATCH_FLAG] = true;
 
 	const proto = ToolExecutionComponent.prototype as any;
-	if (!proto || typeof proto.updateDisplay !== "function") return;
-
-	const baseUpdateDisplay = proto.updateDisplay;
-	proto.updateDisplay = function patchedUpdateDisplay(this: any, ...args: any[]) {
-		if (this?.contentBox && typeof this.contentBox.paddingY === "number") {
-			this.contentBox.paddingY = 0;
-		}
-		if (this?.contentText && typeof this.contentText.paddingY === "number") {
-			this.contentText.paddingY = 0;
-		}
-		return baseUpdateDisplay.apply(this, args);
-	};
+	if (!proto) return;
 
 	// Patch render to prepend divider
 	const baseRender = proto.render;
