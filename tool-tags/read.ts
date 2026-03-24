@@ -12,7 +12,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 		name: baseRead.name,
 		label: baseRead.label,
 		description: baseRead.description,
-		parameters: baseRead.parameters,
+		parameters: { ...baseRead.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createReadTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);

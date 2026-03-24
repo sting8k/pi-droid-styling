@@ -114,7 +114,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 		name: baseBash.name,
 		label: baseBash.label,
 		description: baseBash.description,
-		parameters: baseBash.parameters,
+		parameters: { ...baseBash.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
 			const tool = createBashTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal, onUpdate);

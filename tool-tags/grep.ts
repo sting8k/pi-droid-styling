@@ -14,7 +14,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 		name: baseGrep.name,
 		label: baseGrep.label,
 		description: baseGrep.description,
-		parameters: baseGrep.parameters,
+		parameters: { ...baseGrep.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createGrepTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);

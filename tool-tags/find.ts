@@ -12,7 +12,7 @@ export function registerFindTool(pi: ExtensionAPI): void {
 		name: baseFind.name,
 		label: baseFind.label,
 		description: baseFind.description,
-		parameters: baseFind.parameters,
+		parameters: { ...baseFind.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createFindTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);

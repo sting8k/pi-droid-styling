@@ -12,7 +12,7 @@ export function registerLsTool(pi: ExtensionAPI): void {
 		name: baseLs.name,
 		label: baseLs.label,
 		description: baseLs.description,
-		parameters: baseLs.parameters,
+		parameters: { ...baseLs.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createLsTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);

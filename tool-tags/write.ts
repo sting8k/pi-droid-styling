@@ -35,7 +35,7 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 		name: baseWrite.name,
 		label: baseWrite.label,
 		description: baseWrite.description,
-		parameters: baseWrite.parameters,
+		parameters: { ...baseWrite.parameters },
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
 			const tool = createWriteTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
