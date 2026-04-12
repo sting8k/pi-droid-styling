@@ -17,6 +17,13 @@ type SlashAutocompleteModel = {
 	showSlashPrefix: boolean;
 };
 
+type ContextUsageProvider = () =>
+	| {
+			percent: number | null;
+			contextWindow: number;
+	  }
+	| undefined;
+
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
 	return clean.replace(/─/g, "").replace(/[↑↓]\s*\d+\s*more/g, "") === "";
@@ -49,6 +56,7 @@ export class BoxEditor extends CustomEditor {
 		theme: any,
 		kb: any,
 		private readonly fullTheme: any,
+		private readonly getContextUsage?: ContextUsageProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -197,6 +205,21 @@ export class BoxEditor extends CustomEditor {
 		return lines;
 	}
 
+	private formatContextBadge(): string | null {
+		const usage = this.getContextUsage?.();
+		if (!usage || !usage.contextWindow) return null;
+		const percent = usage.percent === null ? "?" : `${usage.percent.toFixed(1)}%`;
+		return `${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
+	}
+
+	private formatCompactTokens(count: number): string {
+		if (count < 1000) return count.toString();
+		if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+		if (count < 1000000) return `${Math.round(count / 1000)}k`;
+		if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+		return `${Math.round(count / 1000000)}M`;
+	}
+
 	render(width: number): string[] {
 		const innerWidth = Math.max(1, width - 2);
 		const border = this.fullTheme
@@ -237,7 +260,13 @@ export class BoxEditor extends CustomEditor {
 			return `${border("│")}${prefix}${line}${padding}${border("│")}`;
 		});
 
-		const topBorder = border(`╭${"─".repeat(innerWidth)}╮`);
+		const contextBadge = this.formatContextBadge();
+		const rightSegment = contextBadge ? ` ${contextBadge} ` : "";
+		const rightWidth = visibleWidth(rightSegment);
+		const topBorder =
+			contextBadge && rightWidth < innerWidth
+				? `${border("╭")}${border("─".repeat(innerWidth - rightWidth))}${border(rightSegment)}${border("╮")}`
+				: border(`╭${"─".repeat(innerWidth)}╮`);
 		const bottomBorder = border(`╰${"─".repeat(innerWidth)}╯`);
 
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, border);
