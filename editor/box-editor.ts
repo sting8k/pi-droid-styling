@@ -24,6 +24,13 @@ type ContextUsageProvider = () =>
 	  }
 	| undefined;
 
+type ModelInfoProvider = () => {
+	provider?: string;
+	id?: string;
+	reasoning?: boolean;
+	thinkingLevel?: string;
+} | undefined;
+
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
 	return clean.replace(/─/g, "").replace(/[↑↓]\s*\d+\s*more/g, "") === "";
@@ -57,6 +64,7 @@ export class BoxEditor extends CustomEditor {
 		kb: any,
 		private readonly fullTheme: any,
 		private readonly getContextUsage?: ContextUsageProvider,
+		private readonly getModelInfo?: ModelInfoProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -220,6 +228,16 @@ export class BoxEditor extends CustomEditor {
 		return `${Math.round(count / 1000000)}M`;
 	}
 
+	private formatModelBadge(): string | null {
+		const info = this.getModelInfo?.();
+		if (!info || !info.id) return null;
+		let badge = info.provider ? `[${info.provider}] ${info.id}` : info.id;
+		if (info.reasoning && info.thinkingLevel) {
+			badge += info.thinkingLevel === "off" ? " (thinking off)" : ` (${info.thinkingLevel})`;
+		}
+		return badge;
+	}
+
 	render(width: number): string[] {
 		const innerWidth = Math.max(1, width - 2);
 		const border = this.fullTheme
@@ -267,7 +285,17 @@ export class BoxEditor extends CustomEditor {
 			contextBadge && rightWidth < innerWidth
 				? `${border("╭")}${border("─".repeat(innerWidth - rightWidth))}${border(rightSegment)}${border("╮")}`
 				: border(`╭${"─".repeat(innerWidth)}╮`);
-		const bottomBorder = border(`╰${"─".repeat(innerWidth)}╯`);
+		const bottomBorder = (() => {
+			const modelBadge = this.formatModelBadge();
+			if (modelBadge) {
+				const seg = ` ${modelBadge} `;
+				const segWidth = visibleWidth(seg);
+				if (segWidth < innerWidth) {
+					return `${border("╰")}${border("─".repeat(innerWidth - segWidth))}${border(seg)}${border("╯")}`;
+				}
+			}
+			return border(`╰${"─".repeat(innerWidth)}╯`);
+		})();
 
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, border);
 		if (customSlashAutocomplete) {

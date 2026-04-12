@@ -45,7 +45,20 @@ export default function (pi: ExtensionAPI) {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
-			return new BoxEditor(tui, theme, kb, ctx.ui.theme ?? theme, () => ctx.getContextUsage());
+			return new BoxEditor(
+				tui, theme, kb, ctx.ui.theme ?? theme,
+				() => ctx.getContextUsage(),
+				() => {
+					const m = ctx.model;
+					if (!m) return undefined;
+					return {
+						provider: m.provider,
+						id: m.id,
+						reasoning: m.reasoning,
+						thinkingLevel: pi.getThinkingLevel(),
+					};
+				},
+			);
 		});
 	});
 }
