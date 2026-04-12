@@ -41,6 +41,21 @@ export default function (pi: ExtensionAPI) {
 		setDefaultBadgeTheme(ctx.ui.theme);
 		setToolSpacingTheme(ctx.ui.theme);
 
+		let cachedBranch: string | null = null;
+		let branchLastFetch = 0;
+		const fetchBranch = () => {
+			const now = Date.now();
+			if (now - branchLastFetch < 5000) return cachedBranch;
+			branchLastFetch = now;
+			try {
+				const { execSync } = require("child_process");
+				cachedBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+					cwd: ctx.cwd, encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"],
+				}).trim() || null;
+			} catch { cachedBranch = null; }
+			return cachedBranch;
+		};
+
 		ctx.ui.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
@@ -58,6 +73,7 @@ export default function (pi: ExtensionAPI) {
 						thinkingLevel: pi.getThinkingLevel(),
 					};
 				},
+				fetchBranch,
 			);
 		});
 	});

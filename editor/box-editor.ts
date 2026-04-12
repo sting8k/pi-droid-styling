@@ -31,6 +31,8 @@ type ModelInfoProvider = () => {
 	thinkingLevel?: string;
 } | undefined;
 
+type BranchProvider = () => string | null;
+
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
 	return clean.replace(/─/g, "").replace(/[↑↓]\s*\d+\s*more/g, "") === "";
@@ -65,6 +67,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly fullTheme: any,
 		private readonly getContextUsage?: ContextUsageProvider,
 		private readonly getModelInfo?: ModelInfoProvider,
+		private readonly getBranch?: BranchProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -216,8 +219,9 @@ export class BoxEditor extends CustomEditor {
 	private formatContextBadge(): string | null {
 		const usage = this.getContextUsage?.();
 		if (!usage || !usage.contextWindow) return null;
+		const used = usage.tokens === null ? "?" : this.formatCompactTokens(usage.tokens);
 		const percent = usage.percent === null ? "?" : `${usage.percent.toFixed(1)}%`;
-		return `${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
+		return `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
 	}
 
 	private formatCompactTokens(count: number): string {
@@ -279,11 +283,15 @@ export class BoxEditor extends CustomEditor {
 		});
 
 		const contextBadge = this.formatContextBadge();
+		const branch = this.getBranch?.();
+		const leftSegment = branch ? ` (${branch}) ` : "";
 		const rightSegment = contextBadge ? ` ${contextBadge} ` : "";
+		const leftWidth = visibleWidth(leftSegment);
 		const rightWidth = visibleWidth(rightSegment);
+		const fillWidth = innerWidth - leftWidth - rightWidth;
 		const topBorder =
-			contextBadge && rightWidth < innerWidth
-				? `${border("╭")}${border("─".repeat(innerWidth - rightWidth))}${border(rightSegment)}${border("╮")}`
+			fillWidth >= 1
+				? `${border("╭")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightSegment ? border(rightSegment) : ""}${border("╮")}`
 				: border(`╭${"─".repeat(innerWidth)}╮`);
 		const bottomBorder = (() => {
 			const modelBadge = this.formatModelBadge();
