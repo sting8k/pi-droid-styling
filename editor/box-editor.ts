@@ -284,8 +284,8 @@ export class BoxEditor extends CustomEditor {
 
 		const contextBadge = this.formatContextBadge();
 		const branch = this.getBranch?.();
-		const leftSegment = branch ? ` (${branch}) ` : "";
-		const rightSegment = contextBadge ? ` ${contextBadge} ` : "";
+		const leftSegment = contextBadge ? ` ${contextBadge} ` : "";
+		const rightSegment = branch ? ` (${branch}) ` : "";
 		const leftWidth = visibleWidth(leftSegment);
 		const rightWidth = visibleWidth(rightSegment);
 		const fillWidth = innerWidth - leftWidth - rightWidth;
