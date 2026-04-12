@@ -41,7 +41,7 @@ export default function (pi: ExtensionAPI) {
 		setDefaultBadgeTheme(ctx.ui.theme);
 		setToolSpacingTheme(ctx.ui.theme);
 
-		let cachedBranch: string | null = null;
+		let cachedBranch: { branch: string; insertions?: number; deletions?: number } | null = null;
 		let branchLastFetch = 0;
 		const fetchBranch = () => {
 			const now = Date.now();
@@ -49,9 +49,18 @@ export default function (pi: ExtensionAPI) {
 			branchLastFetch = now;
 			try {
 				const { execSync } = require("child_process");
-				cachedBranch = execSync("git rev-parse --abbrev-ref HEAD", {
-					cwd: ctx.cwd, encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"],
-				}).trim() || null;
+				const opts = { cwd: ctx.cwd, encoding: "utf8" as const, timeout: 1000, stdio: ["ignore", "pipe", "ignore"] as any };
+				const branch = execSync("git rev-parse --abbrev-ref HEAD", opts).trim();
+				if (!branch) { cachedBranch = null; return cachedBranch; }
+				let insertions = 0, deletions = 0;
+				try {
+					const stat = execSync("git diff --shortstat", opts).trim();
+					const insMatch = stat.match(/(\d+) insertion/);
+					const delMatch = stat.match(/(\d+) deletion/);
+					if (insMatch) insertions = parseInt(insMatch[1], 10);
+					if (delMatch) deletions = parseInt(delMatch[1], 10);
+				} catch {}
+				cachedBranch = { branch, insertions: insertions || undefined, deletions: deletions || undefined };
 			} catch { cachedBranch = null; }
 			return cachedBranch;
 		};

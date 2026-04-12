@@ -31,7 +31,13 @@ type ModelInfoProvider = () => {
 	thinkingLevel?: string;
 } | undefined;
 
-type BranchProvider = () => string | null;
+type BranchInfo = {
+	branch: string;
+	insertions?: number;
+	deletions?: number;
+};
+
+type BranchProvider = () => BranchInfo | null;
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -283,15 +289,30 @@ export class BoxEditor extends CustomEditor {
 		});
 
 		const contextBadge = this.formatContextBadge();
-		const branch = this.getBranch?.();
+		const branchInfo = this.getBranch?.();
 		const leftSegment = contextBadge ? ` ${contextBadge} ` : "";
-		const rightSegment = branch ? ` (${branch}) ` : "";
+		let rightSegment = "";
+		let rightRendered = "";
+		if (branchInfo) {
+			let diffPlain = "";
+			let diffColored = "";
+			if (branchInfo.insertions || branchInfo.deletions) {
+				const insPlain = branchInfo.insertions ? `+${branchInfo.insertions}` : "";
+				const delPlain = branchInfo.deletions ? `-${branchInfo.deletions}` : "";
+				diffPlain = [insPlain, delPlain].filter(Boolean).join(" ");
+				const insColored = branchInfo.insertions ? this.color(getThemeExtra(this.fullTheme, "gitInsertionColor"), insPlain) : "";
+				const delColored = branchInfo.deletions ? this.color(getThemeExtra(this.fullTheme, "gitDeletionColor"), delPlain) : "";
+				diffColored = [insColored, delColored].filter(Boolean).join(" ");
+			}
+			rightSegment = diffPlain ? ` (${branchInfo.branch}) ${diffPlain} ` : ` (${branchInfo.branch}) `;
+			rightRendered = diffColored ? `${border(` (${branchInfo.branch}) `)}${diffColored}${border(" ")}` : border(rightSegment);
+		}
 		const leftWidth = visibleWidth(leftSegment);
 		const rightWidth = visibleWidth(rightSegment);
 		const fillWidth = innerWidth - leftWidth - rightWidth;
 		const topBorder =
 			fillWidth >= 1
-				? `${border("╭")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightSegment ? border(rightSegment) : ""}${border("╮")}`
+				? `${border("╭")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightRendered || ""}${border("╮")}`
 				: border(`╭${"─".repeat(innerWidth)}╮`);
 		const bottomBorder = (() => {
 			const modelBadge = this.formatModelBadge();

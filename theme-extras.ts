@@ -27,6 +27,8 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 	slashDescriptionColor: "",
 	slashHintColor: "",
 	userBoxBorderColor: "",
+	gitInsertionColor: "#2ea043",
+	gitDeletionColor: "#f85149",
 };
 
 let cachedExtras: Record<string, string> | null = null;
