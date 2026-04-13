@@ -222,12 +222,20 @@ export class BoxEditor extends CustomEditor {
 		return lines;
 	}
 
+	private formatContextDots(percent: number | null): string {
+		if (percent === null) return "";
+		const total = 4;
+		const filled = Math.round((percent / 100) * total);
+		return "▰".repeat(filled) + "▱".repeat(total - filled);
+	}
+
 	private formatContextBadge(): string | null {
 		const usage = this.getContextUsage?.();
 		if (!usage || !usage.contextWindow) return null;
 		const used = usage.tokens === null ? "?" : this.formatCompactTokens(usage.tokens);
 		const percent = usage.percent === null ? "?" : `${usage.percent.toFixed(1)}%`;
-		return `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
+		const dots = this.formatContextDots(usage.percent);
+		return dots ? `${dots} ${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}` : `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
 	}
 
 	private formatCompactTokens(count: number): string {
