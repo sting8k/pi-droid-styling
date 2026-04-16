@@ -10,6 +10,14 @@ function parseWriteSummary(output: string): string | undefined {
 	const normalized = stripTrailingNotice(stripAnsi(output ?? "")).trim();
 	if (!normalized) return undefined;
 
+	const byteMatch = normalized.match(/\bwrote\s+(\d+)\s+bytes?\b/i);
+	if (byteMatch) {
+		const bytes = Number(byteMatch[1]);
+		if (Number.isFinite(bytes)) {
+			return `↳ Wrote ${bytes} ${bytes === 1 ? "byte" : "bytes"}.`;
+		}
+	}
+
 	const lineMatch = normalized.match(/\bwrote\s+(\d+)\s+lines?\b/i);
 	if (lineMatch) {
 		const count = Number(lineMatch[1]);
@@ -18,19 +26,12 @@ function parseWriteSummary(output: string): string | undefined {
 		}
 	}
 
-	const byteMatch = normalized.match(/\bwrote\s+(\d+)\s+bytes?\b/i);
-	if (byteMatch) {
-		const count = Number(byteMatch[1]);
-		if (Number.isFinite(count)) {
-			return `↳ Wrote ${count} ${count === 1 ? "byte" : "bytes"}.`;
-		}
-	}
-
 	return undefined;
 }
 
 export function registerWriteTool(pi: ExtensionAPI): void {
 	const baseWrite = createWriteTool(process.cwd());
+	let lastLineCount = 0;
 	pi.registerTool({
 		name: baseWrite.name,
 		label: baseWrite.label,
@@ -42,6 +43,8 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
+			const content = String(args?.content ?? "");
+			lastLineCount = content ? content.split("\n").length : 0;
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
 			return new Text(`${badge(theme, "WRITE")} ${parens(theme, detail)}`, 0, 0);
@@ -51,6 +54,11 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 
 			if (result.isError) {
 				return new Text(`${theme.fg("error", stripAnsi(output).trim() || "Error")}`, 0, 0);
+			}
+
+			if (lastLineCount > 0) {
+				const summary = `↳ Wrote ${lastLineCount} ${lastLineCount === 1 ? "line" : "lines"}.`;
+				return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 			}
 
 			const summary = parseWriteSummary(output);
