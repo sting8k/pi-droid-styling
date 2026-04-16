@@ -226,7 +226,7 @@ export class BoxEditor extends CustomEditor {
 		if (percent === null) return "";
 		const total = 4;
 		const filled = Math.round((percent / 100) * total);
-		return "▰".repeat(filled) + "▱".repeat(total - filled);
+		return "◼".repeat(filled) + "◻".repeat(total - filled);
 	}
 
 	private formatContextBadge(): string | null {

@@ -1,13 +1,15 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createReadTool } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import { createReadTool, getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
+import { Text, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { loadConfig } from "../config.js";
+import { badge, countLines, dimWithElapsed, getTextOutput, isExpanded, parens, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerReadTool(pi: ExtensionAPI): void {
 	const baseRead = createReadTool(process.cwd());
+	let lastFilePath = "";
 	pi.registerTool({
 		name: baseRead.name,
 		label: baseRead.label,
@@ -19,6 +21,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
+			lastFilePath = rawPath;
 			const path = shortenPath(rawPath);
 			const offset = args?.offset;
 			const limit = args?.limit;
@@ -33,7 +36,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const detail = path ? `${path}${range}` : "(unknown)";
 			return new Text(`${badge(theme, "READ")} ${parens(theme, detail)}`, 0, 0);
 		},
-		renderResult(result: any, _options, theme: any) {
+		renderResult(result: any, options, theme: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 
 			if (result.isError) {
@@ -54,8 +57,48 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					? result.details.truncation.outputLines
 					: countLines(stripped);
 
-			const summary = `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`;
-			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
+			const summary = dimWithElapsed(theme, `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`, result);
+
+			if (!isExpanded(options)) {
+				return new Text(summary, 0, 0);
+			}
+
+			// Expanded: show syntax-highlighted content
+			const filePath = lastFilePath;
+			const lang = getLanguageFromPath(filePath);
+			return {
+				invalidate() {},
+				render(width: number): string[] {
+					const renderWidth = Math.max(1, width);
+					const maxLines = loadConfig().maxExpandedLines;
+					const highlighted: string[] = [];
+					if (lang) {
+						try {
+							const h = highlightCode(stripped, lang);
+							for (const line of h) {
+								highlighted.push(...wrapTextWithAnsi(line, renderWidth));
+							}
+						} catch {
+							for (const line of stripped.split("\n")) {
+								highlighted.push(...wrapTextWithAnsi(theme.fg("toolOutput", truncateToWidth(line, renderWidth * 3, "…")), renderWidth));
+							}
+						}
+					} else {
+						for (const line of stripped.split("\n")) {
+							highlighted.push(...wrapTextWithAnsi(theme.fg("toolOutput", truncateToWidth(line, renderWidth * 3, "…")), renderWidth));
+						}
+					}
+					if (maxLines > 0 && highlighted.length > maxLines) {
+						const truncated = highlighted.slice(0, maxLines);
+						const remaining = highlighted.length - maxLines;
+						truncated.push(theme.fg("dim", `… ${remaining} more lines`));
+						truncated.push("", summary);
+						return ["", ...truncated];
+					}
+					highlighted.push("", summary);
+					return ["", ...highlighted];
+				},
+			};
 		},
 	});
 }

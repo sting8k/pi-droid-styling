@@ -3,8 +3,13 @@ import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
 import { fgHex } from "../ansi.js";
+import { loadConfig } from "../config.js";
 import { getThemeExtra } from "../theme-extras.js";
 import { formatElapsed } from "./elapsed.js";
+
+export function isExpanded(options: ToolRenderResultOptions): boolean {
+	return options.expanded || loadConfig().alwaysExpanded;
+}
 
 export function shortenPath(path: string): string {
 	const home = homedir();
@@ -102,7 +107,7 @@ export function renderLines(
 		return "";
 	}
 
-	if (options.expanded || lines.length <= cfg.maxLines) {
+	if (isExpanded(options) || lines.length <= cfg.maxLines) {
 		return lines.map((line) => theme.fg(color, line)).join("\n");
 	}
 

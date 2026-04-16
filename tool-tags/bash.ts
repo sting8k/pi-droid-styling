@@ -4,7 +4,8 @@ import type { Component } from "@mariozechner/pi-tui";
 import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, getTextOutput, parens, replaceTabs } from "./common.js";
+import { loadConfig } from "../config.js";
+import { badge, getTextOutput, parens, replaceTabs, isExpanded } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
@@ -55,7 +56,7 @@ function createBashResultPreview(
 		render(width: number): string[] {
 			const renderWidth = Math.max(1, width);
 
-			if (!options.expanded) {
+			if (!isExpanded(options)) {
 				// Collapsed: only process the tail of the output
 				// Scan backwards for the last N newlines instead of splitting the entire string
 				const needed = MAX_BASH_PREVIEW_LINES;
@@ -78,7 +79,11 @@ function createBashResultPreview(
 
 				if (shownLines.length === 0) return [];
 
-				const truncatedShown = shownLines.map((line) => theme.fg(color, truncateToWidth(line, renderWidth, "…")));
+				const truncatedShown = shownLines.map((line) => {
+					const truncated = truncateToWidth(line, renderWidth, "…");
+					if (color === "error") return theme.fg(color, truncated);
+					return loadConfig().dimToolOutput ? theme.fg("toolOutput", truncated) : truncated;
+				});
 
 				// Count remaining lines (lines before scanFrom)
 				const remaining = extraLinesBefore + (scanFrom > 0 ? countNewlines(text, 0, scanFrom) : 0);
@@ -103,7 +108,16 @@ function createBashResultPreview(
 			const clamped = logicalLines.join("\n");
 			const wrapped = wrapTextWithAnsi(clamped, renderWidth);
 			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
-			return ["", ...expandedLines.map((line) => theme.fg(color, line))];
+			const maxLines = loadConfig().maxExpandedLines;
+			const dim = loadConfig().dimToolOutput;
+			const applyColor = (l: string) => color === "error" ? theme.fg(color, l) : dim ? theme.fg("toolOutput", l) : l;
+			if (maxLines > 0 && expandedLines.length > maxLines) {
+				const truncated = expandedLines.slice(-maxLines).map(applyColor);
+				const remaining = expandedLines.length - maxLines;
+				truncated.unshift(theme.fg("dim", `… ${remaining} earlier lines`));
+				return ["", ...truncated];
+			}
+			return ["", ...expandedLines.map(applyColor)];
 		},
 	};
 }
@@ -152,7 +166,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const elapsed = formatElapsed(result);
 			const elapsedSuffix = elapsed ? theme.italic(theme.fg("muted", elapsed)) : "";
 
-			if (!options.expanded) {
+			if (!isExpanded(options)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
 				let nlCount = 0;
 				let tailStart = 0;

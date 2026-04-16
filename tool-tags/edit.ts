@@ -13,7 +13,7 @@ import {
 	firstText,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { badge, dimWithElapsed, getTextOutput, parens, resolveRelativePath } from "./common.js";
+import { badge, dimWithElapsed, getTextOutput, isExpanded, parens, resolveRelativePath } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerEditTool(pi: ExtensionAPI): void {
@@ -70,7 +70,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 
 			// Build split-diff rows and render component
 			const rows = buildSplitRows(diff);
-			const maxRows = options.expanded ? 160 : 36;
+			const maxRows = isExpanded(options) ? 160 : 36;
 			const split = new SplitDiffComponent(theme, rows, maxRows, language);
 
 			return {
