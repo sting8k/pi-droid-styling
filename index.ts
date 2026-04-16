@@ -43,25 +43,35 @@ export default function (pi: ExtensionAPI) {
 
 		let cachedBranch: { branch: string; insertions?: number; deletions?: number } | null = null;
 		let branchLastFetch = 0;
+		let branchFetchInFlight = false;
 		const fetchBranch = () => {
 			const now = Date.now();
-			if (now - branchLastFetch < 5000) return cachedBranch;
+			if (branchFetchInFlight || now - branchLastFetch < 5000) return cachedBranch;
+			branchFetchInFlight = true;
 			branchLastFetch = now;
-			try {
-				const { execSync } = require("child_process");
-				const opts = { cwd: ctx.cwd, encoding: "utf8" as const, timeout: 1000, stdio: ["ignore", "pipe", "ignore"] as any };
-				const branch = execSync("git rev-parse --abbrev-ref HEAD", opts).trim();
-				if (!branch) { cachedBranch = null; return cachedBranch; }
-				let insertions = 0, deletions = 0;
-				try {
-					const stat = execSync("git diff --shortstat", opts).trim();
-					const insMatch = stat.match(/(\d+) insertion/);
-					const delMatch = stat.match(/(\d+) deletion/);
-					if (insMatch) insertions = parseInt(insMatch[1], 10);
-					if (delMatch) deletions = parseInt(delMatch[1], 10);
-				} catch {}
+			const { spawn } = require("child_process");
+			const runGit = (args: string[]): Promise<string> =>
+				new Promise((resolve) => {
+					try {
+						const p = spawn("git", args, { cwd: ctx.cwd, stdio: ["ignore", "pipe", "ignore"] });
+						let out = "";
+						p.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
+						p.on("close", (code: number) => resolve(code === 0 ? out.trim() : ""));
+						p.on("error", () => resolve(""));
+						setTimeout(() => { try { p.kill(); } catch {} }, 1000);
+					} catch { resolve(""); }
+				});
+			(async () => {
+				const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+				if (!branch) { cachedBranch = null; branchFetchInFlight = false; return; }
+				const stat = await runGit(["diff", "--shortstat"]);
+				const insMatch = stat.match(/(\d+) insertion/);
+				const delMatch = stat.match(/(\d+) deletion/);
+				const insertions = insMatch ? parseInt(insMatch[1], 10) : 0;
+				const deletions = delMatch ? parseInt(delMatch[1], 10) : 0;
 				cachedBranch = { branch, insertions: insertions || undefined, deletions: deletions || undefined };
-			} catch { cachedBranch = null; }
+				branchFetchInFlight = false;
+			})();
 			return cachedBranch;
 		};
 

@@ -57,6 +57,17 @@ export function stripTrailingNotice(text: string): string {
 	return normalized;
 }
 
+export function extractTrailingNotice(text: string): string | null {
+	const normalized = (text ?? "").replace(/\r/g, "").trimEnd();
+	if (!normalized) return null;
+	if (normalized.startsWith("[") && normalized.endsWith("]")) return normalized;
+	const noticeStart = normalized.lastIndexOf("\n\n[");
+	if (noticeStart >= 0 && normalized.endsWith("]")) {
+		return normalized.slice(noticeStart + 2).trimEnd();
+	}
+	return null;
+}
+
 export function countLines(text: string): number {
 	const normalized = (text ?? "").replace(/\r/g, "").replace(/\n+$/g, "");
 	if (!normalized) return 0;

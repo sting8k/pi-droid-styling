@@ -1,15 +1,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createReadTool, getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
-import { Text, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { Text, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { badge, countLines, dimWithElapsed, getTextOutput, isExpanded, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { badge, countLines, dimWithElapsed, extractTrailingNotice, getTextOutput, isExpanded, parens, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerReadTool(pi: ExtensionAPI): void {
 	const baseRead = createReadTool(process.cwd());
-	let lastFilePath = "";
 	pi.registerTool({
 		name: baseRead.name,
 		label: baseRead.label,
@@ -21,7 +20,6 @@ export function registerReadTool(pi: ExtensionAPI): void {
 		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
-			lastFilePath = rawPath;
 			const path = shortenPath(rawPath);
 			const offset = args?.offset;
 			const limit = args?.limit;
@@ -36,7 +34,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const detail = path ? `${path}${range}` : "(unknown)";
 			return new Text(`${badge(theme, "READ")} ${parens(theme, detail)}`, 0, 0);
 		},
-		renderResult(result: any, options, theme: any) {
+		renderResult(result: any, options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 
 			if (result.isError) {
@@ -52,6 +50,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const stripped = stripTrailingNotice(output);
+			const truncationNotice = extractTrailingNotice(output);
 			const linesRead =
 				typeof result.details?.truncation?.outputLines === "number"
 					? result.details.truncation.outputLines
@@ -64,38 +63,43 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			// Expanded: show syntax-highlighted content
-			const filePath = lastFilePath;
+			const filePath = String(context?.args?.path ?? context?.args?.file_path ?? "");
 			const lang = getLanguageFromPath(filePath);
 			return {
 				invalidate() {},
 				render(width: number): string[] {
 					const renderWidth = Math.max(1, width);
-					const maxLines = loadConfig().maxExpandedLines;
-					const highlighted: string[] = [];
+					const cfg = loadConfig();
+					const maxLines = cfg.maxExpandedLines;
+					const footer: string[] = [];
+					if (truncationNotice) footer.push(theme.fg("warning", truncationNotice));
+					footer.push("", summary);
+					const budget = maxLines > 0 ? maxLines - footer.length : 0;
+					const renderPlain = (): string[] => {
+						const out: string[] = [];
+						for (const line of stripped.split("\n")) {
+							out.push(...wrapTextWithAnsi(theme.fg("toolOutput", line), renderWidth));
+						}
+						return out;
+					};
+					let highlighted: string[] = [];
 					if (lang) {
 						try {
-							const h = highlightCode(stripped, lang);
-							for (const line of h) {
-								highlighted.push(...wrapTextWithAnsi(line, renderWidth));
-							}
+							highlighted = highlightCode(stripped, lang).flatMap((l) => wrapTextWithAnsi(l, renderWidth));
 						} catch {
-							for (const line of stripped.split("\n")) {
-								highlighted.push(...wrapTextWithAnsi(theme.fg("toolOutput", truncateToWidth(line, renderWidth * 3, "…")), renderWidth));
-							}
+							highlighted = renderPlain();
 						}
 					} else {
-						for (const line of stripped.split("\n")) {
-							highlighted.push(...wrapTextWithAnsi(theme.fg("toolOutput", truncateToWidth(line, renderWidth * 3, "…")), renderWidth));
-						}
+						highlighted = renderPlain();
 					}
-					if (maxLines > 0 && highlighted.length > maxLines) {
-						const truncated = highlighted.slice(0, maxLines);
-						const remaining = highlighted.length - maxLines;
+					if (maxLines > 0 && highlighted.length > budget) {
+						const truncated = highlighted.slice(0, budget);
+						const remaining = highlighted.length - budget;
 						truncated.push(theme.fg("dim", `… ${remaining} more lines`));
-						truncated.push("", summary);
+						truncated.push(...footer);
 						return ["", ...truncated];
 					}
-					highlighted.push("", summary);
+					highlighted.push(...footer);
 					return ["", ...highlighted];
 				},
 			};
