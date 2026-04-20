@@ -225,7 +225,7 @@ export class BoxEditor extends CustomEditor {
 	private formatContextDots(percent: number | null): string {
 		if (percent === null) return "";
 		const total = 4;
-		const filled = Math.round((percent / 100) * total);
+		const filled = Math.max(0, Math.min(total, Math.round((percent / 100) * total)));
 		return "◼".repeat(filled) + "◻".repeat(total - filled);
 	}
 
