@@ -4,6 +4,10 @@
   "description": "Custom UI styling for pi — boxed editor, tool badges, message prefixes, chat virtualization. Works with any theme.",
   "main": "index.ts",
   "keywords": ["pi-package"],
+  "scripts": {
+    "dev:link": "npm install",
+    "dev:clean": "rm -rf node_modules"
+  },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
