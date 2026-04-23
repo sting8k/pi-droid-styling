@@ -8,7 +8,8 @@ import { getThemeExtra } from "../theme-extras.js";
 import { formatElapsed } from "./elapsed.js";
 
 export function isExpanded(options: ToolRenderResultOptions): boolean {
-	return options.expanded || loadConfig().alwaysExpanded;
+	if (typeof options?.expanded === "boolean") return options.expanded;
+	return loadConfig().alwaysExpanded;
 }
 
 export function shortenPath(path: string): string {

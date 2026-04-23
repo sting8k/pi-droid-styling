@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
+import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderThrottle } from "./render-throttle.js";
@@ -22,6 +23,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		registerToolCallTags(pi);
+
+		// Preserve "alwaysExpanded" as initial state only.
+		// Let core-driven toggle (Ctrl+o) remain authoritative afterward.
+		if (loadConfig().alwaysExpanded && !ctx.ui.getToolsExpanded()) {
+			ctx.ui.setToolsExpanded(true);
+		}
 
 		// No setTheme() call — use whatever theme is selected in settings
 		installAssistantMessagePrefix(ctx.ui.theme);
@@ -75,22 +82,37 @@ export default function (pi: ExtensionAPI) {
 			return cachedBranch;
 		};
 
+		const isStaleContextError = (error: unknown): boolean =>
+			error instanceof Error && error.message.includes("stale after session replacement or reload");
+
 		ctx.ui.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
 			return new BoxEditor(
 				tui, theme, kb, ctx.ui.theme ?? theme,
-				() => ctx.getContextUsage(),
 				() => {
-					const m = ctx.model;
-					if (!m) return undefined;
-					return {
-						provider: m.provider,
-						id: m.id,
-						reasoning: m.reasoning,
-						thinkingLevel: pi.getThinkingLevel(),
-					};
+					try {
+						return ctx.getContextUsage();
+					} catch (error) {
+						if (isStaleContextError(error)) return undefined;
+						throw error;
+					}
+				},
+				() => {
+					try {
+						const m = ctx.model;
+						if (!m) return undefined;
+						return {
+							provider: m.provider,
+							id: m.id,
+							reasoning: m.reasoning,
+							thinkingLevel: pi.getThinkingLevel(),
+						};
+					} catch (error) {
+						if (isStaleContextError(error)) return undefined;
+						throw error;
+					}
 				},
 				fetchBranch,
 			);
