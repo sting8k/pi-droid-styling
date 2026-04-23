@@ -6,6 +6,7 @@ import { installAssistantUpdateDebounce } from "./debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
+import { installLoaderLowPowerMode } from "./loader-low-power.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderThrottle } from "./render-throttle.js";
 import { getThemeVar, setFullTheme } from "./theme-extras.js";
@@ -22,6 +23,7 @@ export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
 	installLoaderAccent();
+	installLoaderLowPowerMode();
 	installFooterStatsPatch();
 
 	pi.on("session_start", (_event, ctx) => {
