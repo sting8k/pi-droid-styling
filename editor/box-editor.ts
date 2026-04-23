@@ -38,6 +38,7 @@ type BranchInfo = {
 };
 
 type BranchProvider = () => BranchInfo | null;
+type ResponseSpeedProvider = () => number | null;
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -74,6 +75,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getContextUsage?: ContextUsageProvider,
 		private readonly getModelInfo?: ModelInfoProvider,
 		private readonly getBranch?: BranchProvider,
+		private readonly getResponseSpeed?: ResponseSpeedProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -229,13 +231,24 @@ export class BoxEditor extends CustomEditor {
 		return "◼".repeat(filled) + "◻".repeat(total - filled);
 	}
 
+	private formatResponseSpeedBadge(): string | null {
+		const speed = this.getResponseSpeed?.();
+		if (typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) return null;
+		const rounded = speed >= 100 ? Math.round(speed).toString() : speed.toFixed(1).replace(/\.0$/, "");
+		return `${rounded} toks/s`;
+	}
+
 	private formatContextBadge(): string | null {
+		const speed = this.formatResponseSpeedBadge();
 		const usage = this.getContextUsage?.();
-		if (!usage || !usage.contextWindow) return null;
+		if (!usage || !usage.contextWindow) return speed;
 		const used = usage.tokens === null ? "?" : this.formatCompactTokens(usage.tokens);
 		const percent = usage.percent === null ? "?" : `${usage.percent.toFixed(1)}%`;
 		const dots = this.formatContextDots(usage.percent);
-		return dots ? `${dots} ${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}` : `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
+		const context = dots
+			? `${dots} ${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`
+			: `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
+		return speed ? `${context} · ${speed}` : context;
 	}
 
 	private formatCompactTokens(count: number): string {

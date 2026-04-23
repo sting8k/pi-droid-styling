@@ -26,7 +26,57 @@ export default function (pi: ExtensionAPI) {
 	installLoaderLowPowerMode();
 	installFooterStatsPatch();
 
+	let assistantResponseStartMs: number | null = null;
+	let currentAssistantTokensPerSecond: number | null = null;
+	let lastAssistantTokensPerSecond: number | null = null;
+	let lastSpeedUpdateMs = 0;
+	const SPEED_UPDATE_INTERVAL_MS = 1000;
+
+	function computeSpeed(outputTokens: number, startMs: number): number {
+		const elapsedSeconds = Math.max(0.001, (Date.now() - startMs) / 1000);
+		return outputTokens / elapsedSeconds;
+	}
+
+	pi.on("message_start", (event) => {
+		if (event.message.role !== "assistant") return;
+		assistantResponseStartMs = Date.now();
+		currentAssistantTokensPerSecond = null;
+		lastSpeedUpdateMs = 0;
+	});
+
+	pi.on("message_update", (event) => {
+		if (event.message.role !== "assistant") return;
+		if (!assistantResponseStartMs) return;
+		const ae = event.assistantMessageEvent as any;
+		if (ae?.type !== "text_delta") return;
+		const now = Date.now();
+		if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;
+		const outputTokens = ae?.partial?.usage?.output;
+		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
+		lastSpeedUpdateMs = now;
+		const nextSpeed = computeSpeed(outputTokens, assistantResponseStartMs);
+		const normalizedSpeed = nextSpeed >= 100 ? Math.round(nextSpeed) : Math.round(nextSpeed * 10) / 10;
+		if (currentAssistantTokensPerSecond !== normalizedSpeed) {
+			currentAssistantTokensPerSecond = normalizedSpeed;
+		}
+	});
+
+	pi.on("message_end", (event) => {
+		if (event.message.role !== "assistant") return;
+		const startedAt = assistantResponseStartMs;
+		assistantResponseStartMs = null;
+		currentAssistantTokensPerSecond = null;
+		if (!startedAt) return;
+		if (!event.message.content.some((block) => block.type === "text")) return;
+		const outputTokens = event.message.usage?.output;
+		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
+		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
+	});
+
 	pi.on("session_start", (_event, ctx) => {
+		assistantResponseStartMs = null;
+		currentAssistantTokensPerSecond = null;
+		lastAssistantTokensPerSecond = null;
 		registerToolCallTags(pi);
 
 		// Preserve "alwaysExpanded" as initial state only.
@@ -122,6 +172,7 @@ export default function (pi: ExtensionAPI) {
 					}
 				},
 				fetchBranch,
+				() => currentAssistantTokensPerSecond ?? lastAssistantTokensPerSecond,
 			);
 		});
 	});
