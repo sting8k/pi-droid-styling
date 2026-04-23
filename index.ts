@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { AssistantMessageComponent } from "@mariozechner/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
+import { installAssistantUpdateDebounce } from "./debounce-update.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
@@ -33,6 +35,7 @@ export default function (pi: ExtensionAPI) {
 		// No setTheme() call — use whatever theme is selected in settings
 		installAssistantMessagePrefix(ctx.ui.theme);
 		installUserMessagePrefix(ctx.ui.theme);
+		installAssistantUpdateDebounce(AssistantMessageComponent);
 		setFullTheme(ctx.ui.theme);
 
 		// Apply terminal background and foreground from theme vars
