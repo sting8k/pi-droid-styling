@@ -68,12 +68,21 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			// Expanded: show syntax-highlighted content
 			const filePath = String(context?.args?.path ?? context?.args?.file_path ?? "");
 			const lang = getLanguageFromPath(filePath);
+			let cacheKey = "";
+			let cacheLines: string[] | null = null;
 			return {
-				invalidate() {},
+				invalidate() {
+					cacheKey = "";
+					cacheLines = null;
+				},
 				render(width: number): string[] {
 					const renderWidth = Math.max(1, width);
 					const cfg = loadConfig();
 					const maxLines = cfg.maxExpandedLines;
+					const expanded = isExpanded(options);
+					const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${maxLines}|${cfg.dimToolOutput ? 1 : 0}`;
+					if (cacheLines && cacheKey === cacheId) return cacheLines;
+
 					const footer: string[] = [];
 					if (truncationNotice) footer.push(theme.fg("warning", truncationNotice));
 					footer.push("", summary);
@@ -87,7 +96,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					};
 					const lineCount = countLines(stripped);
 					const shouldHighlight =
-						isExpanded(options) &&
+						expanded &&
 						Boolean(lang) &&
 						stripped.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
 						lineCount <= MAX_HIGHLIGHT_OUTPUT_LINES;
@@ -107,10 +116,14 @@ export function registerReadTool(pi: ExtensionAPI): void {
 						const remaining = highlighted.length - budget;
 						truncated.push(theme.fg("dim", `… ${remaining} more lines`));
 						truncated.push(...footer);
-						return ["", ...truncated];
+						cacheKey = cacheId;
+						cacheLines = ["", ...truncated];
+						return cacheLines;
 					}
 					highlighted.push(...footer);
-					return ["", ...highlighted];
+					cacheKey = cacheId;
+					cacheLines = ["", ...highlighted];
+					return cacheLines;
 				},
 			};
 		},

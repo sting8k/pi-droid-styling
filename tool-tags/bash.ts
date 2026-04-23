@@ -51,12 +51,22 @@ function createBashResultPreview(
 	color: "toolOutput" | "error",
 	extraLinesBefore: number = 0,
 ): Component {
+	let cacheKey = "";
+	let cacheLines: string[] | null = null;
+
 	return {
-		invalidate() {},
+		invalidate() {
+			cacheKey = "";
+			cacheLines = null;
+		},
 		render(width: number): string[] {
 			const renderWidth = Math.max(1, width);
+			const cfg = loadConfig();
+			const expanded = isExpanded(options);
+			const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
+			if (cacheLines && cacheKey === cacheId) return cacheLines;
 
-			if (!isExpanded(options)) {
+			if (!expanded) {
 				// Collapsed: only process the tail of the output
 				// Scan backwards for the last N newlines instead of splitting the entire string
 				const needed = MAX_BASH_PREVIEW_LINES;
@@ -72,28 +82,40 @@ function createBashResultPreview(
 					}
 				}
 
-				if (text.length === 0) return [];
+				if (text.length === 0) {
+					cacheKey = cacheId;
+					cacheLines = [];
+					return cacheLines;
+				}
 
 				const tail = replaceTabs(text.slice(scanFrom)).replace(/\r/g, "");
 				const shownLines = tail ? tail.split("\n").map((l) => clampLineLength(l)) : [];
 
-				if (shownLines.length === 0) return [];
+				if (shownLines.length === 0) {
+					cacheKey = cacheId;
+					cacheLines = [];
+					return cacheLines;
+				}
 
 				const truncatedShown = shownLines.map((line) => {
 					const truncated = truncateToWidth(line, renderWidth, "…");
 					if (color === "error") return theme.fg(color, truncated);
-					return loadConfig().dimToolOutput ? theme.fg("toolOutput", truncated) : truncated;
+					return cfg.dimToolOutput ? theme.fg("toolOutput", truncated) : truncated;
 				});
 
 				// Count remaining lines (lines before scanFrom)
 				const remaining = extraLinesBefore + (scanFrom > 0 ? countNewlines(text, 0, scanFrom) : 0);
 
 				if (remaining <= 0) {
-					return ["", ...truncatedShown];
+					cacheKey = cacheId;
+					cacheLines = ["", ...truncatedShown];
+					return cacheLines;
 				}
 
 				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, renderWidth, "…");
-				return ["", ...truncatedShown, "", theme.fg("muted", hint)];
+				cacheKey = cacheId;
+				cacheLines = ["", ...truncatedShown, "", theme.fg("muted", hint)];
+				return cacheLines;
 			}
 
 			// Expanded: process all lines
@@ -102,22 +124,27 @@ function createBashResultPreview(
 			const hasOutput = !(logicalLines.length === 1 && logicalLines[0] === "");
 
 			if (!hasOutput) {
-				return [];
+				cacheKey = cacheId;
+				cacheLines = [];
+				return cacheLines;
 			}
 
 			const clamped = logicalLines.join("\n");
 			const wrapped = wrapTextWithAnsi(clamped, renderWidth);
 			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
-			const maxLines = loadConfig().maxExpandedLines;
-			const dim = loadConfig().dimToolOutput;
-			const applyColor = (l: string) => color === "error" ? theme.fg(color, l) : dim ? theme.fg("toolOutput", l) : l;
-			if (maxLines > 0 && expandedLines.length > maxLines) {
-				const truncated = expandedLines.slice(-maxLines).map(applyColor);
-				const remaining = expandedLines.length - maxLines;
+			const applyColor = (l: string) => color === "error" ? theme.fg(color, l) : cfg.dimToolOutput ? theme.fg("toolOutput", l) : l;
+			if (cfg.maxExpandedLines > 0 && expandedLines.length > cfg.maxExpandedLines) {
+				const truncated = expandedLines.slice(-cfg.maxExpandedLines).map(applyColor);
+				const remaining = expandedLines.length - cfg.maxExpandedLines;
 				truncated.unshift(theme.fg("dim", `… ${remaining} earlier lines`));
-				return ["", ...truncated];
+				cacheKey = cacheId;
+				cacheLines = ["", ...truncated];
+				return cacheLines;
 			}
-			return ["", ...expandedLines.map(applyColor)];
+
+			cacheKey = cacheId;
+			cacheLines = ["", ...expandedLines.map(applyColor)];
+			return cacheLines;
 		},
 	};
 }
@@ -186,7 +213,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				return {
 					invalidate() { inner.invalidate(); },
 					render(width: number): string[] {
-						const lines = inner.render(width);
+						const lines = [...inner.render(width)];
 						if (lines.length > 0) {
 							lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
 						} else {
@@ -202,7 +229,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			return {
 				invalidate() { inner.invalidate(); },
 				render(width: number): string[] {
-					const lines = inner.render(width);
+					const lines = [...inner.render(width)];
 					if (lines.length > 0) {
 						lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
 					} else {
