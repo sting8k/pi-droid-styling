@@ -3,15 +3,15 @@
  *
  * Pi's default `requestRender` fires on every `process.nextTick`, which can
  * cause excessive renders during fast streaming. This patches the TUI instance
- * to batch renders into fixed intervals (default 16ms ≈ 60fps).
+ * to batch renders into fixed intervals (default 29ms ≈ 35fps).
  *
  * Typing input triggers an immediate render (no delay) for responsiveness.
  */
 
 const PATCHED = Symbol("render-throttle");
 
-/** Default frame interval in ms (16ms ~ 60fps) */
-const DEFAULT_FRAME_MS = 16;
+/** Default frame interval in ms (29ms ~ 35fps) */
+const DEFAULT_FRAME_MS = 29;
 
 export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_MS): void {
 	if (tui[PATCHED]) return;

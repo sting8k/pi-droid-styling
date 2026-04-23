@@ -7,6 +7,9 @@ import { loadConfig } from "../config.js";
 import { badge, countLines, dimWithElapsed, extractTrailingNotice, getTextOutput, isExpanded, parens, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
+const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
+const MAX_HIGHLIGHT_OUTPUT_LINES = 300;
+
 export function registerReadTool(pi: ExtensionAPI): void {
 	const baseRead = createReadTool(process.cwd());
 	pi.registerTool({
@@ -82,8 +85,15 @@ export function registerReadTool(pi: ExtensionAPI): void {
 						}
 						return out;
 					};
+					const lineCount = countLines(stripped);
+					const shouldHighlight =
+						isExpanded(options) &&
+						Boolean(lang) &&
+						stripped.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
+						lineCount <= MAX_HIGHLIGHT_OUTPUT_LINES;
+
 					let highlighted: string[] = [];
-					if (lang) {
+					if (shouldHighlight && lang) {
 						try {
 							highlighted = highlightCode(stripped, lang).flatMap((l) => wrapTextWithAnsi(l, renderWidth));
 						} catch {

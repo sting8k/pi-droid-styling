@@ -16,6 +16,9 @@ import {
 import { badge, dimWithElapsed, getTextOutput, isExpanded, parens, resolveRelativePath } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
+const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
+const MAX_HIGHLIGHT_DIFF_ROWS = 120;
+
 export function registerEditTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "edit",
@@ -56,6 +59,15 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			const sourcePath = details?.path ?? extractEditedPath(message);
 			const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
+			// Build split-diff rows
+			const rows = buildSplitRows(diff);
+			const expanded = isExpanded(options);
+			const shouldHighlight =
+				expanded &&
+				Boolean(language) &&
+				diff.length <= MAX_HIGHLIGHT_DIFF_CHARS &&
+				rows.length <= MAX_HIGHLIGHT_DIFF_ROWS;
+
 			// Build summary header with diff stats and meter
 			const { additions, removals } = countDiffStats(diff);
 			const meter = renderDiffMeter(theme, additions, removals);
@@ -68,10 +80,9 @@ export function registerEditTool(pi: ExtensionAPI): void {
 				(meter ? ` ${meter}` : "") +
 				(elapsed ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}` : "");
 
-			// Build split-diff rows and render component
-			const rows = buildSplitRows(diff);
-			const maxRows = isExpanded(options) ? 160 : 36;
-			const split = new SplitDiffComponent(theme, rows, maxRows, language);
+			// Render split-diff (highlight only when expanded + small output)
+			const maxRows = expanded ? 160 : 36;
+			const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 
 			return {
 				render(width: number): string[] {

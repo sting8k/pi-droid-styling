@@ -18,7 +18,7 @@ interface AnyContainer extends AnyComponent {
 }
 
 /** Number of recent children to render */
-const VISIBLE_TAIL = 50;
+const VISIBLE_TAIL = 30;
 
 /**
  * Find the chatContainer in TUI's direct children.
