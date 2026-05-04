@@ -24,9 +24,9 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
 			return new Text(`${badge(theme, "FIND FILES")} ${parens(theme, detail)}`, 0, 0);
 		},
-		renderResult(result, _options, theme: any) {
+		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
-			if (result.isError) {
+			if (context?.isError) {
 				return new Text(`\n${theme.fg("error", output || "Error")}`, 0, 0);
 			}
 

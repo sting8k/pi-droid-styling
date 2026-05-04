@@ -22,9 +22,9 @@ export function registerLsTool(pi: ExtensionAPI): void {
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			return new Text(`${badge(theme, "LIST DIRECTORY")} ${parens(theme, displayPath)}`, 0, 0);
 		},
-		renderResult(result, _options, theme: any) {
+		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
-			if (result.isError) {
+			if (context?.isError) {
 				return new Text(`\n${theme.fg("error", output || "Error")}`, 0, 0);
 			}
 

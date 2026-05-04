@@ -188,8 +188,9 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				},
 			};
 		},
-		renderResult(result, options, theme: any) {
+		renderResult(result, options, theme: any, context: any) {
 			const raw = getTextOutput(result);
+			const outputColor = context?.isError ? "error" : "toolOutput";
 			const elapsed = formatElapsed(result);
 			const elapsedSuffix = elapsed ? theme.italic(theme.fg("muted", elapsed)) : "";
 
@@ -208,7 +209,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				}
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
-				const inner = createBashResultPreview(theme, tail, options, result.isError ? "error" : "toolOutput", totalLinesBefore);
+				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore);
 				if (!elapsedSuffix) return inner;
 				return {
 					invalidate() { inner.invalidate(); },
@@ -224,7 +225,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				};
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
-			const inner = createBashResultPreview(theme, output, options, result.isError ? "error" : "toolOutput", 0);
+			const inner = createBashResultPreview(theme, output, options, outputColor, 0);
 			if (!elapsedSuffix) return inner;
 			return {
 				invalidate() { inner.invalidate(); },

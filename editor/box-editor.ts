@@ -19,6 +19,7 @@ type SlashAutocompleteModel = {
 
 type ContextUsageProvider = () =>
 	| {
+			tokens: number | null;
 			percent: number | null;
 			contextWindow: number;
 	  }
