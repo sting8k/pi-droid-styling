@@ -8,6 +8,7 @@ import { Spacer, Text } from "@mariozechner/pi-tui";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
+const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const COMPACT_LIST_LIMIT = 4;
 const RESOURCE_KIND_WIDTH = 10;
 const RESOURCE_COUNT_WIDTH = 5;
@@ -100,8 +101,20 @@ export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): vo
 	if (isQuietStartup(cwd)) return;
 	ui.setHeader((_tui, theme) => {
 		activeTheme = theme as ThemeLike;
-		return new Text(compactHeader(activeTheme), 1, 0);
+		return new Text(compactHeader(activeTheme), 0, 0);
 	});
+}
+
+export function suppressStartupModelScopeLog(): void {
+	const consoleState = console as typeof console & { [CONSOLE_LOG_PATCHED]?: boolean };
+	if (consoleState[CONSOLE_LOG_PATCHED]) return;
+	consoleState[CONSOLE_LOG_PATCHED] = true;
+	const originalLog = console.log.bind(console);
+	console.log = (...args: unknown[]) => {
+		const first = typeof args[0] === "string" ? args[0] : "";
+		if (first.includes("Model scope:") && first.includes("Ctrl+P to cycle")) return;
+		originalLog(...args);
+	};
 }
 
 export function installStartupUiPatch(InteractiveModeComponent: any): void {

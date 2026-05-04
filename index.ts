@@ -17,12 +17,13 @@ import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./virtualize-chat.js";
-import { installStartupUiPatch, setCompactStartupHeader } from "./startup-ui.js";
+import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
 	installFooterStatsPatch();
+	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
 
 	let assistantResponseStartMs: number | null = null;
