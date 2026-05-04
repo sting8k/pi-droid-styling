@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { getTextOutput, indentToolBodyLines, isExpanded, parens, renderToolCallHeaderLines, replaceTabs } from "./common.js";
+import { getTextOutput, getToolBodyWidth, indentToolBodyLines, isExpanded, parens, renderToolCallHeaderLines, replaceTabs } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
@@ -61,6 +61,7 @@ function createBashResultPreview(
 		},
 		render(width: number): string[] {
 			const renderWidth = Math.max(1, width);
+			const bodyWidth = getToolBodyWidth(renderWidth);
 			const cfg = loadConfig();
 			const expanded = isExpanded(options);
 			const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
@@ -98,7 +99,7 @@ function createBashResultPreview(
 				}
 
 				const truncatedShown = shownLines.map((line) => {
-					const truncated = truncateToWidth(line, renderWidth, "…");
+					const truncated = truncateToWidth(line, bodyWidth, "…");
 					if (color === "error") return theme.fg(color, truncated);
 					return cfg.dimToolOutput ? theme.fg("toolOutput", truncated) : truncated;
 				});
@@ -112,7 +113,7 @@ function createBashResultPreview(
 					return cacheLines;
 				}
 
-				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, renderWidth, "…");
+				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, renderWidth - 1, "…");
 				cacheKey = cacheId;
 				cacheLines = ["", ...indentToolBodyLines(truncatedShown), "", theme.fg("muted", hint)];
 				return cacheLines;
@@ -130,7 +131,7 @@ function createBashResultPreview(
 			}
 
 			const clamped = logicalLines.join("\n");
-			const wrapped = wrapTextWithAnsi(clamped, renderWidth);
+			const wrapped = wrapTextWithAnsi(clamped, bodyWidth);
 			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
 			const applyColor = (l: string) => color === "error" ? theme.fg(color, l) : cfg.dimToolOutput ? theme.fg("toolOutput", l) : l;
 			if (cfg.maxExpandedLines > 0 && expandedLines.length > cfg.maxExpandedLines) {

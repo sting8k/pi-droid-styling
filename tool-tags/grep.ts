@@ -31,11 +31,17 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			const stripped = stripTrailingNotice(output);
 
 			if (result.isError) {
-				const body = renderLines(theme, stripped || output || "Error", options, {
-					maxLines: MAX_GREP_PREVIEW_LINES,
-					color: "error",
-				});
-				return new Text(`\n${indentToolBody(body)}`, 0, 0);
+				return {
+					invalidate() {},
+					render(width: number): string[] {
+						const body = renderLines(theme, stripped || output || "Error", options, {
+							maxLines: MAX_GREP_PREVIEW_LINES,
+							color: "error",
+							width,
+						});
+						return new Text(`\n${indentToolBody(body)}`, 0, 0).render(width);
+					},
+				};
 			}
 
 			let matchCount = 0;
@@ -57,11 +63,17 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				return new Text(dimWithElapsed(theme, summary, result), 0, 0);
 			}
 
-			const body = renderLines(theme, stripped, options, {
-				maxLines: MAX_GREP_PREVIEW_LINES,
-				color: "toolOutput",
-			});
-			return new Text(`${dimWithElapsed(theme, summary, result)}\n${indentToolBody(body)}`, 0, 0);
+			return {
+				invalidate() {},
+				render(width: number): string[] {
+					const body = renderLines(theme, stripped, options, {
+						maxLines: MAX_GREP_PREVIEW_LINES,
+						color: "toolOutput",
+						width,
+					});
+					return new Text(`${dimWithElapsed(theme, summary, result)}\n${indentToolBody(body)}`, 0, 0).render(width);
+				},
+			};
 		},
 	});
 }

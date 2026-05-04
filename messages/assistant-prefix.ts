@@ -51,6 +51,10 @@ function stripItalicAnsi(text: string): string {
 	return text.replace(/\x1b\[3m/g, "").replace(/\x1b\[23m/g, "");
 }
 
+function getAssistantBodyWidth(width: number): number {
+	return Math.max(1, width - visibleWidth(composePrefixedLine("")) - 1);
+}
+
 function addAssistantGutter(lines: string[]): string[] {
 	const indent = " ".repeat(visibleWidth(composePrefixedLine("")));
 	return lines.map((line) => {
@@ -65,7 +69,8 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix")
 
 	const baseRender = child.render.bind(child);
 	child.render = (width: number): string[] => {
-		const lines = baseRender(width).map(stripItalicAnsi);
+		const bodyWidth = mode === "plain" ? width : getAssistantBodyWidth(width);
+		const lines = baseRender(bodyWidth).map(stripItalicAnsi);
 		if (mode === "prefix") return prefixFirstNonEmptyLine(lines, width);
 		if (mode === "gutter") return addAssistantGutter(lines);
 		return lines;
@@ -197,7 +202,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			childState.__assistantResponsePrefixPatched = true;
 
 			const baseChildRender = targetChild.render.bind(targetChild);
-			targetChild.render = (width: number): string[] => addAssistantGutter(baseChildRender(width));
+			targetChild.render = (width: number): string[] => addAssistantGutter(baseChildRender(getAssistantBodyWidth(width)));
 		};
 	}
 

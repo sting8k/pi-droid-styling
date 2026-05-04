@@ -1,6 +1,6 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
@@ -100,8 +100,15 @@ export function parens(theme: any, text: string, skipTextColor?: boolean): strin
 	return `${openParen}${inner}${closeParen}`;
 }
 
+const TOOL_BODY_INDENT = 2;
+const TOOL_RIGHT_MARGIN = 1;
+
 export function renderToolCallHeader(theme: any, label: string, detail: string, skipTextColor?: boolean): Component {
 	return renderToolCallHeaderLines(theme, label, [parens(theme, detail, skipTextColor)]);
+}
+
+export function getToolBodyWidth(width: number, spaces = TOOL_BODY_INDENT): number {
+	return Math.max(1, width - spaces - TOOL_RIGHT_MARGIN);
 }
 
 export function renderToolCallHeaderLines(theme: any, label: string, detailLines: string[]): Component {
@@ -110,7 +117,7 @@ export function renderToolCallHeaderLines(theme: any, label: string, detailLines
 	return {
 		invalidate() {},
 		render(width: number): string[] {
-			const bodyWidth = Math.max(1, width - visibleWidth(prefix));
+			const bodyWidth = Math.max(1, width - visibleWidth(prefix) - TOOL_RIGHT_MARGIN);
 			const output: string[] = [];
 			for (let i = 0; i < detailLines.length; i++) {
 				const wrapped = wrapTextWithAnsi(detailLines[i] ?? "", bodyWidth);
@@ -126,7 +133,7 @@ export function renderToolCallHeaderLines(theme: any, label: string, detailLines
 	};
 }
 
-export function indentToolBody(text: string, spaces = 2): string {
+export function indentToolBody(text: string, spaces = TOOL_BODY_INDENT): string {
 	const indent = " ".repeat(spaces);
 	return text
 		.split("\n")
@@ -134,7 +141,7 @@ export function indentToolBody(text: string, spaces = 2): string {
 		.join("\n");
 }
 
-export function indentToolBodyLines(lines: string[], spaces = 2): string[] {
+export function indentToolBodyLines(lines: string[], spaces = TOOL_BODY_INDENT): string[] {
 	const indent = " ".repeat(spaces);
 	return lines.map((line) => (line.length === 0 ? line : `${indent}${line}`));
 }
@@ -150,25 +157,33 @@ export function renderLines(
 	theme: any,
 	text: string,
 	options: ToolRenderResultOptions,
-	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error" } = { maxLines: 10 },
+	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number } = { maxLines: 10 },
 ): string {
 	const color = cfg.color ?? "toolOutput";
 	const rawLines = (text ?? "").split("\n").map(clampLine);
 	const lines = rawLines.length === 1 && rawLines[0] === "" ? [] : rawLines;
+	const renderWidth = cfg.width ? getToolBodyWidth(cfg.width) : undefined;
+	const renderLine = (line: string) => {
+		const rendered = renderWidth ? truncateToWidth(line, renderWidth, "…") : line;
+		return theme.fg(color, rendered);
+	};
 
 	if (lines.length === 0) {
 		return "";
 	}
 
 	if (isExpanded(options) || lines.length <= cfg.maxLines) {
-		return lines.map((line) => theme.fg(color, line)).join("\n");
+		return lines.map(renderLine).join("\n");
 	}
 
 	const shown = cfg.tail ? lines.slice(-cfg.maxLines) : lines.slice(0, cfg.maxLines);
 	const remaining = lines.length - shown.length;
 
-	let output = shown.map((line) => theme.fg(color, line)).join("\n");
-	output += theme.fg("muted", `\n\n... ${remaining} more lines, press Ctrl+o to expand`);
+	let output = shown.map(renderLine).join("\n");
+	const hint = cfg.width
+		? truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, Math.max(1, cfg.width - 1), "…")
+		: `... ${remaining} more lines, press Ctrl+o to expand`;
+	output += theme.fg("muted", `\n\n${hint}`);
 
 	return output;
 }
