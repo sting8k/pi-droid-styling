@@ -13,7 +13,7 @@ import { getThemeVar, setFullTheme } from "./theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
-import { installLoaderAccent } from "./tool-tags/loader-accent.js";
+import { getRandomWorkingMessage, installLoaderAccent } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { installFooterStatsPatch } from "./footer-patch.js";
@@ -71,6 +71,10 @@ export default function (pi: ExtensionAPI) {
 		const outputTokens = event.message.usage?.output;
 		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
 		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
+	});
+
+	pi.on("before_agent_start", (_event, ctx) => {
+		ctx.ui.setWorkingMessage(getRandomWorkingMessage());
 	});
 
 	pi.on("session_start", (_event, ctx) => {

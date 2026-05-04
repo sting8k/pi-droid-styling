@@ -333,18 +333,18 @@ export class BoxEditor extends CustomEditor {
 		const fillWidth = innerWidth - leftWidth - rightWidth;
 		const topBorder =
 			fillWidth >= 1
-				? `${border("╭")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightRendered || ""}${border("╮")}`
-				: border(`╭${"─".repeat(innerWidth)}╮`);
+				? `${border("┌")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightRendered || ""}${border("┐")}`
+				: border(`┌${"─".repeat(innerWidth)}┐`);
 		const bottomBorder = (() => {
 			const modelBadge = this.formatModelBadge();
 			if (modelBadge) {
 				const seg = ` ${modelBadge} `;
 				const segWidth = visibleWidth(seg);
 				if (segWidth < innerWidth) {
-					return `${border("╰")}${border("─".repeat(innerWidth - segWidth))}${border(seg)}${border("╯")}`;
+					return `${border("└")}${border("─".repeat(innerWidth - segWidth))}${border(seg)}${border("┘")}`;
 				}
 			}
-			return border(`╰${"─".repeat(innerWidth)}╯`);
+			return border(`└${"─".repeat(innerWidth)}┘`);
 		})();
 
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, border);

@@ -5,7 +5,7 @@ import { Loader } from "@mariozechner/pi-tui";
 
 const PATCH_FLAG = "__loaderAccentPatched__";
 const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾"];
-const SPINNER_INTERVAL = 40;
+const SPINNER_INTERVAL = 120;
 
 let cachedVibes: string[] | null = null;
 
@@ -28,9 +28,9 @@ function loadVibes(): string[] {
 	return cachedVibes;
 }
 
-function getRandomVibe(): string | null {
+export function getRandomWorkingMessage(): string | undefined {
 	const vibes = loadVibes();
-	if (vibes.length === 0) return null;
+	if (vibes.length === 0) return undefined;
 	return vibes[Math.floor(Math.random() * vibes.length)]!;
 }
 
@@ -45,12 +45,6 @@ export function installLoaderAccent(): void {
 	const baseStart = proto.start;
 	proto.start = function patchedLoaderStart(this: any, ...args: any[]) {
 		this.frames = SPINNER_FRAMES;
-		this.messageColorFn = (text: string) => this.spinnerColorFn(`\x1b[1m${text}\x1b[22m`);
-
-		const vibe = getRandomVibe();
-		if (vibe) {
-			this.message = vibe;
-		}
 
 		baseStart.apply(this, args);
 		if (this.intervalId) {
