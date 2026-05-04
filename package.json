@@ -3,17 +3,27 @@
   "version": "1.0.0",
   "description": "Custom UI styling for pi — boxed editor, tool badges, message prefixes, chat virtualization. Works with any theme.",
   "main": "index.ts",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "scripts": {
     "dev:link": "npm install",
     "dev:clean": "rm -rf node_modules"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*",
     "pi-ctx-kit": "file:../pi-ctx-kit"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-tui": "^0.72.1"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-tui": "^0.72.1"
   }
 }

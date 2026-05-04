@@ -6,14 +6,13 @@ import { installAssistantUpdateDebounce } from "./debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
-import { installLoaderLowPowerMode } from "./loader-low-power.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderThrottle } from "./render-throttle.js";
 import { getThemeVar, setFullTheme } from "./theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
-import { getRandomWorkingMessage, installLoaderAccent } from "./tool-tags/loader-accent.js";
+import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { installFooterStatsPatch } from "./footer-patch.js";
@@ -22,8 +21,6 @@ import { virtualizeChatContainer } from "./virtualize-chat.js";
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
-	installLoaderAccent();
-	installLoaderLowPowerMode();
 	installFooterStatsPatch();
 
 	let assistantResponseStartMs: number | null = null;
@@ -73,7 +70,7 @@ export default function (pi: ExtensionAPI) {
 		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
 	});
 
-	pi.on("before_agent_start", (_event, ctx) => {
+	pi.on("agent_start", (_event, ctx) => {
 		ctx.ui.setWorkingMessage(getRandomWorkingMessage());
 	});
 
@@ -82,6 +79,10 @@ export default function (pi: ExtensionAPI) {
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
 		registerToolCallTags(pi);
+		ctx.ui.setWorkingIndicator({
+			frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
+			intervalMs: SPINNER_INTERVAL_MS,
+		});
 
 		// Preserve "alwaysExpanded" as initial state only.
 		// Let core-driven toggle (Ctrl+o) remain authoritative afterward.
