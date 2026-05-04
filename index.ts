@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { AssistantMessageComponent, ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
+import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
 import { installAssistantUpdateDebounce } from "./debounce-update.js";
@@ -17,11 +17,13 @@ import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./virtualize-chat.js";
+import { installStartupUiPatch, setCompactStartupHeader } from "./startup-ui.js";
 
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
 	installFooterStatsPatch();
+	installStartupUiPatch(InteractiveMode);
 
 	let assistantResponseStartMs: number | null = null;
 	let currentAssistantTokensPerSecond: number | null = null;
@@ -71,6 +73,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		setCompactStartupHeader(ctx.ui, ctx.cwd);
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
