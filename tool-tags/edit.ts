@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
+import { createEditToolDefinition, getAgentDir, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
@@ -56,14 +56,19 @@ async function loadEditCore(): Promise<EditCoreModule | undefined> {
 
 export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 	const editCore = await loadEditCore();
-	if (!editCore) return;
+	const baseEdit = createEditToolDefinition(process.cwd());
 
 	pi.registerTool({
 		name: "edit",
 		label: "edit",
-		description: editCore.EDIT_TOOL_DESCRIPTION,
-		parameters: editCore.EditArgsSchema as any,
-		execute: wrapExecuteWithTiming(editCore.executeEnhancedEdit),
+		description: editCore?.EDIT_TOOL_DESCRIPTION ?? baseEdit.description,
+		parameters: (editCore?.EditArgsSchema ?? baseEdit.parameters) as any,
+		prepareArguments: baseEdit.prepareArguments,
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
+			if (editCore) return editCore.executeEnhancedEdit(toolCallId, params, signal, onUpdate, ctx);
+			const tool = createEditToolDefinition(ctx.cwd);
+			return tool.execute(toolCallId, params as any, signal, onUpdate, ctx);
+		}),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
