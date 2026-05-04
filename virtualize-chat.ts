@@ -32,7 +32,7 @@ function findChatContainer(tui: AnyContainer): AnyContainer | null {
 	return null;
 }
 
-const PATCHED = Symbol("virtualized");
+const PATCHED = Symbol.for("pi-droid-styling.virtualized-chat.patched");
 
 export function virtualizeChatContainer(tui: AnyContainer): void {
 	const chatContainer = findChatContainer(tui);

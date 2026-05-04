@@ -1,6 +1,6 @@
 import { FooterComponent } from "@mariozechner/pi-coding-agent";
 
-const PATCHED = Symbol("footerStatsPatch");
+const PATCHED = Symbol.for("pi-droid-styling.footer-stats.patched");
 
 export function installFooterStatsPatch() {
 	const proto = FooterComponent.prototype as any;

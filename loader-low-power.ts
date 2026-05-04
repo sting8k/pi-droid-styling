@@ -13,7 +13,7 @@
 
 import { Loader } from "@mariozechner/pi-tui";
 
-const PATCHED = Symbol("loader-low-power");
+const PATCHED = Symbol.for("pi-droid-styling.loader-low-power.patched");
 const ECO_FPS = 3;
 const ECO_INTERVAL_MS = Math.ceil(1000 / ECO_FPS);
 

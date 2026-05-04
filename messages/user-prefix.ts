@@ -5,7 +5,7 @@ import { dropLeadingColumns, fgHex, stripAnsi } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
 
 let activeTheme: any = null;
-let isPatched = false;
+const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
 
 function buildPrefixSegment(): string {
 	const char = getThemeExtra(activeTheme, "userPrefix");
@@ -27,12 +27,16 @@ function buildDividerLine(width: number): string {
 
 export function installUserMessagePrefix(theme: any): void {
 	activeTheme = theme;
-	if (isPatched) return;
-	isPatched = true;
+	const proto = UserMessageComponent.prototype as any;
+	if (proto[PATCHED] || proto.render?.name === "patchedUserMessageRender") {
+		proto[PATCHED] = true;
+		return;
+	}
+	proto[PATCHED] = true;
 
-	const baseRender = UserMessageComponent.prototype.render;
+	const baseRender = proto.render;
 
-	UserMessageComponent.prototype.render = function patchedUserMessageRender(width: number): string[] {
+	proto.render = function patchedUserMessageRender(width: number): string[] {
 		const lines = baseRender.call(this, width);
 		if (lines.length === 0 || width <= 0) return lines;
 

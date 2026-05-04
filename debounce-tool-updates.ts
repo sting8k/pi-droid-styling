@@ -14,7 +14,7 @@
  * - After a debounced flush, request one render so the latest chunk is visible.
  */
 
-const PATCHED = Symbol("debounce-tool-updates");
+const PATCHED = Symbol.for("pi-droid-styling.debounce-tool-updates.patched");
 
 /** ~12.5Hz for heavy tool-output rebuilds */
 const TOOL_PARTIAL_FLUSH_MS = 80;

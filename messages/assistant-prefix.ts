@@ -5,7 +5,7 @@ import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "..
 import { getThemeExtra } from "../theme-extras.js";
 
 let activeTheme: any = null;
-let isPatched = false;
+const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
 
 function buildPrefixSegment(): string {
 	const prefix = getThemeExtra(activeTheme, "assistantPrefix");
@@ -114,12 +114,16 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 
 export function installAssistantMessagePrefix(theme: any): void {
 	activeTheme = theme;
-	if (isPatched) return;
-	isPatched = true;
+	const proto = AssistantMessageComponent.prototype as any;
+	if (proto[PATCHED] || proto.render?.name === "patchedAssistantMessageRender") {
+		proto[PATCHED] = true;
+		return;
+	}
+	proto[PATCHED] = true;
 
-	const baseUpdateContent = (AssistantMessageComponent.prototype as any).updateContent;
+	const baseUpdateContent = proto.updateContent;
 	if (typeof baseUpdateContent === "function") {
-		(AssistantMessageComponent.prototype as any).updateContent = function patchedAssistantUpdateContent(message: any): void {
+		proto.updateContent = function patchedAssistantUpdateContent(message: any): void {
 			baseUpdateContent.call(this, message);
 
 			if (!message || !Array.isArray(message.content)) return;
@@ -171,9 +175,9 @@ export function installAssistantMessagePrefix(theme: any): void {
 		};
 	}
 
-	const baseRender = AssistantMessageComponent.prototype.render;
+	const baseRender = proto.render;
 
-	AssistantMessageComponent.prototype.render = function patchedAssistantMessageRender(width: number): string[] {
+	proto.render = function patchedAssistantMessageRender(width: number): string[] {
 		const lines = baseRender.call(this, width);
 		if (width <= 0) return lines;
 

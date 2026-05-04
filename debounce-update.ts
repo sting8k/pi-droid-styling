@@ -21,7 +21,7 @@
  * outermost wrapper and prevents the inner chain from running on every delta.
  */
 
-const PATCHED = Symbol("debounce-update-content");
+const PATCHED = Symbol.for("pi-droid-styling.debounce-update-content.patched");
 
 /** Coalesce window for streaming deltas (ms). */
 const STREAM_FLUSH_MS = 60;

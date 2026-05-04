@@ -8,7 +8,7 @@
  * Typing input triggers an immediate render (no delay) for responsiveness.
  */
 
-const PATCHED = Symbol("render-throttle");
+const PATCHED = Symbol.for("pi-droid-styling.render-throttle.patched");
 
 /** Default frame interval in ms (29ms ~ 35fps) */
 const DEFAULT_FRAME_MS = 29;
