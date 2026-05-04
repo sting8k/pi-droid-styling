@@ -74,7 +74,8 @@ export function installUserMessagePrefix(theme: any): void {
 
 		if (quoteStyle) {
 			const quoteColor = getThemeExtra(activeTheme, "quoteColor");
-			const border = activeTheme && quoteColor ? fgHex(activeTheme, quoteColor, "│") : "│";
+			const quoteChar = getThemeExtra(activeTheme, "quoteChar") || "│";
+			const border = activeTheme && quoteColor ? fgHex(activeTheme, quoteColor, quoteChar) : quoteChar;
 
 			const verticalBarChars = new Set([
 				"│", "┃", "¦", "║", "╎", "╏", "┆", "┇", "┊", "┋", "︱", "︲", "￨", "|",

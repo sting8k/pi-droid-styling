@@ -16,6 +16,7 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 	dividerColor: "",
 	showDivider: "true",
 	quoteStyle: "false",
+	quoteChar: "┃",
 	quoteColor: "",
 	inputBorderColor: "",
 	bashPromptColor: "",
