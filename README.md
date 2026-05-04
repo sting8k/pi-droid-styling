@@ -2,6 +2,10 @@
 
 Opinionated Pi UI styling extension: compact startup UI, boxed editor, cleaner tool tags, message prefixes, footer stats, and reload-safe render patches.
 
+## Screenshot
+
+![pi-droid-styling screenshot](./screenshots/image.png)
+
 ## Install
 
 ```sh
@@ -39,6 +43,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 ## Notes
 
 - Works with the active Pi theme; it does not force a theme.
+- Compatible color schemes: https://github.com/sting8k/pi-themes
 - `customWorkingMessage` is off by default to keep Pi core loader behavior stable.
 
 ## License
