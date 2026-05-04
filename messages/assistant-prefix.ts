@@ -47,6 +47,37 @@ function hasVisibleAssistantContent(contentBlocks: any[]): boolean {
 	return contentBlocks.some((contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock));
 }
 
+function stripItalicAnsi(text: string): string {
+	return text.replace(/\x1b\[3m/g, "").replace(/\x1b\[23m/g, "");
+}
+
+function makeThinkingChildPlain(child: any): void {
+	if (!child || typeof child.render !== "function" || child.__plainThinkingPatched) return;
+	child.__plainThinkingPatched = true;
+
+	const baseRender = child.render.bind(child);
+	child.render = (width: number): string[] => baseRender(width).map(stripItalicAnsi);
+}
+
+function patchThinkingChildren(component: any, contentBlocks: any[]): void {
+	const hasVisibleContent = hasVisibleAssistantContent(contentBlocks);
+	let childIndex = hasVisibleContent ? 1 : 0; // leading Spacer(1)
+
+	for (let i = 0; i < contentBlocks.length; i++) {
+		const contentBlock = contentBlocks[i];
+		if (isVisibleTextBlock(contentBlock)) {
+			childIndex += 1;
+		} else if (isVisibleThinkingBlock(contentBlock)) {
+			makeThinkingChildPlain(component?.contentContainer?.children?.[childIndex]);
+			childIndex += 1;
+			const hasVisibleContentAfter = contentBlocks
+				.slice(i + 1)
+				.some((nextBlock) => isVisibleTextBlock(nextBlock) || isVisibleThinkingBlock(nextBlock));
+			if (hasVisibleContentAfter) childIndex += 1; // inter-block Spacer(1)
+		}
+	}
+}
+
 function isToolCallOnlyAssistantMessage(message: any): boolean {
 	if (!message || !Array.isArray(message.content)) return false;
 	const contentBlocks = message.content as any[];
@@ -94,6 +125,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			if (!message || !Array.isArray(message.content)) return;
 
 			const contentBlocks = message.content as Array<any>;
+			patchThinkingChildren(this, contentBlocks);
 			const firstTextIndex = contentBlocks.findIndex((contentBlock) => isVisibleTextBlock(contentBlock));
 			if (firstTextIndex === -1) return;
 
