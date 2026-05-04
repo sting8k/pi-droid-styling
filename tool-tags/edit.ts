@@ -1,5 +1,9 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
 import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { getLanguageFromPath } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
@@ -23,13 +27,31 @@ type EditCoreModule = {
 	executeEnhancedEdit: (...args: any[]) => any;
 };
 
-async function loadEditCore(): Promise<EditCoreModule | undefined> {
+async function importEditCore(specifier: string): Promise<EditCoreModule | undefined> {
 	try {
-		const specifier = "pi-ctx-kit/edit-core";
 		return await import(specifier) as EditCoreModule;
 	} catch {
 		return undefined;
 	}
+}
+
+async function loadEditCore(): Promise<EditCoreModule | undefined> {
+	const packageImport = await importEditCore("pi-ctx-kit/edit-core");
+	if (packageImport) return packageImport;
+
+	const installedPaths = [
+		join(getAgentDir(), "git", "github.com", "sting8k", "pi-ctx-kit", "edit-core.ts"),
+		join(process.cwd(), ".pi", "git", "github.com", "sting8k", "pi-ctx-kit", "edit-core.ts"),
+		join(process.cwd(), "..", "pi-ctx-kit", "edit-core.ts"),
+	];
+
+	for (const path of installedPaths) {
+		if (!existsSync(path)) continue;
+		const editCore = await importEditCore(pathToFileURL(path).href);
+		if (editCore) return editCore;
+	}
+
+	return undefined;
 }
 
 export async function registerEditTool(pi: ExtensionAPI): Promise<void> {

@@ -51,24 +51,41 @@ function stripItalicAnsi(text: string): string {
 	return text.replace(/\x1b\[3m/g, "").replace(/\x1b\[23m/g, "");
 }
 
-function makeThinkingChildPlain(child: any): void {
+function addAssistantGutter(lines: string[]): string[] {
+	const indent = " ".repeat(visibleWidth(composePrefixedLine("")));
+	return lines.map((line) => {
+		if (stripAnsi(line).trim().length === 0) return line;
+		return `${indent}${dropLeadingColumns(line, 1)}`;
+	});
+}
+
+function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix"): void {
 	if (!child || typeof child.render !== "function" || child.__plainThinkingPatched) return;
 	child.__plainThinkingPatched = true;
 
 	const baseRender = child.render.bind(child);
-	child.render = (width: number): string[] => baseRender(width).map(stripItalicAnsi);
+	child.render = (width: number): string[] => {
+		const lines = baseRender(width).map(stripItalicAnsi);
+		if (mode === "prefix") return prefixFirstNonEmptyLine(lines, width);
+		if (mode === "gutter") return addAssistantGutter(lines);
+		return lines;
+	};
 }
 
 function patchThinkingChildren(component: any, contentBlocks: any[]): void {
 	const hasVisibleContent = hasVisibleAssistantContent(contentBlocks);
 	let childIndex = hasVisibleContent ? 1 : 0; // leading Spacer(1)
+	let turnMarkerUsed = false;
 
 	for (let i = 0; i < contentBlocks.length; i++) {
 		const contentBlock = contentBlocks[i];
 		if (isVisibleTextBlock(contentBlock)) {
 			childIndex += 1;
 		} else if (isVisibleThinkingBlock(contentBlock)) {
-			makeThinkingChildPlain(component?.contentContainer?.children?.[childIndex]);
+			const hasTextAfter = contentBlocks.slice(i + 1).some((nextBlock) => isVisibleTextBlock(nextBlock));
+			const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
+			makeThinkingChildPlain(component?.contentContainer?.children?.[childIndex], mode);
+			if (mode === "prefix") turnMarkerUsed = true;
 			childIndex += 1;
 			const hasVisibleContentAfter = contentBlocks
 				.slice(i + 1)
@@ -83,6 +100,15 @@ function isToolCallOnlyAssistantMessage(message: any): boolean {
 	const contentBlocks = message.content as any[];
 	if (hasVisibleAssistantContent(contentBlocks)) return false;
 	return contentBlocks.some((contentBlock) => contentBlock?.type === "toolCall");
+}
+
+function alignContinuationLines(lines: string[], targetIndex: number): void {
+	const indent = " ".repeat(visibleWidth(composePrefixedLine("")));
+	for (let i = targetIndex + 1; i < lines.length; i++) {
+		const line = lines[i] ?? "";
+		if (stripAnsi(line).trim().length === 0) continue;
+		lines[i] = `${indent}${dropLeadingColumns(line, 1)}`;
+	}
 }
 
 function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
@@ -106,6 +132,7 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 
 	const remainder = dropLeadingColumns(output[targetIndex] ?? "", 1); // drop 1-column left padding from Markdown/Text
 	output[targetIndex] = composePrefixedLine(remainder);
+	alignContinuationLines(output, targetIndex);
 
 	return output.map((renderedLine) =>
 		visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,
@@ -125,6 +152,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 	if (typeof baseUpdateContent === "function") {
 		proto.updateContent = function patchedAssistantUpdateContent(message: any): void {
 			baseUpdateContent.call(this, message);
+			this.__assistantResponsePrefixChildMode = false;
 
 			if (!message || !Array.isArray(message.content)) return;
 
@@ -137,6 +165,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 				.slice(0, firstTextIndex)
 				.some((contentBlock) => isVisibleThinkingBlock(contentBlock));
 			if (!hasThinkingBeforeText) return;
+			this.__assistantResponsePrefixChildMode = true;
 
 			const hasVisibleContent = contentBlocks.some(
 				(contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock),
@@ -168,10 +197,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			childState.__assistantResponsePrefixPatched = true;
 
 			const baseChildRender = targetChild.render.bind(targetChild);
-			targetChild.render = (width: number): string[] => {
-				const lines = baseChildRender(width);
-				return prefixFirstNonEmptyLine(lines, width);
-			};
+			targetChild.render = (width: number): string[] => addAssistantGutter(baseChildRender(width));
 		};
 	}
 
@@ -188,6 +214,14 @@ export function installAssistantMessagePrefix(theme: any): void {
 
 		if (lines.length === 0) {
 			return lines;
+		}
+
+		if (this.__assistantResponsePrefixChildMode) {
+			const result = lines.map((renderedLine) =>
+				visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,
+			);
+			const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
+			return showDivider ? [divider, ...result, ""] : [...result, ""];
 		}
 
 		const output = [...lines];
@@ -209,6 +243,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 		const line = output[targetIndex] ?? "";
 		const remainder = dropLeadingColumns(line, 1); // drop the 1-column padding, keep content
 		output[targetIndex] = composePrefixedLine(remainder);
+		alignContinuationLines(output, targetIndex);
 
 		const result = output.map((renderedLine) =>
 			visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,

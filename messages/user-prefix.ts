@@ -25,6 +25,15 @@ function buildDividerLine(width: number): string {
 	return activeTheme ? fgHex(activeTheme, color, line) : line;
 }
 
+function alignContinuationLines(lines: string[], targetIndex: number): void {
+	const indent = " ".repeat(visibleWidth(buildPrefixSegment()));
+	for (let i = targetIndex + 1; i < lines.length; i++) {
+		const line = lines[i] ?? "";
+		if (stripAnsi(line).trim().length === 0) continue;
+		lines[i] = `${indent}${dropLeadingColumns(line, 1)}`;
+	}
+}
+
 export function installUserMessagePrefix(theme: any): void {
 	activeTheme = theme;
 	const proto = UserMessageComponent.prototype as any;
@@ -122,6 +131,7 @@ export function installUserMessagePrefix(theme: any): void {
 			const line = output[targetIndex] ?? "";
 			const remainder = dropLeadingColumns(line, 1);
 			output[targetIndex] = `${prefixSegment}${remainder}`;
+			alignContinuationLines(output, targetIndex);
 
 			result = output.map((renderedLine) => {
 				const bolded = activeTheme ? activeTheme.bold(renderedLine) : renderedLine;
