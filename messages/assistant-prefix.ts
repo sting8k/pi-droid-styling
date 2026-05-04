@@ -209,8 +209,8 @@ export function installAssistantMessagePrefix(theme: any): void {
 	const baseRender = proto.render;
 
 	proto.render = function patchedAssistantMessageRender(width: number): string[] {
-		const lines = baseRender.call(this, width);
-		if (width <= 0) return lines;
+		if (width <= 0) return baseRender.call(this, width);
+		const lines = baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width));
 
 		const compactPrefixBase = composePrefixedLine("");
 		const compactPrefix =
