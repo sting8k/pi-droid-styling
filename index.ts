@@ -71,7 +71,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", (_event, ctx) => {
-		ctx.ui.setWorkingMessage(getRandomWorkingMessage());
+		const message = getRandomWorkingMessage();
+		ctx.ui.setWorkingMessage(message ? ctx.ui.theme.fg("accent", message) : undefined);
 	});
 
 	pi.on("session_start", (_event, ctx) => {
