@@ -85,10 +85,7 @@ export default function (pi: ExtensionAPI) {
 			});
 		} else {
 			ctx.ui.setWorkingMessage();
-			ctx.ui.setWorkingIndicator({
-				frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
-				intervalMs: SPINNER_INTERVAL_MS,
-			});
+			ctx.ui.setWorkingIndicator();
 		}
 
 		// Preserve "alwaysExpanded" as initial state only.

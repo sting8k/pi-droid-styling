@@ -13,7 +13,7 @@ const DEFAULTS: DroidStylingConfig = {
 	alwaysExpanded: false,
 	maxExpandedLines: 80,
 	dimToolOutput: false,
-	customWorkingMessage: true,
+	customWorkingMessage: false,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
