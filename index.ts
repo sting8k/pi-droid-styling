@@ -72,12 +72,12 @@ export default function (pi: ExtensionAPI) {
 		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
 	});
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		setCompactStartupHeader(ctx.ui, ctx.cwd);
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
-		registerToolCallTags(pi);
+		await registerToolCallTags(pi);
 		const config = loadConfig();
 		if (config.customWorkingMessage) {
 			const workingMessage = getRandomWorkingMessage() ?? "Working...";

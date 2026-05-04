@@ -72,12 +72,16 @@ function plural(count: number, label: string): string {
 }
 
 function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], expanded: boolean): string {
-	const total = rows.map((row) => plural(row.items.length, row.label.replace(/s$/, ""))).join(theme.fg("muted", " · "));
-	const lines = [theme.bold(theme.fg("accent", "Resources")) + theme.fg("muted", total ? ` · ${total}` : "")];
+	const total = rows.map((row) => `${row.label} ${theme.fg("success", String(row.items.length))}`).join(theme.fg("muted", " · "));
+	if (!expanded) {
+		return theme.bold(theme.fg("accent", "◆ Resources")) + theme.fg("muted", total ? ` · ${total}` : "");
+	}
+
+	const lines = [theme.bold(theme.fg("accent", "◆ Resources")) + theme.fg("muted", total ? ` · ${total}` : "")];
 	for (const row of rows) {
 		const kind = theme.fg("mdHeading", row.label.padEnd(RESOURCE_KIND_WIDTH, " "));
 		const count = theme.fg("success", String(row.items.length).padStart(RESOURCE_COUNT_WIDTH, " "));
-		lines.push(`  ${kind}  ${count}  ${formatItems(theme, row.items, expanded)}`);
+		lines.push(`  ${kind}  ${count}  ${formatItems(theme, row.items, true)}`);
 	}
 	return lines.join("\n");
 }
@@ -123,8 +127,10 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 				sourceInfo: extension.sourceInfo,
 			}));
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+		const scopedModels = this.session.scopedModels ?? [];
 
 		const rows: ResourceRow[] = [
+			{ label: "models", items: scopedModels.map((scoped: any) => `${scoped.model.provider}/${scoped.model.id}`) },
 			{ label: "context", items: contextFiles.map((file: any) => this.formatContextPath(file.path)) },
 			{ label: "skills", items: skills.map((skill: any) => skill.name) },
 			{ label: "prompts", items: templates.map((template: any) => `/${template.name}`) },

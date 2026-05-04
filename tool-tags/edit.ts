@@ -2,8 +2,6 @@ import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-cod
 import { getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
-import type { EditToolResultDetails } from "pi-ctx-kit/edit-core";
-import { EDIT_TOOL_DESCRIPTION, EditArgsSchema, executeEnhancedEdit } from "pi-ctx-kit/edit-core";
 import { stripAnsi } from "../ansi.js";
 import {
 	SplitDiffComponent,
@@ -19,13 +17,31 @@ import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
 const MAX_HIGHLIGHT_DIFF_ROWS = 120;
 
-export function registerEditTool(pi: ExtensionAPI): void {
+type EditCoreModule = {
+	EDIT_TOOL_DESCRIPTION: string;
+	EditArgsSchema: unknown;
+	executeEnhancedEdit: (...args: any[]) => any;
+};
+
+async function loadEditCore(): Promise<EditCoreModule | undefined> {
+	try {
+		const specifier = "pi-ctx-kit/edit-core";
+		return await import(specifier) as EditCoreModule;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
+	const editCore = await loadEditCore();
+	if (!editCore) return;
+
 	pi.registerTool({
 		name: "edit",
 		label: "edit",
-		description: EDIT_TOOL_DESCRIPTION,
-		parameters: EditArgsSchema,
-		execute: wrapExecuteWithTiming(executeEnhancedEdit),
+		description: editCore.EDIT_TOOL_DESCRIPTION,
+		parameters: editCore.EditArgsSchema as any,
+		execute: wrapExecuteWithTiming(editCore.executeEnhancedEdit),
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
@@ -45,7 +61,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			}
 
 			// Extract diff from result details
-			const details = result.details as EditToolResultDetails | undefined;
+			const details = result.details as { diff?: string; path?: string } | undefined;
 			const diff = details?.diff as string | undefined;
 
 			if (!diff) {

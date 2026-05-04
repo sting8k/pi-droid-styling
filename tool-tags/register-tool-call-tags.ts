@@ -8,7 +8,7 @@ import { registerLsTool } from "./ls.js";
 import { registerReadTool } from "./read.js";
 import { registerWriteTool } from "./write.js";
 
-const toolRegistry: Record<string, (pi: ExtensionAPI) => void> = {
+const toolRegistry: Record<string, (pi: ExtensionAPI) => void | Promise<void>> = {
 	read: registerReadTool,
 	write: registerWriteTool,
 	edit: registerEditTool,
@@ -18,13 +18,13 @@ const toolRegistry: Record<string, (pi: ExtensionAPI) => void> = {
 	bash: registerBashTool,
 };
 
-export function registerToolCallTags(pi: ExtensionAPI): void {
+export async function registerToolCallTags(pi: ExtensionAPI): Promise<void> {
 	const activeTools = pi.getActiveTools();
 	const activeSet = new Set(activeTools);
 
 	for (const [name, register] of Object.entries(toolRegistry)) {
 		if (activeSet.has(name)) {
-			register(pi);
+			await register(pi);
 		}
 	}
 }

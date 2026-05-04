@@ -1,17 +1,22 @@
 {
-  "name": "@anthropic/pi-droid-styling",
+  "name": "pi-droid-styling",
   "version": "1.0.0",
-  "description": "Custom UI styling for pi — boxed editor, tool badges, message prefixes, chat virtualization. Works with any theme.",
+  "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
+  "type": "module",
   "main": "index.ts",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-coding-agent",
+    "pi-extension"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sting8k/pi-droid-styling"
+  },
+  "license": "MIT",
   "scripts": {
     "dev:link": "npm install",
     "dev:clean": "rm -rf node_modules"
-  },
-  "dependencies": {
-    "pi-ctx-kit": "file:../pi-ctx-kit"
   },
   "pi": {
     "extensions": [
