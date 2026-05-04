@@ -12,8 +12,10 @@ const MAX_BASH_PREVIEW_LINES = 5;
 const MAX_LINE_CHARS = 2000;
 const BASH_TOOL_NOTICE_PATTERN = /^\[Showing (?:last|lines)\b.*\. Full output: .+\]$/;
 const BG_ANSI_PATTERN = /\x1b\[4[0-9;]*m/g;
+const SHELL_VAR_PATTERN = /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/;
+const SHELL_OP_PATTERN = /^(?:&&|\|\||>>|>&|\|&|[|&;()<>])$/;
 
-function highlightBashLine(line: string): string {
+function highlightBashFallback(line: string): string {
 	try {
 		const highlighted = highlightCode(line, "bash")[0] ?? line;
 		// Strip background colors to avoid clashing with badge/parens styling
@@ -21,6 +23,94 @@ function highlightBashLine(line: string): string {
 	} catch {
 		return line;
 	}
+}
+
+function normalizeShellWord(word: string): string {
+	return word.replace(/^(['"])(.*)\1$/, "$2");
+}
+
+function colorShellWord(theme: any, word: string, commandExpected: boolean): string {
+	const normalized = normalizeShellWord(word);
+	if (/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(normalized)) return theme.fg("syntaxVariable", word);
+	if (normalized.startsWith("-")) return theme.fg("syntaxKeyword", word);
+	if (normalized.includes("/") || /^\.{1,2}(?:\/|$)/.test(normalized)) return theme.fg("syntaxVariable", word);
+	if (SHELL_VAR_PATTERN.test(normalized)) return theme.fg("syntaxVariable", word);
+	return commandExpected ? theme.fg("syntaxFunction", word) : theme.fg("syntaxString", word);
+}
+
+function tokenizeShellLinePreservingText(line: string): string[] | undefined {
+	const tokens: string[] = [];
+	let current = "";
+	let quote: string | null = null;
+
+	for (let i = 0; i < line.length; i++) {
+		const char = line[i] ?? "";
+		const next = line[i + 1] ?? "";
+
+		if (quote) {
+			current += char;
+			if (char === "\\" && next) current += line[++i] ?? "";
+			else if (char === quote) quote = null;
+			continue;
+		}
+
+		if (char === "'" || char === '"') {
+			quote = char;
+			current += char;
+			continue;
+		}
+
+		if (/\s/.test(char)) {
+			if (current) tokens.push(current);
+			current = "";
+			tokens.push(char);
+			continue;
+		}
+
+		if (char === "#" && !current) {
+			if (current) tokens.push(current);
+			tokens.push(line.slice(i));
+			return tokens;
+		}
+
+		const two = `${char}${next}`;
+		if (SHELL_OP_PATTERN.test(two) || SHELL_OP_PATTERN.test(char)) {
+			if (current) tokens.push(current);
+			current = "";
+			if (SHELL_OP_PATTERN.test(two)) {
+				tokens.push(two);
+				i++;
+			} else {
+				tokens.push(char);
+			}
+			continue;
+		}
+
+		current += char;
+	}
+
+	if (quote) return undefined;
+	if (current) tokens.push(current);
+	return tokens;
+}
+
+function highlightBashLine(line: string, theme: any): string {
+	const tokens = tokenizeShellLinePreservingText(line);
+	if (!tokens) return highlightBashFallback(line);
+	let commandExpected = true;
+	return tokens
+		.map((token) => {
+			if (/^\s+$/.test(token)) return token;
+			if (token.startsWith("#")) return theme.fg("syntaxComment", token);
+			if (SHELL_OP_PATTERN.test(token)) {
+				commandExpected = token === "|" || token === "||" || token === "&&" || token === ";" || token === "&";
+				return theme.fg("syntaxOperator", token);
+			}
+			const styled = colorShellWord(theme, token, commandExpected);
+			if (!/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(normalizeShellWord(token))) commandExpected = false;
+			return styled;
+		})
+		.join("");
 }
 
 function clampLineLength(line: string, max: number = MAX_LINE_CHARS): string {
@@ -167,10 +257,10 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const timeoutSuffix = timeout ? ` (timeout ${timeout}s)` : "";
 			const commandLines = rawCommand.split("\n");
 			const maxCommandLines = 5;
-			const details = [highlightBashLine(commandLines[0]) + (commandLines.length === 1 ? timeoutSuffix : "")];
+			const details = [highlightBashLine(commandLines[0], theme) + (commandLines.length === 1 ? timeoutSuffix : "")];
 			const showCount = Math.min(commandLines.length, maxCommandLines + 1);
 			for (let i = 1; i < showCount; i++) {
-				details.push(highlightBashLine(commandLines[i]));
+				details.push(highlightBashLine(commandLines[i], theme));
 			}
 			if (commandLines.length > maxCommandLines + 1) {
 				details.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
