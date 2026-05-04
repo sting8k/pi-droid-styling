@@ -70,24 +70,30 @@ export default function (pi: ExtensionAPI) {
 		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
 	});
 
-	pi.on("agent_start", (_event, ctx) => {
-		const message = getRandomWorkingMessage();
-		ctx.ui.setWorkingMessage(message ? ctx.ui.theme.fg("accent", message) : undefined);
-	});
-
 	pi.on("session_start", (_event, ctx) => {
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
 		registerToolCallTags(pi);
-		ctx.ui.setWorkingIndicator({
-			frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
-			intervalMs: SPINNER_INTERVAL_MS,
-		});
+		const config = loadConfig();
+		if (config.customWorkingMessage) {
+			const workingMessage = getRandomWorkingMessage() ?? "Working...";
+			ctx.ui.setWorkingMessage("");
+			ctx.ui.setWorkingIndicator({
+				frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", `${frame} ${workingMessage}`)),
+				intervalMs: SPINNER_INTERVAL_MS,
+			});
+		} else {
+			ctx.ui.setWorkingMessage();
+			ctx.ui.setWorkingIndicator({
+				frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", frame)),
+				intervalMs: SPINNER_INTERVAL_MS,
+			});
+		}
 
 		// Preserve "alwaysExpanded" as initial state only.
 		// Let core-driven toggle (Ctrl+o) remain authoritative afterward.
-		if (loadConfig().alwaysExpanded && !ctx.ui.getToolsExpanded()) {
+		if (config.alwaysExpanded && !ctx.ui.getToolsExpanded()) {
 			ctx.ui.setToolsExpanded(true);
 		}
 

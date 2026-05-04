@@ -6,12 +6,14 @@ export interface DroidStylingConfig {
 	alwaysExpanded: boolean;
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
+	customWorkingMessage: boolean;
 }
 
 const DEFAULTS: DroidStylingConfig = {
 	alwaysExpanded: false,
 	maxExpandedLines: 80,
 	dimToolOutput: false,
+	customWorkingMessage: true,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
