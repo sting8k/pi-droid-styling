@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { badge, getTextOutput, parens, replaceTabs, isExpanded } from "./common.js";
+import { getTextOutput, indentToolBodyLines, isExpanded, parens, renderToolCallHeaderLines, replaceTabs } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
@@ -108,13 +108,13 @@ function createBashResultPreview(
 
 				if (remaining <= 0) {
 					cacheKey = cacheId;
-					cacheLines = ["", ...truncatedShown];
+					cacheLines = ["", ...indentToolBodyLines(truncatedShown)];
 					return cacheLines;
 				}
 
 				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, renderWidth, "…");
 				cacheKey = cacheId;
-				cacheLines = ["", ...truncatedShown, "", theme.fg("muted", hint)];
+				cacheLines = ["", ...indentToolBodyLines(truncatedShown), "", theme.fg("muted", hint)];
 				return cacheLines;
 			}
 
@@ -138,12 +138,12 @@ function createBashResultPreview(
 				const remaining = expandedLines.length - cfg.maxExpandedLines;
 				truncated.unshift(theme.fg("dim", `… ${remaining} earlier lines`));
 				cacheKey = cacheId;
-				cacheLines = ["", ...truncated];
+				cacheLines = ["", ...indentToolBodyLines(truncated)];
 				return cacheLines;
 			}
 
 			cacheKey = cacheId;
-			cacheLines = ["", ...expandedLines.map(applyColor)];
+			cacheLines = ["", ...indentToolBodyLines(expandedLines.map(applyColor))];
 			return cacheLines;
 		},
 	};
@@ -166,27 +166,18 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const timeoutSuffix = timeout ? ` (timeout ${timeout}s)` : "";
 			const commandLines = rawCommand.split("\n");
 			const maxCommandLines = 5;
-			const highlightedFirst = highlightBashLine(commandLines[0]);
-			const firstLine = `${badge(theme, "EXECUTE")} ${parens(theme, highlightedFirst + (commandLines.length === 1 ? timeoutSuffix : ""), true)}`;			return {
-				invalidate() {},
-				render(width: number): string[] {
-					const renderWidth = Math.max(1, width);
-					const lines = [...wrapTextWithAnsi(firstLine, renderWidth)];
-					const showCount = Math.min(commandLines.length, maxCommandLines + 1);
-					for (let i = 1; i < showCount; i++) {
-						const highlighted = highlightBashLine(commandLines[i]);
-						const wrapped = wrapTextWithAnsi(highlighted, renderWidth);
-						lines.push(...wrapped);
-					}
-					if (commandLines.length > maxCommandLines + 1) {
-						lines.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
-					}
-					if (commandLines.length > 1 && timeoutSuffix) {
-						lines.push(theme.fg("muted", timeoutSuffix.trim()));
-					}
-					return lines;
-				},
-			};
+			const details = [highlightBashLine(commandLines[0]) + (commandLines.length === 1 ? timeoutSuffix : "")];
+			const showCount = Math.min(commandLines.length, maxCommandLines + 1);
+			for (let i = 1; i < showCount; i++) {
+				details.push(highlightBashLine(commandLines[i]));
+			}
+			if (commandLines.length > maxCommandLines + 1) {
+				details.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
+			}
+			if (commandLines.length > 1 && timeoutSuffix) {
+				details.push(theme.fg("muted", timeoutSuffix.trim()));
+			}
+			return renderToolCallHeaderLines(theme, "EXECUTE", [parens(theme, details[0] ?? "", true), ...details.slice(1)]);
 		},
 		renderResult(result, options, theme: any, context: any) {
 			const raw = getTextOutput(result);

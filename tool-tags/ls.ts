@@ -3,7 +3,7 @@ import { createLsTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { countLines, dimWithElapsed, getTextOutput, indentToolBody, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerLsTool(pi: ExtensionAPI): void {
@@ -20,12 +20,12 @@ export function registerLsTool(pi: ExtensionAPI): void {
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
-			return new Text(`${badge(theme, "LIST DIRECTORY")} ${parens(theme, displayPath)}`, 0, 0);
+			return renderToolCallHeader(theme, "LIST DIRECTORY", displayPath);
 		},
 		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			if (context?.isError) {
-				return new Text(`\n${theme.fg("error", output || "Error")}`, 0, 0);
+				return new Text(`\n${theme.fg("error", indentToolBody(output || "Error"))}`, 0, 0);
 			}
 
 			let itemCount = 0;

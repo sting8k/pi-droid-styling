@@ -3,7 +3,7 @@ import { createFindTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, dimWithElapsed, getTextOutput, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { countLines, dimWithElapsed, getTextOutput, indentToolBody, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerFindTool(pi: ExtensionAPI): void {
@@ -22,12 +22,12 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
-			return new Text(`${badge(theme, "FIND FILES")} ${parens(theme, detail)}`, 0, 0);
+			return renderToolCallHeader(theme, "FIND FILES", detail);
 		},
 		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			if (context?.isError) {
-				return new Text(`\n${theme.fg("error", output || "Error")}`, 0, 0);
+				return new Text(`\n${theme.fg("error", indentToolBody(output || "Error"))}`, 0, 0);
 			}
 
 			let fileCount = 0;

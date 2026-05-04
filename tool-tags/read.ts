@@ -4,7 +4,7 @@ import { Text, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { badge, countLines, dimWithElapsed, extractTrailingNotice, getTextOutput, isExpanded, parens, shortenPath, stripTrailingNotice } from "./common.js";
+import { countLines, dimWithElapsed, extractTrailingNotice, getTextOutput, isExpanded, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
@@ -35,7 +35,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const detail = path ? `${path}${range}` : "(unknown)";
-			return new Text(`${badge(theme, "READ")} ${parens(theme, detail)}`, 0, 0);
+			return renderToolCallHeader(theme, "READ", detail);
 		},
 		renderResult(result: any, options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();

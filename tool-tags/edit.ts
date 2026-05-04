@@ -15,7 +15,7 @@ import {
 	firstText,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { badge, dimWithElapsed, getTextOutput, isExpanded, parens, resolveRelativePath } from "./common.js";
+import { dimWithElapsed, getTextOutput, isExpanded, renderToolCallHeader, resolveRelativePath } from "./common.js";
 import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
@@ -68,7 +68,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
-			return new Text(`${badge(theme, "EDIT")} ${parens(theme, detail)}`, 0, 0);
+			return renderToolCallHeader(theme, "EDIT", detail);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
 			// Handle partial/streaming state

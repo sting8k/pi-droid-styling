@@ -1,4 +1,6 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type { Component } from "@mariozechner/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
@@ -96,6 +98,45 @@ export function parens(theme: any, text: string, skipTextColor?: boolean): strin
 	}
 	const inner = typeof theme?.bold === "function" ? theme.bold(innerBase) : `\x1b[1m${innerBase}\x1b[22m`;
 	return `${openParen}${inner}${closeParen}`;
+}
+
+export function renderToolCallHeader(theme: any, label: string, detail: string, skipTextColor?: boolean): Component {
+	return renderToolCallHeaderLines(theme, label, [parens(theme, detail, skipTextColor)]);
+}
+
+export function renderToolCallHeaderLines(theme: any, label: string, detailLines: string[]): Component {
+	const prefix = `${badge(theme, label)} `;
+	const indent = " ".repeat(visibleWidth(prefix));
+	return {
+		invalidate() {},
+		render(width: number): string[] {
+			const bodyWidth = Math.max(1, width - visibleWidth(prefix));
+			const output: string[] = [];
+			for (let i = 0; i < detailLines.length; i++) {
+				const wrapped = wrapTextWithAnsi(detailLines[i] ?? "", bodyWidth);
+				if (i === 0) {
+					output.push(`${prefix}${wrapped[0] ?? ""}`);
+					output.push(...wrapped.slice(1).map((line) => `${indent}${line}`));
+				} else {
+					output.push(...wrapped.map((line) => `${indent}${line}`));
+				}
+			}
+			return output.length > 0 ? output : [prefix.trimEnd()];
+		},
+	};
+}
+
+export function indentToolBody(text: string, spaces = 2): string {
+	const indent = " ".repeat(spaces);
+	return text
+		.split("\n")
+		.map((line) => (line.length === 0 ? line : `${indent}${line}`))
+		.join("\n");
+}
+
+export function indentToolBodyLines(lines: string[], spaces = 2): string[] {
+	const indent = " ".repeat(spaces);
+	return lines.map((line) => (line.length === 0 ? line : `${indent}${line}`));
 }
 
 const MAX_RENDER_LINE_CHARS = 2000;

@@ -3,7 +3,7 @@ import { createWriteTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, dimWithElapsed, getTextOutput, parens, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { dimWithElapsed, getTextOutput, renderToolCallHeader, resolveRelativePath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 function parseWriteSummary(output: string): string | undefined {
@@ -44,7 +44,7 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
-			return new Text(`${badge(theme, "WRITE")} ${parens(theme, detail)}`, 0, 0);
+			return renderToolCallHeader(theme, "WRITE", detail);
 		},
 		renderResult(result: any, _options, theme: any, context: any) {
 			const output = getTextOutput(result);

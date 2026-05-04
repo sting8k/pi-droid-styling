@@ -3,7 +3,7 @@ import { createGrepTool } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
-import { badge, countLines, dimWithElapsed, getTextOutput, parens, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
+import { countLines, dimWithElapsed, getTextOutput, indentToolBody, renderLines, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_GREP_PREVIEW_LINES = 10;
@@ -24,7 +24,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
-			return new Text(`${badge(theme, "SEARCH")} ${parens(theme, detail)}`, 0, 0);
+			return renderToolCallHeader(theme, "SEARCH", detail);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
@@ -35,7 +35,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					maxLines: MAX_GREP_PREVIEW_LINES,
 					color: "error",
 				});
-				return new Text(`\n${body}`, 0, 0);
+				return new Text(`\n${indentToolBody(body)}`, 0, 0);
 			}
 
 			let matchCount = 0;
@@ -61,7 +61,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				maxLines: MAX_GREP_PREVIEW_LINES,
 				color: "toolOutput",
 			});
-			return new Text(`${dimWithElapsed(theme, summary, result)}\n${body}`, 0, 0);
+			return new Text(`${dimWithElapsed(theme, summary, result)}\n${indentToolBody(body)}`, 0, 0);
 		},
 	});
 }
