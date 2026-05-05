@@ -63,7 +63,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 		label: "edit",
 		description: editCore?.EDIT_TOOL_DESCRIPTION ?? baseEdit.description,
 		parameters: (editCore?.EditArgsSchema ?? baseEdit.parameters) as any,
-		prepareArguments: baseEdit.prepareArguments,
+		prepareArguments: editCore ? undefined : baseEdit.prepareArguments,
 		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
 			if (editCore) return editCore.executeEnhancedEdit(toolCallId, params, signal, onUpdate, ctx);
 			const tool = createEditToolDefinition(ctx.cwd);
@@ -75,7 +75,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			const detail = relPath || "(unknown)";
 			return renderToolCallHeader(theme, "EDIT", detail);
 		},
-		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
+		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
 			// Handle partial/streaming state
 			if (options.isPartial) {
 				return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`, 0, 0);
@@ -99,14 +99,14 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 
 			// Resolve language for syntax highlighting
 			const message = firstText(result.content);
-			const sourcePath = details?.path ?? extractEditedPath(message);
+			const argPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+			const sourcePath = details?.path ?? (argPath || extractEditedPath(message));
 			const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
 			// Build split-diff rows
 			const rows = buildSplitRows(diff);
 			const expanded = isExpanded(options);
 			const shouldHighlight =
-				expanded &&
 				Boolean(language) &&
 				diff.length <= MAX_HIGHLIGHT_DIFF_CHARS &&
 				rows.length <= MAX_HIGHLIGHT_DIFF_ROWS;
@@ -123,7 +123,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 				(meter ? ` ${meter}` : "") +
 				(elapsed ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}` : "");
 
-			// Render split-diff (highlight only when expanded + small output)
+			// Render split-diff with syntax colors for small outputs.
 			const maxRows = expanded ? 160 : 36;
 			const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 

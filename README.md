@@ -24,7 +24,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 - Boxed editor and adjusted TUI padding.
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
-- Footer stats including token speed.
+- Footer stats including token speed and compact session context.
 - Reload/session-safe patches to avoid stacked padding or spacing.
 
 ## Config
