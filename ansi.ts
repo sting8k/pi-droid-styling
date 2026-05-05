@@ -15,6 +15,13 @@ export function stripAnsi(str: string): string {
 // Color helpers (truecolor + 256color fallback)
 // ------------------------------------------------------------
 
+export function isHexColor(hex: string): boolean {
+	const cleaned = hex.replace("#", "");
+	return cleaned.length === 3
+		? /^[0-9a-fA-F]{3}$/.test(cleaned)
+		: cleaned.length === 6 && /^[0-9a-fA-F]{6}$/.test(cleaned);
+}
+
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	const cleaned = hex.replace("#", "");
 	if (cleaned.length === 3) {
@@ -111,6 +118,7 @@ function getFgEscape(theme: any, hex: string): { prefix: string; suffix: string 
 }
 
 export function fgHex(theme: any, hex: string, text: string): string {
+	if (!isHexColor(hex)) return text;
 	const { prefix, suffix } = getFgEscape(theme, hex);
 	return `${prefix}${text}${suffix}`;
 }

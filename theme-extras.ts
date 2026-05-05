@@ -36,51 +36,65 @@ let cachedExtras: Record<string, string> | null = null;
 let cachedVars: Record<string, string> | null = null;
 let cachedThemeName: string | null = null;
 
+function addThemeDir(searchDirs: Set<string>, dir: string): void {
+	if (existsSync(dir)) searchDirs.add(dir);
+}
+
+function collectThemeDirs(root: string, searchDirs: Set<string>, maxDepth = 4): void {
+	if (maxDepth < 0 || !existsSync(root)) return;
+	try {
+		for (const entry of readdirSync(root, { withFileTypes: true })) {
+			if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") continue;
+			const dir = join(root, entry.name);
+			if (entry.name === "themes") {
+				searchDirs.add(dir);
+				continue;
+			}
+			collectThemeDirs(dir, searchDirs, maxDepth - 1);
+		}
+	} catch {}
+}
+
+function readSettingsPackagePaths(settingsPath: string): string[] {
+	if (!existsSync(settingsPath)) return [];
+	try {
+		const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		const entries = [
+			...(Array.isArray(settings.packages) ? settings.packages : []),
+			...(Array.isArray(settings.extensions) ? settings.extensions : []),
+		];
+		return entries
+			.map((entry) => typeof entry === "string" ? entry : typeof entry?.source === "string" ? entry.source : "")
+			.filter((entry) => entry && !entry.startsWith("npm:") && !entry.startsWith("git:"));
+	} catch {
+		return [];
+	}
+}
+
 /**
  * Scan known theme directories for a JSON file whose "name" matches themeName.
  * Returns the parsed extras object, or null if not found.
  */
 function discoverThemeExtras(themeName: string): { extras: Record<string, string> | null; vars: Record<string, string> | null } | null {
-	const searchDirs: string[] = [];
+	const searchDirs = new Set<string>();
 
-	// 1. Global themes
-	const globalThemes = join(homedir(), ".pi", "agent", "themes");
-	if (existsSync(globalThemes)) searchDirs.push(globalThemes);
+	// 1. Global/project top-level theme dirs.
+	addThemeDir(searchDirs, join(homedir(), ".pi", "agent", "themes"));
+	addThemeDir(searchDirs, resolve(process.cwd(), ".pi", "themes"));
 
-	// 2. Project themes
-	const projectThemes = resolve(process.cwd(), ".pi", "themes");
-	if (existsSync(projectThemes)) searchDirs.push(projectThemes);
+	// 2. Installed git packages. Pi clones git packages under:
+	//    ~/.pi/agent/git/<host>/<user>/<repo> and <cwd>/.pi/git/<host>/<user>/<repo>.
+	collectThemeDirs(join(homedir(), ".pi", "agent", "git"), searchDirs);
+	collectThemeDirs(resolve(process.cwd(), ".pi", "git"), searchDirs);
 
-	// 3. Installed packages — scan ~/.pi/agent/git/*/themes and known package paths
-	const gitDir = join(homedir(), ".pi", "agent", "git");
-	if (existsSync(gitDir)) {
-		try {
-			for (const entry of readdirSync(gitDir, { withFileTypes: true })) {
-				if (entry.isDirectory()) {
-					const pkgThemes = join(gitDir, entry.name, "themes");
-					if (existsSync(pkgThemes)) searchDirs.push(pkgThemes);
-				}
-			}
-		} catch {}
+	// 3. Explicit local package paths from global/project settings.
+	const localPackagePaths = [
+		...readSettingsPackagePaths(join(homedir(), ".pi", "agent", "settings.json")),
+		...readSettingsPackagePaths(resolve(process.cwd(), ".pi", "settings.json")),
+	];
+	for (const packagePath of localPackagePaths) {
+		addThemeDir(searchDirs, resolve(process.cwd(), packagePath, "themes"));
 	}
-
-	// 4. Read settings.json to find package paths that might contain themes
-	try {
-		const settingsPath = join(homedir(), ".pi", "agent", "settings.json");
-		if (existsSync(settingsPath)) {
-			const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-			const allPaths: string[] = [
-				...(Array.isArray(settings.packages) ? settings.packages : []),
-				...(Array.isArray(settings.extensions) ? settings.extensions : []),
-			];
-			for (const p of allPaths) {
-				if (typeof p !== "string" || p.startsWith("npm:") || p.startsWith("git:")) continue;
-				// Local path — check for themes/ subdirectory
-				const pkgThemes = join(p, "themes");
-				if (existsSync(pkgThemes)) searchDirs.push(pkgThemes);
-			}
-		}
-	} catch {}
 
 	// Search all directories for matching theme file
 	for (const dir of searchDirs) {

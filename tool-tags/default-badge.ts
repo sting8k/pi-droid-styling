@@ -1,6 +1,6 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 
-import { fgHex, hexToRgb } from "../ansi.js";
+import { fgHex, hexToRgb, isHexColor } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
@@ -20,7 +20,7 @@ function makeBadge(t: any, label: string): string {
 
 function makeBadgeFallback(label: string): string {
 	const tagBg = getThemeExtra(null, "tagBgColor");
-	const { r, g, b } = hexToRgb(tagBg);
+	const { r, g, b } = hexToRgb(isHexColor(tagBg) ? tagBg : "#79c0ff");
 	return `\x1b[1m\x1b[48;2;${r};${g};${b}m\x1b[30m ${label} \x1b[0m`;
 }
 
