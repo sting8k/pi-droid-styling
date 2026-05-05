@@ -274,7 +274,9 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
 			const elapsed = formatElapsed(result);
-			const elapsedFooter = elapsed ? `${theme.fg("dim", "↳")} ${theme.italic(theme.fg("muted", elapsed))}` : "";
+			const elapsedFooter = elapsed
+				? indentToolBodyLines([theme.italic(theme.fg("dim", `↳ ${elapsed}`))])[0] ?? ""
+				: "";
 
 			if (!isExpanded(options)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
