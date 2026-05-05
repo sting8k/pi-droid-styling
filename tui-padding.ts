@@ -12,9 +12,15 @@ interface AnyComponent {
 const PAD_LEFT = 1;
 const PAD_RIGHT = 1;
 const PADDING_PREFIX = " ".repeat(PAD_LEFT);
+const KITTY_IMAGE_PREFIX = "\x1b_G";
+const ITERM_IMAGE_PREFIX = "\x1b]1337;File=";
 
 const PATCHED = Symbol.for("pi-droid-styling.tui-padding.patched");
 const ORIGINAL_RENDER = Symbol.for("pi-droid-styling.tui-padding.original-render");
+
+function isTerminalImageLine(line: string): boolean {
+	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM_IMAGE_PREFIX);
+}
 
 export function installTuiPadding(tui: AnyComponent): void {
 	const state = tui as any;
@@ -27,6 +33,7 @@ export function installTuiPadding(tui: AnyComponent): void {
 		const lines = state[ORIGINAL_RENDER](innerWidth);
 		return lines.map((line: string) => {
 			const padded = `${PADDING_PREFIX}${line}`;
+			if (isTerminalImageLine(line)) return padded;
 			if (visibleWidth(padded) > width) {
 				return truncateToWidth(padded, width, "");
 			}
