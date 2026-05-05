@@ -274,7 +274,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
 			const elapsed = formatElapsed(result);
-			const elapsedSuffix = elapsed ? theme.italic(theme.fg("muted", elapsed)) : "";
+			const elapsedFooter = elapsed ? `${theme.fg("dim", "↳")} ${theme.italic(theme.fg("muted", elapsed))}` : "";
 
 			if (!isExpanded(options)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
@@ -292,32 +292,24 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
 				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore);
-				if (!elapsedSuffix) return inner;
+				if (!elapsedFooter) return inner;
 				return {
 					invalidate() { inner.invalidate(); },
 					render(width: number): string[] {
 						const lines = [...inner.render(width)];
-						if (lines.length > 0) {
-							lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
-						} else {
-							lines.push(elapsedSuffix);
-						}
+						lines.push(elapsedFooter);
 						return lines;
 					},
 				};
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
 			const inner = createBashResultPreview(theme, output, options, outputColor, 0);
-			if (!elapsedSuffix) return inner;
+			if (!elapsedFooter) return inner;
 			return {
 				invalidate() { inner.invalidate(); },
 				render(width: number): string[] {
 					const lines = [...inner.render(width)];
-					if (lines.length > 0) {
-						lines[lines.length - 1] += ` ${theme.fg("dim", "–")} ${elapsedSuffix}`;
-					} else {
-						lines.push(elapsedSuffix);
-					}
+					lines.push(elapsedFooter);
 					return lines;
 				},
 			};
