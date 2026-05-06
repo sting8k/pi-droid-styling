@@ -6,7 +6,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
 import { getTextOutput, getToolBodyWidth, indentToolBodyLines, isExpanded, parens, renderToolCallHeaderLines, replaceTabs } from "./common.js";
-import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
+import { formatToolMetrics, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
 const MAX_LINE_CHARS = 2000;
@@ -273,9 +273,9 @@ export function registerBashTool(pi: ExtensionAPI): void {
 		renderResult(result, options, theme: any, context: any) {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
-			const elapsed = formatElapsed(result);
-			const elapsedFooter = elapsed
-				? indentToolBodyLines([theme.italic(theme.fg("dim", `↳ ${elapsed}`))])[0] ?? ""
+			const metrics = formatToolMetrics(result);
+			const metricsFooter = metrics
+				? indentToolBodyLines([theme.italic(theme.fg("dim", `↳ ${metrics}`))])[0] ?? ""
 				: "";
 
 			if (!isExpanded(options)) {
@@ -294,24 +294,24 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
 				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore);
-				if (!elapsedFooter) return inner;
+				if (!metricsFooter) return inner;
 				return {
 					invalidate() { inner.invalidate(); },
 					render(width: number): string[] {
 						const lines = [...inner.render(width)];
-						lines.push(elapsedFooter);
+						lines.push(metricsFooter);
 						return lines;
 					},
 				};
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
 			const inner = createBashResultPreview(theme, output, options, outputColor, 0);
-			if (!elapsedFooter) return inner;
+			if (!metricsFooter) return inner;
 			return {
 				invalidate() { inner.invalidate(); },
 				render(width: number): string[] {
 					const lines = [...inner.render(width)];
-					lines.push(elapsedFooter);
+					lines.push(metricsFooter);
 					return lines;
 				},
 			};

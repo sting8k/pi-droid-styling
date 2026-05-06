@@ -16,7 +16,7 @@ import {
 	renderDiffMeter,
 } from "../split-diff.js";
 import { dimWithElapsed, getTextOutput, isExpanded, renderToolCallHeader, resolveRelativePath } from "./common.js";
-import { formatElapsed, wrapExecuteWithTiming } from "./elapsed.js";
+import { formatToolMetrics, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
 const MAX_HIGHLIGHT_DIFF_ROWS = 120;
@@ -114,14 +114,14 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			// Build summary header with diff stats and meter
 			const { additions, removals } = countDiffStats(diff);
 			const meter = renderDiffMeter(theme, additions, removals);
-			const elapsed = formatElapsed(result);
+			const metrics = formatToolMetrics(result);
 			const summary =
 				`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 				` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 				` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
 				` ${theme.fg("muted", "split")}` +
 				(meter ? ` ${meter}` : "") +
-				(elapsed ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}` : "");
+				(metrics ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", metrics))}` : "");
 
 			// Render split-diff with syntax colors for small outputs.
 			const maxRows = expanded ? 160 : 36;

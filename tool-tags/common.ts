@@ -7,7 +7,7 @@ import { relative, resolve } from "node:path";
 import { fgHex } from "../ansi.js";
 import { loadConfig } from "../config.js";
 import { getThemeExtra } from "../theme-extras.js";
-import { formatElapsed } from "./elapsed.js";
+import { formatToolMetrics } from "./elapsed.js";
 
 export function isExpanded(options: ToolRenderResultOptions): boolean {
 	if (typeof options?.expanded === "boolean") return options.expanded;
@@ -189,8 +189,8 @@ export function renderLines(
 }
 
 export function dimWithElapsed(theme: any, summary: string, result: AgentToolResult<any> | undefined): string {
-	const elapsed = formatElapsed(result);
-	return elapsed
-		? `${theme.fg("dim", summary)} ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", elapsed))}`
+	const metrics = formatToolMetrics(result);
+	return metrics
+		? `${theme.fg("dim", summary)} ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", metrics))}`
 		: theme.fg("dim", summary);
 }
