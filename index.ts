@@ -12,6 +12,7 @@ import { getThemeVar, setFullTheme } from "./theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
+import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
 import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
@@ -22,6 +23,7 @@ import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelSco
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
+	installQuickEditRenderer(ToolExecutionComponent);
 	installFooterStatsPatch();
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -103,16 +105,32 @@ export default function (pi: ExtensionAPI) {
 		installUserMessagePrefix(ctx.ui.theme);
 		installAssistantUpdateDebounce(AssistantMessageComponent);
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
-		setFullTheme(ctx.ui.theme);
 
-		// Apply terminal background and foreground from theme vars
-		const bg = getThemeVar("bg");
-		const fg = getThemeVar("text");
-		if (bg) {
+		let lastTerminalBg = "";
+		let lastTerminalFg = "";
+		const syncTerminalTheme = (force = false) => {
+			setFullTheme(ctx.ui.theme, force);
+			const bg = getThemeVar("bg");
+			const fg = getThemeVar("text");
+			if (!bg || (bg === lastTerminalBg && fg === lastTerminalFg)) return;
+			lastTerminalBg = bg;
+			lastTerminalFg = fg;
 			applyTerminalBg(bg, fg || undefined);
-			process.once("exit", restoreTerminalBg);
-			process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
-			process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
+		};
+		syncTerminalTheme(true);
+		process.once("exit", restoreTerminalBg);
+		process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
+		process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
+
+		const interactiveModePrototype = InteractiveMode.prototype as any;
+		const originalUpdateEditorBorderColor = interactiveModePrototype.updateEditorBorderColor;
+		if (typeof originalUpdateEditorBorderColor === "function" && !originalUpdateEditorBorderColor.__droidTerminalThemeSync) {
+			const wrappedUpdateEditorBorderColor = function (this: any, ...args: any[]) {
+				syncTerminalTheme(true);
+				return originalUpdateEditorBorderColor.apply(this, args);
+			};
+			(wrappedUpdateEditorBorderColor as any).__droidTerminalThemeSync = true;
+			interactiveModePrototype.updateEditorBorderColor = wrappedUpdateEditorBorderColor;
 		}
 
 		setDefaultBadgeTheme(ctx.ui.theme);

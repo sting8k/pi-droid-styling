@@ -136,12 +136,12 @@ function resolveThemeName(theme: any): string | null {
 	return null;
 }
 
-export function setFullTheme(theme: any): void {
+export function setFullTheme(theme: any, force = false): void {
 	const themeName = resolveThemeName(theme);
 	if (!themeName) return;
 
-	// Only re-scan if theme changed
-	if (themeName === cachedThemeName && cachedExtras !== null) return;
+	// Only re-scan if theme changed, unless caller is syncing after a theme reload.
+	if (!force && themeName === cachedThemeName && cachedExtras !== null) return;
 
 	cachedThemeName = themeName;
 	const result = discoverThemeExtras(themeName);

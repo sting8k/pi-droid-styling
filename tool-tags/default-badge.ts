@@ -24,6 +24,30 @@ function makeBadgeFallback(label: string): string {
 	return `\x1b[1m\x1b[48;2;${r};${g};${b}m\x1b[30m ${label} \x1b[0m`;
 }
 
+function restAfterToolName(current: string, toolName: string): string {
+	const idx = current.indexOf(toolName);
+	if (idx < 0) return "";
+
+	// Skip past the tool name and any ANSI reset sequences after it.
+	let afterName = idx + toolName.length;
+	while (afterName < current.length && current[afterName] === "\x1b") {
+		const end = current.indexOf("m", afterName);
+		if (end >= 0) afterName = end + 1;
+		else break;
+	}
+	return current.slice(afterName);
+}
+
+function applyBadgeToFirstTextChild(container: any, toolName: string, badgeText: string): boolean {
+	if (!container?.children?.length) return false;
+	const firstChild = container.children[0];
+	if (!firstChild || typeof firstChild.setText !== "function") return false;
+
+	const current: string = firstChild.text ?? "";
+	firstChild.setText(`${badgeText}${restAfterToolName(current, toolName)}`);
+	return true;
+}
+
 export function setDefaultBadgeTheme(theme: any): void {
 	cachedTheme = theme;
 }
@@ -48,33 +72,17 @@ export function installDefaultBadge(): void {
 			? makeBadge(cachedTheme, label)
 			: makeBadgeFallback(label);
 
-		// Case 1: contentBox with children (custom tool rendering path)
-		if (this.contentBox?.children?.length > 0) {
-			const firstChild = this.contentBox.children[0];
-			if (firstChild && typeof firstChild.setText === "function") {
-				const current: string = firstChild.text ?? "";
-				// The existing text is typically: "toolName rest..." or styled "toolName"
-				// Find where tool name ends and preserve the rest
-				const plainName = toolName;
-				const idx = current.indexOf(plainName);
-				let rest = "";
-				if (idx >= 0) {
-					// Skip past the tool name and any ANSI reset sequences after it
-					let afterName = idx + plainName.length;
-					// Walk past trailing ANSI escape codes that belong to the name styling
-					while (afterName < current.length && current[afterName] === "\x1b") {
-						const end = current.indexOf("m", afterName);
-						if (end >= 0) afterName = end + 1;
-						else break;
-					}
-					rest = current.slice(afterName);
-				}
-				firstChild.setText(`${badgeText}${rest}`);
-				return result;
-			}
+		// Case 1: contentBox with children (default renderer shell path)
+		if (applyBadgeToFirstTextChild(this.contentBox, toolName, badgeText)) {
+			return result;
 		}
 
-		// Case 2: contentText (built-in fallback)
+		// Case 2: selfRenderContainer with children (renderShell: "self" tools)
+		if (applyBadgeToFirstTextChild(this.selfRenderContainer, toolName, badgeText)) {
+			return result;
+		}
+
+		// Case 3: contentText (no renderer fallback)
 		if (this.contentText && typeof this.contentText.setText === "function") {
 			const current: string = this.contentText.text ?? "";
 			if (current) {
