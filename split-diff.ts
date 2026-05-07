@@ -601,12 +601,12 @@ export class SplitDiffComponent implements Component {
 		const leftWidth = Math.max(20, Math.floor((safeWidth - separatorWidth) / 2));
 		const rightWidth = Math.max(20, safeWidth - separatorWidth - leftWidth);
 
-		const formatTopBorderCell = (columnWidth: number): string => {
+		const formatBorderCell = (columnWidth: number, junction: string): string => {
 			const safeColumnWidth = Math.max(1, columnWidth);
 			const chars = "─".repeat(safeColumnWidth).split("");
 			const dividerIndex = this.lineNumberWidth + 3;
 			if (dividerIndex >= 0 && dividerIndex < chars.length) {
-				chars[dividerIndex] = "┬";
+				chars[dividerIndex] = junction;
 			}
 			return this.theme.fg("borderMuted", chars.join(""));
 		};
@@ -625,7 +625,7 @@ export class SplitDiffComponent implements Component {
 		};
 
 		const lines: string[] = [];
-		lines.push(padRenderedLineWidth(formatTopBorderCell(leftWidth) + this.theme.fg("borderMuted", "─┬─") + formatTopBorderCell(rightWidth), safeWidth));
+		lines.push(padRenderedLineWidth(formatBorderCell(leftWidth, "┬") + this.theme.fg("borderMuted", "─┬─") + formatBorderCell(rightWidth, "┬"), safeWidth));
 		lines.push(padRenderedLineWidth(formatHeaderCell("old", leftWidth) + columnSeparator + formatHeaderCell("new", rightWidth), safeWidth));
 
 		for (const row of this.rows.slice(0, this.maxRows)) {
@@ -647,6 +647,7 @@ export class SplitDiffComponent implements Component {
 			lines.push(this.theme.fg("muted", `... ${this.rows.length - this.maxRows} more rows`));
 		}
 
+		lines.push(padRenderedLineWidth(formatBorderCell(leftWidth, "┴") + this.theme.fg("borderMuted", "─┴─") + formatBorderCell(rightWidth, "┴"), safeWidth));
 		this.cacheWidth = width;
 		this.cacheLines = lines;
 		return lines;

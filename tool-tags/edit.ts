@@ -15,7 +15,7 @@ import {
 	firstText,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { dimWithElapsed, getTextOutput, isExpanded, renderToolCallHeader, resolveRelativePath } from "./common.js";
+import { dimWithElapsed, getTextOutput, isExpanded, renderToolCallHeader, renderToolMetricsFooter, resolveRelativePath } from "./common.js";
 import { formatToolMetrics, wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
@@ -120,8 +120,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 				` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 				` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
 				` ${theme.fg("muted", "split")}` +
-				(meter ? ` ${meter}` : "") +
-				(metrics ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", metrics))}` : "");
+				(meter ? ` ${meter}` : "");
 
 			// Render split-diff with syntax colors for small outputs.
 			const maxRows = expanded ? 160 : 36;
@@ -131,7 +130,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 				render(width: number): string[] {
 					const safeWidth = Math.max(20, width - 1);
 					const headerLines = new Text(summary, 0, 0).render(safeWidth);
-					return [...headerLines, ...split.render(safeWidth)];
+					return [...headerLines, ...split.render(safeWidth), ...renderToolMetricsFooter(theme, safeWidth, metrics)];
 				},
 				invalidate(): void {
 					split.invalidate();

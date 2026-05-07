@@ -194,3 +194,7 @@ export function dimWithElapsed(theme: any, summary: string, result: AgentToolRes
 		? `${theme.fg("dim", summary)} ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", metrics))}`
 		: theme.fg("dim", summary);
 }
+
+export function renderToolMetricsFooter(theme: any, _width: number, metrics: string): string[] {
+	return metrics ? [theme.italic(theme.fg("muted", `↳ ${metrics}`))] : [];
+}

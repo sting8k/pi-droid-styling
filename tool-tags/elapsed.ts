@@ -24,18 +24,28 @@ function formatCompactCount(value: number): string {
 	return `${Math.round(value / 1000000)}M`;
 }
 
-export function formatElapsed(result: AgentToolResult<any> | undefined): string {
-	const ms = (result?.details as any)?.[ELAPSED_KEY];
+export function formatElapsedMs(ms: number | undefined): string {
 	if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
 	if (ms < 1000) return `${Math.round(ms)}ms`;
 	const s = ms / 1000;
 	return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
 }
 
-export function formatOutputSize(result: AgentToolResult<any> | undefined): string {
-	const chars = (result?.details as any)?.[OUTPUT_CHARS_KEY];
+export function formatOutputChars(chars: number | undefined): string {
 	if (typeof chars !== "number" || !Number.isFinite(chars) || chars <= 0) return "";
 	return `${formatCompactCount(chars)} ${chars === 1 ? "char" : "chars"}`;
+}
+
+export function formatToolMetricsFromValues(elapsedMs: number | undefined, outputChars: number | undefined): string {
+	return [formatElapsedMs(elapsedMs), formatOutputChars(outputChars)].filter(Boolean).join(" · ");
+}
+
+export function formatElapsed(result: AgentToolResult<any> | undefined): string {
+	return formatElapsedMs((result?.details as any)?.[ELAPSED_KEY]);
+}
+
+export function formatOutputSize(result: AgentToolResult<any> | undefined): string {
+	return formatOutputChars((result?.details as any)?.[OUTPUT_CHARS_KEY]);
 }
 
 export function formatToolMetrics(result: AgentToolResult<any> | undefined): string {
