@@ -9,7 +9,7 @@ import {
 	countDiffStats,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { getTextOutput, isExpanded } from "./common.js";
+import { getTextOutput, isExpanded, renderToolCallHeader, resolveRelativePath } from "./common.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.patched");
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
@@ -41,6 +41,13 @@ function extractQuickEditDiff(text: string): string | undefined {
 	}
 
 	return diffLines.length > 0 ? diffLines.join("\n") : undefined;
+}
+
+function renderQuickEditCall(args: any, theme: any) {
+	const rawPath = String(args?.path ?? "");
+	const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+	const detail = relPath || "(unknown)";
+	return renderToolCallHeader(theme, "QUICK EDIT", detail);
 }
 
 function renderQuickEditResult(result: any, options: ToolRenderResultOptions, theme: any, context: QuickEditRenderContext = {}) {
@@ -95,10 +102,15 @@ function renderQuickEditResult(result: any, options: ToolRenderResultOptions, th
 export function installQuickEditRenderer(ToolExecutionComponentClass: any): void {
 	const proto = ToolExecutionComponentClass?.prototype;
 	if (!proto || proto[PATCHED]) return;
-	if (typeof proto.getResultRenderer !== "function") return;
+	if (typeof proto.getResultRenderer !== "function" || typeof proto.getCallRenderer !== "function") return;
 	proto[PATCHED] = true;
 
+	const baseGetCallRenderer = proto.getCallRenderer;
 	const baseGetResultRenderer = proto.getResultRenderer;
+	proto.getCallRenderer = function patchedQuickEditCallRenderer(this: any, ...args: any[]) {
+		if (this.toolName === "quick_edit") return renderQuickEditCall;
+		return baseGetCallRenderer.apply(this, args);
+	};
 	proto.getResultRenderer = function patchedQuickEditResultRenderer(this: any, ...args: any[]) {
 		if (this.toolName === "quick_edit") return renderQuickEditResult;
 		return baseGetResultRenderer.apply(this, args);
