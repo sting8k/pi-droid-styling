@@ -31,10 +31,10 @@ const QUICK_EDIT_TOOLS: Record<string, QuickEditToolConfig> = {
 		applyingLabel: "quick-edit",
 		fallbackLabel: "Quick edit applied",
 	},
-	structured_edit: {
-		headerLabel: "STRUCTURED EDIT",
-		applyingLabel: "structured-edit",
-		fallbackLabel: "Structured edit applied",
+	substitute_edit: {
+		headerLabel: "SUBSTITUTE EDIT",
+		applyingLabel: "substitute-edit",
+		fallbackLabel: "Substitute edit applied",
 	},
 };
 
@@ -84,22 +84,20 @@ function extractQuickEditDiff(text: string): string | undefined {
 			continue;
 		}
 
-		const match = line.match(/^([+-]) (?:(\d+):)?([A-Z2-7]{6}|[0-9a-f]{3})\|(.*)$/);
+		const match = line.match(/^([+-]) (.*)$/);
 		if (match) {
-			const [, sign, legacyLineNo, hash, content = ""] = match;
-			let gutter = legacyLineNo ?? hash;
-			if (!legacyLineNo) {
-				if (sign === "-" && oldLine !== undefined) gutter = String(oldLine++);
-				if (sign === "+" && newLine !== undefined) gutter = String(newLine++);
-			}
+			const [, sign, content = ""] = match;
+			let gutter = "";
+			if (sign === "-" && oldLine !== undefined) gutter = String(oldLine++);
+			if (sign === "+" && newLine !== undefined) gutter = String(newLine++);
+			if (!gutter) continue;
 			if (sign === "-") chunkRemovals++;
 			if (sign === "+") chunkAdditions++;
 			diffLines.push(`${sign} ${gutter} ${content}`);
 			continue;
 		}
 
-		// Context output starts after the compact diff block.
-		if (/^(?:\d+:)?(?:[A-Z2-7]{6}|[0-9a-f]{3})\|/.test(line) || line === "---") break;
+		if (line === "---") break;
 	}
 
 	return diffLines.length > 0 ? diffLines.join("\n") : undefined;

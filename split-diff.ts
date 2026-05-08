@@ -281,7 +281,7 @@ function parseDiffLine(rawLine: string): DiffLine | undefined {
 	const [, prefix, rest = ""] = match;
 	if (prefix !== "+" && prefix !== "-" && prefix !== " ") return undefined;
 
-	const gutterMatch = rest.match(/^((?:\d+|[A-Z2-7]{6}|[0-9a-f]{3}))\s(.*)$/);
+	const gutterMatch = rest.match(/^(\d+)\s(.*)$/);
 	const lineNumber = gutterMatch?.[1] ?? "";
 	const line = gutterMatch?.[2] ?? rest;
 	const cleanLineNumber = sanitizeSingleLineText(lineNumber);

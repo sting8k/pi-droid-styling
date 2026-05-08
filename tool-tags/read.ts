@@ -10,6 +10,37 @@ import { wrapExecuteWithTiming } from "./elapsed.js";
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
 const MAX_HIGHLIGHT_OUTPUT_LINES = 300;
 
+type NumberedReadLine = {
+	lineNumber: string;
+	content: string;
+};
+
+type ParsedReadOutput = {
+	fileHash?: string;
+	numberedLines?: NumberedReadLine[];
+	body: string;
+};
+
+function parseReadOutput(text: string): ParsedReadOutput {
+	const fileHashMatch = text.match(/^fileHash: ([^\n]+)\n\n/);
+	const body = fileHashMatch ? text.slice(fileHashMatch[0].length) : text;
+	const rawLines = body ? body.split("\n") : [];
+	const numberedLines = rawLines.map((line) => line.match(/^\s*(\d+)\| ?(.*)$/));
+
+	if (numberedLines.length > 0 && numberedLines.every(Boolean)) {
+		return {
+			fileHash: fileHashMatch?.[1],
+			body: numberedLines.map((match) => match?.[2] ?? "").join("\n"),
+			numberedLines: numberedLines.map((match) => ({
+				lineNumber: match?.[1] ?? "",
+				content: match?.[2] ?? "",
+			})),
+		};
+	}
+
+	return { fileHash: fileHashMatch?.[1], body };
+}
+
 export function registerReadTool(pi: ExtensionAPI): void {
 	const baseRead = createReadTool(process.cwd());
 	pi.registerTool({
@@ -53,11 +84,12 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const stripped = stripTrailingNotice(output);
+			const parsed = parseReadOutput(stripped);
 			const truncationNotice = extractTrailingNotice(output);
 			const linesRead =
 				typeof result.details?.truncation?.outputLines === "number"
 					? result.details.truncation.outputLines
-					: countLines(stripped);
+					: parsed.numberedLines?.length ?? countLines(parsed.body);
 
 			const summary = dimWithElapsed(theme, `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`, result);
 
@@ -87,30 +119,50 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					if (truncationNotice) footer.push(theme.fg("warning", truncationNotice));
 					footer.push("", summary);
 					const budget = maxLines > 0 ? maxLines - footer.length : 0;
-					const renderPlain = (): string[] => {
+					const renderPlain = (text: string): string[] => {
 						const out: string[] = [];
-						for (const line of stripped.split("\n")) {
+						for (const line of text.split("\n")) {
 							out.push(...wrapTextWithAnsi(theme.fg("toolOutput", line), renderWidth));
 						}
 						return out;
 					};
-					const lineCount = countLines(stripped);
+					const lineCount = parsed.numberedLines?.length ?? countLines(parsed.body);
 					const shouldHighlight =
 						expanded &&
 						Boolean(lang) &&
-						stripped.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
+						parsed.body.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
 						lineCount <= MAX_HIGHLIGHT_OUTPUT_LINES;
 
-					let highlighted: string[] = [];
-					if (shouldHighlight && lang) {
-						try {
-							highlighted = highlightCode(stripped, lang).flatMap((l) => wrapTextWithAnsi(l, renderWidth));
-						} catch {
-							highlighted = renderPlain();
+					const renderBody = (): string[] => {
+						if (!parsed.numberedLines) return renderPlain(parsed.fileHash ? `fileHash: ${parsed.fileHash}\n\n${parsed.body}` : parsed.body);
+
+						let bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
+						if (shouldHighlight && lang) {
+							try {
+								bodyLines = highlightCode(parsed.body, lang);
+							} catch {
+								bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
+							}
 						}
-					} else {
-						highlighted = renderPlain();
-					}
+
+						const out: string[] = [];
+						if (parsed.fileHash) out.push(theme.fg("muted", `fileHash: ${parsed.fileHash}`), "");
+
+						const numberWidth = Math.max(...parsed.numberedLines.map((line) => line.lineNumber.length));
+						const gutterWidth = numberWidth + 3;
+						const contentWidth = Math.max(1, renderWidth - gutterWidth);
+						for (let i = 0; i < parsed.numberedLines.length; i++) {
+							const numberedLine = parsed.numberedLines[i]!;
+							const wrapped = wrapTextWithAnsi(bodyLines[i] ?? "", contentWidth);
+							const gutter = theme.fg("dim", `${numberedLine.lineNumber.padStart(numberWidth)} │ `);
+							const continuation = theme.fg("dim", `${"".padStart(numberWidth)} │ `);
+							out.push(`${gutter}${wrapped[0] ?? ""}`);
+							out.push(...wrapped.slice(1).map((line) => `${continuation}${line}`));
+						}
+						return out;
+					};
+
+					const highlighted = renderBody();
 					if (maxLines > 0 && highlighted.length > budget) {
 						const truncated = highlighted.slice(0, budget);
 						const remaining = highlighted.length - budget;
