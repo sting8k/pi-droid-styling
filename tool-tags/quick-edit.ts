@@ -55,18 +55,51 @@ function extractQuickEditDiff(text: string): string | undefined {
 	if (start < 0) return undefined;
 
 	const diffLines: string[] = [];
-	for (const line of lines.slice(start + 1)) {
-		if (line === "" || /^:\d+(?:-\d+)?$/.test(line)) continue;
+	let cumulativeDelta = 0;
+	let oldLine: number | undefined;
+	let newLine: number | undefined;
+	let chunkAdditions = 0;
+	let chunkRemovals = 0;
 
-		const match = line.match(/^([+-]) (\d+):[0-9a-f]{3}\|(.*)$/);
+	const finishChunk = () => {
+		cumulativeDelta += chunkAdditions - chunkRemovals;
+		oldLine = undefined;
+		newLine = undefined;
+		chunkAdditions = 0;
+		chunkRemovals = 0;
+	};
+
+	for (const line of lines.slice(start + 1)) {
+		if (line === "") {
+			finishChunk();
+			continue;
+		}
+
+		const headerMatch = line.match(/^:(\d+)(?:-\d+)?$/);
+		if (headerMatch) {
+			finishChunk();
+			const startLine = Number.parseInt(headerMatch[1] ?? "", 10);
+			oldLine = startLine;
+			newLine = startLine + cumulativeDelta;
+			continue;
+		}
+
+		const match = line.match(/^([+-]) (?:(\d+):)?([A-Z2-7]{6}|[0-9a-f]{3})\|(.*)$/);
 		if (match) {
-			const [, sign, lineNo, content = ""] = match;
-			diffLines.push(`${sign} ${lineNo} ${content}`);
+			const [, sign, legacyLineNo, hash, content = ""] = match;
+			let gutter = legacyLineNo ?? hash;
+			if (!legacyLineNo) {
+				if (sign === "-" && oldLine !== undefined) gutter = String(oldLine++);
+				if (sign === "+" && newLine !== undefined) gutter = String(newLine++);
+			}
+			if (sign === "-") chunkRemovals++;
+			if (sign === "+") chunkAdditions++;
+			diffLines.push(`${sign} ${gutter} ${content}`);
 			continue;
 		}
 
 		// Context output starts after the compact diff block.
-		if (/^\d+:[0-9a-f]{3}\|/.test(line) || line === "---") break;
+		if (/^(?:\d+:)?(?:[A-Z2-7]{6}|[0-9a-f]{3})\|/.test(line) || line === "---") break;
 	}
 
 	return diffLines.length > 0 ? diffLines.join("\n") : undefined;

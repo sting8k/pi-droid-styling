@@ -262,13 +262,12 @@ function wrapPlainText(text: string, width: number): string[] {
 
 function parseLineNumber(value: string): number | undefined {
 	const trimmed = value.trim();
-	if (!trimmed) return undefined;
+	if (!/^\d+$/.test(trimmed)) return undefined;
 	const parsed = Number.parseInt(trimmed, 10);
-	if (!Number.isFinite(parsed)) return undefined;
-	return parsed;
+	return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function makeDiffLine(prefix: "+" | "-" | " ", lineNumber: number | undefined, line: string): DiffLine {
+function makeDiffLine(prefix: "+" | "-" | " ", lineNumber: string | number | undefined, line: string): DiffLine {
 	return {
 		prefix,
 		lineNumber: lineNumber === undefined ? "" : String(lineNumber),
@@ -277,10 +276,14 @@ function makeDiffLine(prefix: "+" | "-" | " ", lineNumber: number | undefined, l
 }
 
 function parseDiffLine(rawLine: string): DiffLine | undefined {
-	const match = rawLine.match(/^([+\- ])(\s*\d*)\s(.*)$/);
+	const match = rawLine.match(/^([+\- ])\s?(.*)$/);
 	if (!match) return undefined;
-	const [, prefix, lineNumber = "", line = ""] = match;
+	const [, prefix, rest = ""] = match;
 	if (prefix !== "+" && prefix !== "-" && prefix !== " ") return undefined;
+
+	const gutterMatch = rest.match(/^((?:\d+|[A-Z2-7]{6}|[0-9a-f]{3}))\s(.*)$/);
+	const lineNumber = gutterMatch?.[1] ?? "";
+	const line = gutterMatch?.[2] ?? rest;
 	const cleanLineNumber = sanitizeSingleLineText(lineNumber);
 	const cleanLine = sanitizeSingleLineText(line).replace(/\t/g, "    ");
 	return { prefix, lineNumber: cleanLineNumber, line: cleanLine };
