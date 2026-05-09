@@ -36,6 +36,11 @@ const QUICK_EDIT_TOOLS: Record<string, QuickEditToolConfig> = {
 		applyingLabel: "substitute-edit",
 		fallbackLabel: "Substitute edit applied",
 	},
+	target_edit: {
+		headerLabel: "TARGET EDIT",
+		applyingLabel: "target-edit",
+		fallbackLabel: "Target edit applied",
+	},
 };
 
 function getQuickEditToolConfig(toolName: unknown): QuickEditToolConfig | undefined {
