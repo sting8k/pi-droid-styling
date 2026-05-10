@@ -31,6 +31,7 @@ export default function (pi: ExtensionAPI) {
 	installStartupUiPatch(InteractiveMode);
 	registerToolCallTags(pi);
 
+	let currentThinkingLevel: string | undefined;
 	let assistantResponseStartMs: number | null = null;
 	let currentAssistantTokensPerSecond: number | null = null;
 	let lastAssistantTokensPerSecond: number | null = null;
@@ -64,6 +65,10 @@ export default function (pi: ExtensionAPI) {
 		if (currentAssistantTokensPerSecond !== normalizedSpeed) {
 			currentAssistantTokensPerSecond = normalizedSpeed;
 		}
+	});
+
+	pi.on("thinking_level_select", (event) => {
+		currentThinkingLevel = event.level;
 	});
 
 	pi.on("message_end", (event) => {
@@ -211,6 +216,7 @@ export default function (pi: ExtensionAPI) {
 								provider: model.provider,
 								id: model.id,
 								reasoning: model.reasoning,
+								thinkingLevel: currentThinkingLevel,
 							}
 							: undefined;
 					} catch (error) {
