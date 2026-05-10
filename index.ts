@@ -90,8 +90,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
-		const initialContextUsage = ctx.getContextUsage();
-		const initialModel = ctx.model;
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
@@ -189,21 +187,37 @@ export default function (pi: ExtensionAPI) {
 			return cachedBranch;
 		};
 
-
+		const isStaleContextError = (error: unknown): boolean =>
+			error instanceof Error && error.message.includes("stale after session replacement or reload");
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme,
-				() => initialContextUsage,
-				() => initialModel
-					? {
-						provider: initialModel.provider,
-						id: initialModel.id,
-						reasoning: initialModel.reasoning,
+				() => {
+					try {
+						return ctx.getContextUsage();
+					} catch (error) {
+						if (isStaleContextError(error)) return undefined;
+						throw error;
 					}
-					: undefined,
+				},
+				() => {
+					try {
+						const model = ctx.model;
+						return model
+							? {
+								provider: model.provider,
+								id: model.id,
+								reasoning: model.reasoning,
+							}
+							: undefined;
+					} catch (error) {
+						if (isStaleContextError(error)) return undefined;
+						throw error;
+					}
+				},
 				fetchBranch,
 				() => currentAssistantTokensPerSecond ?? lastAssistantTokensPerSecond,
 			);
