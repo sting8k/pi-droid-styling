@@ -43,6 +43,9 @@ export default function (pi: ExtensionAPI) {
 		return outputTokens / elapsedSeconds;
 	}
 
+	const isStaleContextError = (error: unknown): boolean =>
+		error instanceof Error && error.message.includes("stale after session replacement or reload");
+
 	pi.on("message_start", (event) => {
 		if (event.message.role !== "assistant") return;
 		assistantResponseStartMs = Date.now();
@@ -99,6 +102,12 @@ export default function (pi: ExtensionAPI) {
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
+		try {
+			currentThinkingLevel = pi.getThinkingLevel();
+		} catch (error) {
+			if (!isStaleContextError(error)) throw error;
+			currentThinkingLevel = undefined;
+		}
 		const config = loadConfig();
 		if (config.customWorkingMessage) {
 			const workingMessage = getRandomWorkingMessage() ?? "Working...";
@@ -192,8 +201,6 @@ export default function (pi: ExtensionAPI) {
 			return cachedBranch;
 		};
 
-		const isStaleContextError = (error: unknown): boolean =>
-			error instanceof Error && error.message.includes("stale after session replacement or reload");
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
