@@ -20,6 +20,8 @@ import { installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./virtualize-chat.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
+let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
+let terminalSignalHandlersInstalled = false;
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
@@ -27,6 +29,7 @@ export default function (pi: ExtensionAPI) {
 	installFooterStatsPatch();
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
+	registerToolCallTags(pi);
 
 	let assistantResponseStartMs: number | null = null;
 	let currentAssistantTokensPerSecond: number | null = null;
@@ -75,41 +78,53 @@ export default function (pi: ExtensionAPI) {
 		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
-		setCompactStartupHeader(ctx.ui, ctx.cwd);
+	pi.on("session_shutdown", (_event, ctx) => {
+		syncTerminalThemeForCurrentSession = undefined;
+		try {
+			ctx.ui.setEditorComponent(undefined);
+		} catch {
+			// Best effort: shutdown happens during session replacement.
+		}
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		const sessionUi = ctx.ui;
+		const sessionCwd = ctx.cwd;
+		const initialContextUsage = ctx.getContextUsage();
+		const initialModel = ctx.model;
+		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantResponseStartMs = null;
 		currentAssistantTokensPerSecond = null;
 		lastAssistantTokensPerSecond = null;
-		await registerToolCallTags(pi);
 		const config = loadConfig();
 		if (config.customWorkingMessage) {
 			const workingMessage = getRandomWorkingMessage() ?? "Working...";
-			ctx.ui.setWorkingMessage("");
-			ctx.ui.setWorkingIndicator({
-				frames: SPINNER_FRAMES.map((frame) => ctx.ui.theme.fg("accent", `${frame} ${workingMessage}`)),
+			sessionUi.setWorkingMessage("");
+			sessionUi.setWorkingIndicator({
+				frames: SPINNER_FRAMES.map((frame) => sessionUi.theme.fg("accent", `${frame} ${workingMessage}`)),
 				intervalMs: SPINNER_INTERVAL_MS,
 			});
 		} else {
-			ctx.ui.setWorkingMessage();
-			ctx.ui.setWorkingIndicator();
+			sessionUi.setWorkingMessage();
+			sessionUi.setWorkingIndicator();
 		}
 
 		// Preserve "alwaysExpanded" as initial state only.
 		// Let core-driven toggle (Ctrl+o) remain authoritative afterward.
-		if (config.alwaysExpanded && !ctx.ui.getToolsExpanded()) {
-			ctx.ui.setToolsExpanded(true);
+		if (config.alwaysExpanded && !sessionUi.getToolsExpanded()) {
+			sessionUi.setToolsExpanded(true);
 		}
 
 		// No setTheme() call — use whatever theme is selected in settings
-		installAssistantMessagePrefix(ctx.ui.theme);
-		installUserMessagePrefix(ctx.ui.theme);
+		installAssistantMessagePrefix(sessionUi.theme);
+		installUserMessagePrefix(sessionUi.theme);
 		installAssistantUpdateDebounce(AssistantMessageComponent);
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
 
 		let lastTerminalBg = "";
 		let lastTerminalFg = "";
 		const syncTerminalTheme = (force = false) => {
-			setFullTheme(ctx.ui.theme, force);
+			setFullTheme(sessionUi.theme, force);
 			const bg = getThemeVar("bg");
 			const fg = getThemeVar("text");
 			if (!bg || (bg === lastTerminalBg && fg === lastTerminalFg)) return;
@@ -117,24 +132,28 @@ export default function (pi: ExtensionAPI) {
 			lastTerminalFg = fg;
 			applyTerminalBg(bg, fg || undefined);
 		};
+		syncTerminalThemeForCurrentSession = syncTerminalTheme;
 		syncTerminalTheme(true);
-		process.once("exit", restoreTerminalBg);
-		process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
-		process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
+		if (!terminalSignalHandlersInstalled) {
+			terminalSignalHandlersInstalled = true;
+			process.once("exit", restoreTerminalBg);
+			process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
+			process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
+		}
 
 		const interactiveModePrototype = InteractiveMode.prototype as any;
 		const originalUpdateEditorBorderColor = interactiveModePrototype.updateEditorBorderColor;
 		if (typeof originalUpdateEditorBorderColor === "function" && !originalUpdateEditorBorderColor.__droidTerminalThemeSync) {
 			const wrappedUpdateEditorBorderColor = function (this: any, ...args: any[]) {
-				syncTerminalTheme(true);
+				syncTerminalThemeForCurrentSession?.(true);
 				return originalUpdateEditorBorderColor.apply(this, args);
 			};
 			(wrappedUpdateEditorBorderColor as any).__droidTerminalThemeSync = true;
 			interactiveModePrototype.updateEditorBorderColor = wrappedUpdateEditorBorderColor;
 		}
 
-		setDefaultBadgeTheme(ctx.ui.theme);
-		setToolSpacingTheme(ctx.ui.theme);
+		setDefaultBadgeTheme(sessionUi.theme);
+		setToolSpacingTheme(sessionUi.theme);
 
 		let cachedBranch: { branch: string; insertions?: number; deletions?: number } | null = null;
 		let branchLastFetch = 0;
@@ -148,7 +167,7 @@ export default function (pi: ExtensionAPI) {
 			const runGit = (args: string[]): Promise<string> =>
 				new Promise((resolve) => {
 					try {
-						const p = spawn("git", args, { cwd: ctx.cwd, stdio: ["ignore", "pipe", "ignore"] });
+						const p = spawn("git", args, { cwd: sessionCwd, stdio: ["ignore", "pipe", "ignore"] });
 						let out = "";
 						p.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
 						p.on("close", (code: number) => resolve(code === 0 ? out.trim() : ""));
@@ -170,38 +189,21 @@ export default function (pi: ExtensionAPI) {
 			return cachedBranch;
 		};
 
-		const isStaleContextError = (error: unknown): boolean =>
-			error instanceof Error && error.message.includes("stale after session replacement or reload");
 
-		ctx.ui.setEditorComponent((tui, theme, kb) => {
+		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
 			return new BoxEditor(
-				tui, theme, kb, ctx.ui.theme ?? theme,
-				() => {
-					try {
-						return ctx.getContextUsage();
-					} catch (error) {
-						if (isStaleContextError(error)) return undefined;
-						throw error;
+				tui, theme, kb, sessionUi.theme ?? theme,
+				() => initialContextUsage,
+				() => initialModel
+					? {
+						provider: initialModel.provider,
+						id: initialModel.id,
+						reasoning: initialModel.reasoning,
 					}
-				},
-				() => {
-					try {
-						const m = ctx.model;
-						if (!m) return undefined;
-						return {
-							provider: m.provider,
-							id: m.id,
-							reasoning: m.reasoning,
-							thinkingLevel: pi.getThinkingLevel(),
-						};
-					} catch (error) {
-						if (isStaleContextError(error)) return undefined;
-						throw error;
-					}
-				},
+					: undefined,
 				fetchBranch,
 				() => currentAssistantTokensPerSecond ?? lastAssistantTokensPerSecond,
 			);

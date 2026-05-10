@@ -18,13 +18,8 @@ const toolRegistry: Record<string, (pi: ExtensionAPI) => void | Promise<void>> =
 	bash: registerBashTool,
 };
 
-export async function registerToolCallTags(pi: ExtensionAPI): Promise<void> {
-	const activeTools = pi.getActiveTools();
-	const activeSet = new Set(activeTools);
-
-	for (const [name, register] of Object.entries(toolRegistry)) {
-		if (activeSet.has(name)) {
-			await register(pi);
-		}
+export function registerToolCallTags(pi: ExtensionAPI): void {
+	for (const register of Object.values(toolRegistry)) {
+		register(pi);
 	}
 }
