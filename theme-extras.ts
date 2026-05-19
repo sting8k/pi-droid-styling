@@ -1,11 +1,14 @@
 // Theme extras reader
-// Reads extension-specific "extras" from the active theme's JSON file on disk.
-// Since "extras" is not part of the official pi theme schema, the framework
-// doesn't expose it via theme.definition. We locate and parse the file directly.
+// Reads extension-specific "extras" plus raw theme vars/export values from
+// the active theme's JSON file on disk. The framework doesn't expose all of
+// these raw values via theme.definition, so we locate and parse the file directly.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const extensionDir = dirname(fileURLToPath(import.meta.url));
 
 const HARDCODED_DEFAULTS: Record<string, string> = {
 	assistantPrefix: "•",
@@ -34,10 +37,24 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 
 let cachedExtras: Record<string, string> | null = null;
 let cachedVars: Record<string, string> | null = null;
+let cachedThemeExport: Record<string, string> | null = null;
 let cachedThemeName: string | null = null;
+
+type ThemeDiscovery = {
+	extras: Record<string, string> | null;
+	vars: Record<string, string> | null;
+	themeExport: Record<string, string> | null;
+};
 
 function addThemeDir(searchDirs: Set<string>, dir: string): void {
 	if (existsSync(dir)) searchDirs.add(dir);
+}
+
+function addBundledThemeDirs(searchDirs: Set<string>): void {
+	for (const root of [extensionDir, process.cwd()]) {
+		addThemeDir(searchDirs, resolve(root, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "modes", "interactive", "theme"));
+		addThemeDir(searchDirs, resolve(root, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "theme"));
+	}
 }
 
 function collectThemeDirs(root: string, searchDirs: Set<string>, maxDepth = 4): void {
@@ -73,14 +90,15 @@ function readSettingsPackagePaths(settingsPath: string): string[] {
 
 /**
  * Scan known theme directories for a JSON file whose "name" matches themeName.
- * Returns the parsed extras object, or null if not found.
+ * Returns parsed extras/vars/export data, or null if not found.
  */
-function discoverThemeExtras(themeName: string): { extras: Record<string, string> | null; vars: Record<string, string> | null } | null {
+function discoverThemeExtras(themeName: string): ThemeDiscovery | null {
 	const searchDirs = new Set<string>();
 
 	// 1. Global/project top-level theme dirs.
 	addThemeDir(searchDirs, join(homedir(), ".pi", "agent", "themes"));
 	addThemeDir(searchDirs, resolve(process.cwd(), ".pi", "themes"));
+	addBundledThemeDirs(searchDirs);
 
 	// 2. Installed git packages. Pi clones git packages under:
 	//    ~/.pi/agent/git/<host>/<user>/<repo> and <cwd>/.pi/git/<host>/<user>/<repo>.
@@ -111,7 +129,10 @@ function discoverThemeExtras(themeName: string): { extras: Record<string, string
 						const vars = content?.vars && typeof content.vars === "object"
 							? content.vars as Record<string, string>
 							: null;
-						if (extras || vars) return { extras, vars };
+						const themeExport = content?.export && typeof content.export === "object"
+							? content.export as Record<string, string>
+							: null;
+						if (extras || vars || themeExport) return { extras, vars, themeExport };
 					}
 				} catch {}
 			}
@@ -141,23 +162,25 @@ export function setFullTheme(theme: any, force = false): void {
 	if (!themeName) return;
 
 	// Only re-scan if theme changed, unless caller is syncing after a theme reload.
-	if (!force && themeName === cachedThemeName && cachedExtras !== null) return;
+	if (!force && themeName === cachedThemeName && (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null)) return;
 
 	cachedThemeName = themeName;
 	const result = discoverThemeExtras(themeName);
 	cachedExtras = result?.extras ?? null;
 	cachedVars = result?.vars ?? null;
+	cachedThemeExport = result?.themeExport ?? null;
 }
 
 export function getThemeExtra(_theme: any, key: string): string {
 	// If extras haven't been loaded yet, try resolving from theme or settings
-	if (cachedExtras === null && cachedVars === null && cachedThemeName === null) {
+	if (cachedExtras === null && cachedVars === null && cachedThemeExport === null && cachedThemeName === null) {
 		const themeName = resolveThemeName(_theme);
 		if (themeName) {
 			cachedThemeName = themeName;
 			const result = discoverThemeExtras(themeName);
 			cachedExtras = result?.extras ?? null;
 			cachedVars = result?.vars ?? null;
+			cachedThemeExport = result?.themeExport ?? null;
 		}
 	}
 
@@ -167,9 +190,21 @@ export function getThemeExtra(_theme: any, key: string): string {
 	return HARDCODED_DEFAULTS[key] ?? "";
 }
 
+function isHexColor(value: string): boolean {
+	return /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
+}
+
+function resolveThemeExportColor(key: string): string {
+	if (!cachedThemeExport) return "";
+	const value = cachedThemeExport[key];
+	if (typeof value !== "string" || !value) return "";
+	const resolved = cachedVars && typeof cachedVars[value] === "string" ? cachedVars[value] : value;
+	return isHexColor(resolved) ? resolved : "";
+}
+
 export function getThemeVar(key: string): string {
-	if (cachedVars && typeof cachedVars[key] === "string") {
-		return cachedVars[key];
-	}
+	const value = cachedVars && typeof cachedVars[key] === "string" ? cachedVars[key] : "";
+	if (value) return value;
+	if (key === "bg") return resolveThemeExportColor("pageBg");
 	return "";
 }
