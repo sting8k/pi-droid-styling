@@ -33,14 +33,30 @@ export default function (pi: ExtensionAPI) {
 
 	let currentThinkingLevel: string | undefined;
 	let assistantResponseStartMs: number | null = null;
-	let currentAssistantTokensPerSecond: number | null = null;
-	let lastAssistantTokensPerSecond: number | null = null;
+	let assistantTextStartMs: number | null = null;
+	let assistantLastTextMs: number | null = null;
+	let currentAssistantWordsPerSecond: number | null = null;
+	let lastAssistantWordsPerSecond: number | null = null;
+	let lastAssistantWordCount = 0;
 	let lastSpeedUpdateMs = 0;
-	const SPEED_UPDATE_INTERVAL_MS = 1000;
+	const SPEED_UPDATE_INTERVAL_MS = 5000;
 
-	function computeSpeed(outputTokens: number, startMs: number): number {
-		const elapsedSeconds = Math.max(0.001, (Date.now() - startMs) / 1000);
-		return outputTokens / elapsedSeconds;
+	function countWords(text: string): number {
+		return text.match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
+	}
+
+	function countTextWords(message: any): number {
+		const content = message?.content;
+		if (!Array.isArray(content)) return 0;
+		return content.reduce((sum, block) => {
+			if (block?.type !== "text" || typeof block.text !== "string") return sum;
+			return sum + countWords(block.text);
+		}, 0);
+	}
+
+	function computeSpeed(words: number, startMs: number, endMs = Date.now()): number {
+		const elapsedSeconds = Math.max(0.001, (endMs - startMs) / 1000);
+		return words / elapsedSeconds;
 	}
 
 	const isStaleContextError = (error: unknown): boolean =>
@@ -49,24 +65,36 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_start", (event) => {
 		if (event.message.role !== "assistant") return;
 		assistantResponseStartMs = Date.now();
-		currentAssistantTokensPerSecond = null;
-		lastAssistantTokensPerSecond = null;
+		assistantTextStartMs = null;
+		assistantLastTextMs = null;
+		currentAssistantWordsPerSecond = null;
+		lastAssistantWordsPerSecond = null;
+		lastAssistantWordCount = 0;
 		lastSpeedUpdateMs = 0;
 	});
 
 	pi.on("message_update", (event) => {
 		if (event.message.role !== "assistant") return;
 		if (!assistantResponseStartMs) return;
+		const words = countTextWords(event.message);
+		if (words <= 0) return;
 		const now = Date.now();
+		if (assistantTextStartMs === null) {
+			assistantTextStartMs = now;
+			assistantLastTextMs = now;
+			lastAssistantWordCount = words;
+			lastSpeedUpdateMs = now;
+			return;
+		}
+		if (words <= lastAssistantWordCount) return;
+		assistantLastTextMs = now;
+		lastAssistantWordCount = words;
 		if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;
-		const ae = event.assistantMessageEvent as any;
-		const outputTokens = event.message.usage?.output ?? ae?.partial?.usage?.output;
-		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
 		lastSpeedUpdateMs = now;
-		const nextSpeed = computeSpeed(outputTokens, assistantResponseStartMs);
+		const nextSpeed = computeSpeed(words, assistantTextStartMs, assistantLastTextMs);
 		const normalizedSpeed = nextSpeed >= 100 ? Math.round(nextSpeed) : Math.round(nextSpeed * 10) / 10;
-		if (currentAssistantTokensPerSecond !== normalizedSpeed) {
-			currentAssistantTokensPerSecond = normalizedSpeed;
+		if (currentAssistantWordsPerSecond !== normalizedSpeed) {
+			currentAssistantWordsPerSecond = normalizedSpeed;
 		}
 	});
 
@@ -76,14 +104,17 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("message_end", (event) => {
 		if (event.message.role !== "assistant") return;
-		const startedAt = assistantResponseStartMs;
+		const startedAt = assistantTextStartMs ?? assistantResponseStartMs;
+		const endedAt = assistantLastTextMs ?? Date.now();
 		assistantResponseStartMs = null;
-		currentAssistantTokensPerSecond = null;
+		assistantTextStartMs = null;
+		assistantLastTextMs = null;
+		currentAssistantWordsPerSecond = null;
+		lastAssistantWordCount = 0;
 		if (!startedAt) return;
-		if (!event.message.content.some((block) => block.type === "text")) return;
-		const outputTokens = event.message.usage?.output;
-		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
-		lastAssistantTokensPerSecond = computeSpeed(outputTokens, startedAt);
+		const words = countTextWords(event.message);
+		if (words <= 0) return;
+		lastAssistantWordsPerSecond = computeSpeed(words, startedAt, endedAt);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -100,8 +131,11 @@ export default function (pi: ExtensionAPI) {
 		const sessionCwd = ctx.cwd;
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantResponseStartMs = null;
-		currentAssistantTokensPerSecond = null;
-		lastAssistantTokensPerSecond = null;
+		assistantTextStartMs = null;
+		assistantLastTextMs = null;
+		currentAssistantWordsPerSecond = null;
+		lastAssistantWordsPerSecond = null;
+		lastAssistantWordCount = 0;
 		try {
 			currentThinkingLevel = pi.getThinkingLevel();
 		} catch (error) {
@@ -232,7 +266,7 @@ export default function (pi: ExtensionAPI) {
 					}
 				},
 				fetchBranch,
-				() => currentAssistantTokensPerSecond ?? lastAssistantTokensPerSecond,
+				() => currentAssistantWordsPerSecond ?? lastAssistantWordsPerSecond,
 			);
 		});
 	});

@@ -236,7 +236,7 @@ export class BoxEditor extends CustomEditor {
 		const speed = this.getResponseSpeed?.();
 		if (typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) return null;
 		const rounded = speed >= 100 ? Math.round(speed).toString() : speed.toFixed(1).replace(/\.0$/, "");
-		return `${rounded} toks/s`;
+		return `${rounded} words/s`;
 	}
 
 	private formatContextBadge(): string | null {
