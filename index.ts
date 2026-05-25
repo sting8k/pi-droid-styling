@@ -50,17 +50,17 @@ export default function (pi: ExtensionAPI) {
 		if (event.message.role !== "assistant") return;
 		assistantResponseStartMs = Date.now();
 		currentAssistantTokensPerSecond = null;
+		lastAssistantTokensPerSecond = null;
 		lastSpeedUpdateMs = 0;
 	});
 
 	pi.on("message_update", (event) => {
 		if (event.message.role !== "assistant") return;
 		if (!assistantResponseStartMs) return;
-		const ae = event.assistantMessageEvent as any;
-		if (ae?.type !== "text_delta") return;
 		const now = Date.now();
 		if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;
-		const outputTokens = ae?.partial?.usage?.output;
+		const ae = event.assistantMessageEvent as any;
+		const outputTokens = event.message.usage?.output ?? ae?.partial?.usage?.output;
 		if (typeof outputTokens !== "number" || outputTokens <= 0) return;
 		lastSpeedUpdateMs = now;
 		const nextSpeed = computeSpeed(outputTokens, assistantResponseStartMs);
