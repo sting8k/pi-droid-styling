@@ -10,6 +10,13 @@ const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
+const PI_ASCII_LOGO = [
+	".3141592653:",
+	":. 59  26+",
+	"   53 .58=",
+	"  =97. .93 ..",
+	" -23   *846.",
+] as const;
 
 let activeTheme: ThemeLike | undefined;
 const FALLBACK_THEME: ThemeLike = {
@@ -91,19 +98,27 @@ function plural(count: number, label: string): string {
 	return `${count} ${label}${count === 1 ? "" : "s"}`;
 }
 
-function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[]): string[] {
+function renderPanelTitle(theme: ThemeLike, title: string, panelWidth: number): string {
+	const innerWidth = panelWidth + 2;
+	const titleWidth = visibleWidth(title);
+	const ruleWidth = Math.max(0, innerWidth - titleWidth - 2);
+	const leftRuleWidth = Math.floor(ruleWidth / 2);
+	const rightRuleWidth = ruleWidth - leftRuleWidth;
+	return `┌${"─".repeat(leftRuleWidth)} ${theme.bold(theme.fg("accent", title))} ${"─".repeat(rightRuleWidth)}┐`;
+}
+
+function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], minTotalWidth = 0): string[] {
 	const sortedItems = [...items].sort((a, b) => a.priority - b.priority);
 	const title = `System & Context · ${plural(sortedItems.length, "file")}`;
 
 	if (sortedItems.length === 0) {
 		const message = "No system or context files loaded";
-		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, visibleWidth(title) + 2, visibleWidth(message));
-		const titleRule = "─".repeat(Math.max(1, panelWidth - visibleWidth(title) - 1));
+		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - 4, visibleWidth(title) + 2, visibleWidth(message));
 		const padding = " ".repeat(Math.max(0, panelWidth - visibleWidth(message)));
 		return [
-			`╭─ ${theme.bold(theme.fg("accent", title))} ${titleRule}╮`,
+			renderPanelTitle(theme, title, panelWidth),
 			`│ ${theme.fg("dim", message)}${padding} │`,
-			`╰${"─".repeat(panelWidth + 2)}╯`,
+			`└${"─".repeat(panelWidth + 2)}┘`,
 		];
 	}
 
@@ -112,13 +127,12 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[]):
 	const metricWidth = Math.max(metricLabel.length, ...sortedItems.map((item) => `${item.words}/${item.lines}`.length));
 	let pathWidth = Math.max("path".length, ...sortedItems.map((item) => visibleWidth(item.path)));
 	const baseRowWidth = typeWidth + 2 + pathWidth + 2 + metricWidth;
-	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, visibleWidth(title) + 2, baseRowWidth);
+	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - 4, visibleWidth(title) + 2, baseRowWidth);
 	pathWidth += panelWidth - baseRowWidth;
-	const titleRule = "─".repeat(Math.max(1, panelWidth - visibleWidth(title) - 1));
 	const header = `${"type".padEnd(typeWidth)}  ${"path".padEnd(pathWidth)}  ${metricLabel.padStart(metricWidth)}`;
 	const separator = `${"─".repeat(typeWidth)}  ${"─".repeat(pathWidth)}  ${"─".repeat(metricWidth)}`;
 	const lines = [
-		`╭─ ${theme.bold(theme.fg("accent", title))} ${titleRule}╮`,
+		renderPanelTitle(theme, title, panelWidth),
 		`│ ${theme.fg("muted", header)} │`,
 		`│ ${theme.fg("muted", separator)} │`,
 	];
@@ -133,7 +147,7 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[]):
 		);
 	}
 
-	lines.push(`╰${"─".repeat(panelWidth + 2)}╯`);
+	lines.push(`└${"─".repeat(panelWidth + 2)}┘`);
 	return lines;
 }
 
@@ -142,17 +156,28 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	const summary = theme.bold(theme.fg("accent", "◆ Resources")) + theme.fg("muted", total ? ` · ${total}` : "");
 	if (!expanded) return summary;
 
-	return [summary, "", ...renderSystemContextPanel(theme, systemContextItems)].join("\n");
+	return [summary, "", ...renderSystemContextPanel(theme, systemContextItems, visibleWidth(summary))].join("\n");
 }
 
 function compactHeader(theme: ThemeLike): string {
-	const title = theme.bold(theme.fg("accent", "◆ Pi")) + theme.fg("dim", ` v${VERSION}`);
+	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => visibleWidth(line)));
+	const gap = "   ";
+	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
 	const hints = [
 		theme.bold(rawKeyHint("/", "commands")),
 		theme.bold(rawKeyHint("!", "bash")),
 		theme.bold(keyHint("app.tools.expand", "more")),
 	].join(theme.fg("muted", " · "));
-	return `${title}${theme.fg("muted", " · ")}${hints}`;
+	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
+	const details = [title, hints, status, "", ""];
+
+	return PI_ASCII_LOGO
+		.map((line, index) => {
+			const logoPadding = " ".repeat(Math.max(0, logoWidth - visibleWidth(line)));
+			const detail = details[index] ?? "";
+			return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
+		})
+		.join("\n");
 }
 
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
