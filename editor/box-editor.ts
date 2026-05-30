@@ -1,5 +1,5 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { homedir, hostname, userInfo } from "node:os";
 
 import { fgHex, stripAnsi } from "../ansi.js";
@@ -55,18 +55,17 @@ function findLastBorderIndex(lines: string[]): number {
 	return -1;
 }
 
-function stripBashPrefix(line: string): string {
-	if (line.startsWith("!!")) return line.slice(2);
-	if (line.startsWith("!")) return line.slice(1);
-	return line;
-}
-
 function normalizeSingleLine(text: string): string {
 	return text.replace(/[\r\n]+/g, " ").trim();
 }
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
+}
+
+function firstCodePoint(text: string): string {
+	const next = text[Symbol.iterator]().next();
+	return next.done ? "" : next.value;
 }
 
 function currentUsername(): string {
@@ -292,7 +291,7 @@ export class BoxEditor extends CustomEditor {
 		if (percent === null || !Number.isFinite(percent)) return "";
 		const total = 12;
 		const filled = Math.max(0, Math.min(total, Math.round((percent / 100) * total)));
-		const fillColor = percent >= 90 ? "error" : "syntaxOperator";
+		const fillColor = percent >= 90 ? "error" : "accent";
 		const full = filled > 0 ? this.tone(fillColor, "━".repeat(filled)) : "";
 		const empty = filled < total ? this.tone("borderMuted", "━".repeat(total - filled)) : "";
 		return `${full}${empty}`;
@@ -301,7 +300,15 @@ export class BoxEditor extends CustomEditor {
 	private formatTokenMeter(): string | null {
 		const usage = this.contextUsage();
 		if (!usage || usage.percent === null) return null;
-		return `${this.tone("dim", "Tokens:")} ${this.formatTokenBar(usage.percent)}`;
+
+		const tokenCount = typeof usage.tokens === "number" && Number.isFinite(usage.tokens)
+			? this.formatCompactTokens(usage.tokens)
+			: "";
+		const usageText = `${usage.percent.toFixed(1)}%/${this.formatCompactTokens(usage.contextWindow)}`;
+		const detail = tokenCount
+			? `${this.tone("muted", tokenCount)} ${this.tone("bashMode", "●")} ${this.tone("muted", usageText)}`
+			: this.tone("muted", usageText);
+		return `${this.tone("dim", "Tokens:")}  ${this.formatTokenBar(usage.percent)} ${detail}`;
 	}
 
 	private formatResponseSpeedBadge(): string | null {
@@ -309,12 +316,6 @@ export class BoxEditor extends CustomEditor {
 		if (typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) return null;
 		const rounded = speed >= 100 ? Math.round(speed).toString() : speed.toFixed(1).replace(/\.0$/, "");
 		return `${rounded} words/s`;
-	}
-
-	private formatContextMetric(): string | null {
-		const usage = this.contextUsage();
-		if (!usage || usage.percent === null) return null;
-		return `${usage.percent.toFixed(1)}%/${this.formatCompactTokens(usage.contextWindow)}`;
 	}
 
 	private formatModelBadge(): { plain: string; rendered: string } | null {
@@ -375,7 +376,7 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private renderTopBorder(width: number): string {
-		const prefix = this.tone("syntaxOperator", `== [${currentUserHost()}] == `);
+		const prefix = this.tone("accent", `== [${currentUserHost()}] == `);
 		const remaining = Math.max(0, width - visibleWidth(prefix));
 		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
 	}
@@ -385,13 +386,13 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private formatCellLabel(label: string): string {
-		return ` ${this.pad(this.tone("syntaxOperator", `[${label}]`), 7)} `;
+		return ` ${this.pad(this.tone("accent", `[${label}]`), 7)} `;
 	}
 
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
-		const path = `${this.formatCellLabel("env")}${this.tone("syntaxOperator", this.formatCwd())}`;
+		const path = `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}`;
 		const leftParts = [path, model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
 		const branch = this.formatBranchBadge();
@@ -405,27 +406,41 @@ export class BoxEditor extends CustomEditor {
 
 	private renderInputContentLines(text: string, width: number): string[] {
 		const logicalLines = text.length > 0 ? text.split("\n") : [""];
+		const cursor = this.getCursor();
+		const cursorLine = clamp(cursor.line, 0, logicalLines.length - 1);
 		const rendered: string[] = [];
 
 		for (let i = 0; i < logicalLines.length; i++) {
-			const rawLine = i === 0 ? stripBashPrefix(logicalLines[i] ?? "") : logicalLines[i] ?? "";
-			const isLastLine = i === logicalLines.length - 1;
-			const line = isLastLine ? `${rawLine}${this.tone("syntaxOperator", "█")}` : rawLine;
+			const rawLine = logicalLines[i] ?? "";
+			const isCursorLine = i === cursorLine;
+			let line = rawLine;
+
+			if (isCursorLine) {
+				const displayCursorCol = clamp(cursor.col, 0, rawLine.length);
+				const before = rawLine.slice(0, displayCursorCol);
+				const after = rawLine.slice(displayCursorCol);
+				const cursorGlyph = firstCodePoint(after);
+				const atCursor = cursorGlyph || " ";
+				const rest = cursorGlyph ? after.slice(cursorGlyph.length) : after;
+				const marker = this.focused ? CURSOR_MARKER : "";
+				line = `${before}${marker}\x1b[7m${atCursor}\x1b[27m${rest}`;
+			}
+
 			const wrapped = wrapTextWithAnsi(line, width);
 			rendered.push(...(wrapped.length > 0 ? wrapped : [""]));
 		}
 
-		return rendered.length > 0 ? rendered : [this.tone("syntaxOperator", "█")];
+		return rendered.length > 0 ? rendered : [`${this.focused ? CURSOR_MARKER : ""}\x1b[7m \x1b[27m`];
 	}
 
 	private renderRuntimeRow(width: number): string {
-		const bullet = this.tone("bashMode", "●");
-		const metrics = [
-			this.formatContextMetric(),
-			this.formatResponseSpeedBadge(),
-		].filter(Boolean).map((item) => `${bullet} ${this.tone("muted", item!)}`);
+		const bullet = this.tone("accent", "●");
 		const tokenMeter = this.formatTokenMeter();
-		const usageParts = [tokenMeter, ...metrics].filter(Boolean);
+		const speedBadge = this.formatResponseSpeedBadge();
+		const usageParts = [
+			tokenMeter,
+			speedBadge ? `${bullet} ${this.tone("muted", speedBadge)}` : null,
+		].filter(Boolean);
 		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
 		const footerStatus = this.getFooterStatus?.() ?? "";
 		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
@@ -442,7 +457,7 @@ export class BoxEditor extends CustomEditor {
 	render(width: number): string[] {
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const prompt = this.bold(this.tone("syntaxOperator", "❯"));
+		const prompt = this.bold(this.tone("accent", "❯"));
 		const promptPrefix = `${prompt} `;
 		const prefixWidth = visibleWidth(promptPrefix);
 		const contentWidth = Math.max(1, contentInnerWidth - prefixWidth);
