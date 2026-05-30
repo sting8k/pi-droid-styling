@@ -363,6 +363,14 @@ export class BoxEditor extends CustomEditor {
 		return `${border("│")}${sidePad}${this.pad(content, contentWidth)}${sidePad}${border("│")}`;
 	}
 
+	private renderPanelDivider(width: number, frame: (text: string) => string, divider: (text: string) => string): string {
+		const innerWidth = Math.max(1, width - 2);
+		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
+		const sidePad = " ".repeat(sidePadding);
+		const lineWidth = Math.max(1, innerWidth - sidePadding * 2);
+		return `${frame("│")}${sidePad}${divider("─".repeat(lineWidth))}${sidePad}${frame("│")}`;
+	}
+
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
@@ -415,7 +423,8 @@ export class BoxEditor extends CustomEditor {
 	render(width: number): string[] {
 		const innerWidth = Math.max(1, width - 2);
 		const contentInnerWidth = this.panelContentWidth(width);
-		const border = (text: string) => this.tone("borderMuted", text);
+		const frame = (text: string) => this.tone("border", text);
+		const divider = (text: string) => this.tone("borderMuted", text);
 
 		const text = this.getText();
 		const prompt = this.bold(this.tone("syntaxOperator", "❯"));
@@ -433,21 +442,21 @@ export class BoxEditor extends CustomEditor {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const renderedLine = line;
 			const available = Math.max(1, contentInnerWidth - visibleWidth(prefix));
-			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width, border);
+			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width, frame);
 		});
 
-		const separator = border(`├${"─".repeat(innerWidth)}┤`);
+		const separator = this.renderPanelDivider(width, frame, divider);
 		const lines = [
-			border(`╭${"─".repeat(innerWidth)}╮`),
-			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width, border),
+			frame(`╭${"─".repeat(innerWidth)}╮`),
+			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width, frame),
 			separator,
-			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width, border),
+			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width, frame),
 			separator,
 			...inputLines,
-			border(`╰${"─".repeat(innerWidth)}╯`),
+			frame(`╰${"─".repeat(innerWidth)}╯`),
 		];
 
-		const customSlashAutocomplete = this.renderSlashAutocomplete(width, border);
+		const customSlashAutocomplete = this.renderSlashAutocomplete(width, frame);
 		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
 
 		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`);

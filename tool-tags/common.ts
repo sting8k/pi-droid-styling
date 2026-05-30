@@ -253,7 +253,7 @@ function boxText(theme: any, text: string): string {
 	return `${RESET_INTENSITY}${theme.fg("borderMuted", text)}`;
 }
 function boxFrameText(theme: any, text: string): string {
-	return `${RESET_INTENSITY}${theme.fg("dim", text)}`;
+	return `${RESET_INTENSITY}${theme.fg("border", text)}`;
 }
 
 export function boxedToolBgName(isError?: boolean, isPartial?: boolean): string {
