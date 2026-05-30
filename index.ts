@@ -16,7 +16,7 @@ import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
 import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
-import { installFooterStatsPatch } from "./footer-patch.js";
+import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./virtualize-chat.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
@@ -267,6 +267,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				fetchBranch,
 				() => currentAssistantWordsPerSecond ?? lastAssistantWordsPerSecond,
+				getFooterStatusLine,
 			);
 		});
 	});

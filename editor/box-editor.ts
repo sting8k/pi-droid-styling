@@ -1,5 +1,5 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
 
 import { fgHex, stripAnsi } from "../ansi.js";
@@ -41,6 +41,7 @@ type BranchInfo = {
 
 type BranchProvider = () => BranchInfo | null;
 type ResponseSpeedProvider = () => number | null;
+type FooterStatusProvider = () => string | null;
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -81,6 +82,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getModelInfo?: ModelInfoProvider,
 		private readonly getBranch?: BranchProvider,
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
+		private readonly getFooterStatus?: FooterStatusProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -286,7 +288,7 @@ export class BoxEditor extends CustomEditor {
 	private formatTokenMeter(): string | null {
 		const usage = this.contextUsage();
 		if (!usage || usage.percent === null) return null;
-		return `${this.tone("dim", "Tokens:")} ${this.formatTokenBar(usage.percent)} ${this.tone("muted", `${usage.percent.toFixed(1)}%`)}`;
+		return `${this.tone("dim", "Tokens:")} ${this.formatTokenBar(usage.percent)}`;
 	}
 
 	private formatResponseSpeedBadge(): string | null {
@@ -323,7 +325,7 @@ export class BoxEditor extends CustomEditor {
 		const parts = display.split("/").filter(Boolean);
 		if (display.startsWith("~")) parts[0] = "~";
 		if (parts.length <= 3) return parts.join("/") || ".";
-		return `${parts[0]} …/${parts.slice(-1)[0]}`;
+		return `${parts[0]}.../${parts.slice(-2).join("/")}`;
 	}
 
 	private panelContentWidth(width: number): number {
@@ -347,7 +349,7 @@ export class BoxEditor extends CustomEditor {
 		].filter(Boolean).join(" ");
 		const rendered = [
 			this.tone("bashMode", icon),
-			this.bold(this.tone("bashMode", info.branch)),
+			this.tone("mdLinkUrl", info.branch),
 			renderedDiff,
 		].filter(Boolean).join(" ");
 		return { plain, rendered };
@@ -366,15 +368,28 @@ export class BoxEditor extends CustomEditor {
 		const model = this.formatModelBadge();
 		const leftParts = [this.tone("syntaxOperator", this.formatCwd()), model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
-		const tokenMeter = this.formatTokenMeter() ?? "";
 		const branch = this.formatBranchBadge();
 		const right = branch ? `${sep} ${branch.rendered}` : "";
 		const rightPlainWidth = branch ? visibleWidth(`│ ${branch.plain}`) : 0;
 		const available = Math.max(1, width - rightPlainWidth - (right ? 1 : 0));
-		const main = tokenMeter ? `${left}  ${tokenMeter}` : left;
-		const trimmedMain = visibleWidth(main) > available ? truncateToWidth(main, available, "…") : main;
+		const trimmedMain = visibleWidth(left) > available ? truncateToWidth(left, available, "…") : left;
 		const gap = right ? " ".repeat(Math.max(1, width - visibleWidth(trimmedMain) - rightPlainWidth)) : "";
 		return this.pad(`${trimmedMain}${gap}${right}`, width);
+	}
+
+	private renderInputContentLines(text: string, width: number): string[] {
+		const logicalLines = text.length > 0 ? text.split("\n") : [""];
+		const rendered: string[] = [];
+
+		for (let i = 0; i < logicalLines.length; i++) {
+			const rawLine = i === 0 ? stripBashPrefix(logicalLines[i] ?? "") : logicalLines[i] ?? "";
+			const isLastLine = i === logicalLines.length - 1;
+			const line = isLastLine ? `${rawLine}${this.tone("syntaxOperator", "█")}` : rawLine;
+			const wrapped = wrapTextWithAnsi(line, width);
+			rendered.push(...(wrapped.length > 0 ? wrapped : [""]));
+		}
+
+		return rendered.length > 0 ? rendered : [this.tone("syntaxOperator", "█")];
 	}
 
 	private renderRuntimeRow(width: number): string {
@@ -383,7 +398,15 @@ export class BoxEditor extends CustomEditor {
 			this.formatContextMetric(),
 			this.formatResponseSpeedBadge(),
 		].filter(Boolean).map((item) => `${bullet} ${this.tone("muted", item!)}`);
-		return this.pad(metrics.join("  "), width);
+		const tokenMeter = this.formatTokenMeter();
+		const left = [tokenMeter, ...metrics].filter(Boolean).join("  ");
+		const right = this.getFooterStatus?.() ?? "";
+		if (!right) return this.pad(left, width);
+
+		const availableLeft = Math.max(1, width - visibleWidth(right) - 2);
+		const trimmedLeft = visibleWidth(left) > availableLeft ? truncateToWidth(left, availableLeft, "…") : left;
+		const gap = " ".repeat(Math.max(2, width - visibleWidth(trimmedLeft) - visibleWidth(right)));
+		return this.pad(`${trimmedLeft}${gap}${right}`, width);
 	}
 
 	render(width: number): string[] {
@@ -392,7 +415,6 @@ export class BoxEditor extends CustomEditor {
 		const border = (text: string) => this.tone("borderMuted", text);
 
 		const text = this.getText();
-		const isBashMode = text.startsWith("!");
 		const prompt = this.bold(this.tone("syntaxOperator", "❯"));
 		const promptPrefix = `${prompt} `;
 		const prefixWidth = visibleWidth(promptPrefix);
@@ -401,15 +423,12 @@ export class BoxEditor extends CustomEditor {
 		if (parentLines.length === 0) return parentLines;
 
 		const bottomBorderIndex = findLastBorderIndex(parentLines);
-		const rawContentLines = bottomBorderIndex > 0 ? parentLines.slice(1, bottomBorderIndex) : parentLines.slice(1);
 		const autocompleteLines = bottomBorderIndex >= 0 ? parentLines.slice(bottomBorderIndex + 1) : [];
-
-		const displayLines = rawContentLines.length > 0 ? [...rawContentLines] : [""];
-		if (isBashMode && displayLines[0]) displayLines[0] = stripBashPrefix(displayLines[0]);
+		const displayLines = this.renderInputContentLines(text, contentWidth);
 
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
-			const renderedLine = index === 0 && stripAnsi(line).trim().length === 0 ? this.tone("syntaxOperator", "█") : line;
+			const renderedLine = line;
 			const available = Math.max(1, contentInnerWidth - visibleWidth(prefix));
 			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width, border);
 		});

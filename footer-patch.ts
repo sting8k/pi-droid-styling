@@ -1,6 +1,12 @@
 import { FooterComponent } from "@mariozechner/pi-coding-agent";
 
 const PATCHED = Symbol.for("pi-droid-styling.footer-stats.patched");
+let latestFooterStatusLines: string[] = [];
+
+export function getFooterStatusLine(): string | null {
+	return latestFooterStatusLines.length > 0 ? latestFooterStatusLines.join("  ") : null;
+}
+
 
 export function installFooterStatsPatch() {
 	const proto = FooterComponent.prototype as any;
@@ -33,8 +39,9 @@ export function installFooterStatsPatch() {
 		}
 
 		// lines[0] = pwd/branch/session, lines[1] = stats, lines[2+] = extension statuses.
-		// The custom input dock owns cwd/model/context/branch metadata now,
-		// so keep only extension status lines to avoid duplicate footer chrome.
-		return lines.slice(2);
+		// The custom input dock owns footer metadata now. Capture extension status lines
+		// for the dock, then suppress core footer chrome to avoid duplicate bottom rows.
+		latestFooterStatusLines = lines.slice(2).filter((line) => Boolean(line?.trim()));
+		return [];
 	};
 }
