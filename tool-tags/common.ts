@@ -231,15 +231,21 @@ export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean
 	return `${icon} ${theme.bold(theme.fg("accent", name))}`;
 }
 
+const RESET_INTENSITY = "\x1b[22m";
+
+function boxText(theme: any, text: string): string {
+	return `${RESET_INTENSITY}${theme.fg("text", text)}`;
+}
+
 export function boxBorder(theme: any, left: string, right: string, width: number, label?: string): string {
 	const renderedWidth = boxWidth(width);
 	const innerWidth = renderedWidth - 2;
-	if (!label) return theme.fg("text", `${left}${BOX_HORIZONTAL.repeat(innerWidth)}${right}`);
+	if (!label) return boxText(theme, `${left}${BOX_HORIZONTAL.repeat(innerWidth)}${right}`);
 
 	const before = `${BOX_HORIZONTAL} `;
 	const afterPrefix = " ";
 	const afterWidth = Math.max(0, innerWidth - visibleWidth(before) - visibleWidth(label) - visibleWidth(afterPrefix));
-	return `${theme.fg("text", `${left}${before}`)}${label}${theme.fg("text", `${afterPrefix}${BOX_HORIZONTAL.repeat(afterWidth)}${right}`)}`;
+	return `${boxText(theme, `${left}${before}`)}${label}${boxText(theme, `${afterPrefix}${BOX_HORIZONTAL.repeat(afterWidth)}${right}`)}`;
 }
 
 export function boxLine(theme: any, content: string, width: number): string {
@@ -247,7 +253,7 @@ export function boxLine(theme: any, content: string, width: number): string {
 	const innerWidth = boxInnerWidth(renderedWidth);
 	const truncated = truncateToWidth(content, innerWidth, "…");
 	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(truncated)));
-	return `${theme.fg("text", "│")} ${truncated}${padding} ${theme.fg("text", "│")}`;
+	return `${boxText(theme, "│")} ${truncated}${padding} ${boxText(theme, "│")}`;
 }
 
 export function boxedWrappedLines(theme: any, content: string, width: number): string[] {

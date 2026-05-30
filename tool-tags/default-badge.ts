@@ -76,9 +76,10 @@ function installBoxedFallback(thisArg: any): void {
 	const usesSelfRenderShell = hasRendererDefinition && thisArg.getRenderShell?.() === "self";
 	const targetContainer = usesSelfRenderShell ? thisArg.selfRenderContainer : thisArg.contentBox;
 	if (targetContainer && typeof targetContainer.clear === "function" && typeof targetContainer.addChild === "function") {
-		if (!hasRendererDefinition && typeof targetContainer.setBgFn === "function" && cachedTheme?.bg) {
-			const bgName = thisArg.isPartial ? "toolPendingBg" : thisArg.result?.isError ? "toolErrorBg" : "toolSuccessBg";
-			targetContainer.setBgFn((text: string) => cachedTheme.bg(bgName, text));
+		// Boxed fallback owns its own visual boundary; avoid container-level bg
+		// so the status background does not spill beyond the box.
+		if (!hasRendererDefinition && typeof targetContainer.setBgFn === "function") {
+			targetContainer.setBgFn((text: string) => text);
 		}
 		targetContainer.clear();
 		targetContainer.addChild(component);

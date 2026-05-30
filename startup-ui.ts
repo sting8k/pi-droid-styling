@@ -4,18 +4,17 @@ import { join } from "path";
 
 import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@mariozechner/pi-coding-agent";
 import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
-import { Spacer, Text, visibleWidth } from "@mariozechner/pi-tui";
+import { Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
 const PI_ASCII_LOGO = [
-	".3141592653:",
-	":. 59  26+",
-	"   53 .58=",
-	"  =97. .93 ..",
-	" -23   *846.",
+	"┏━━━┓ ┏━┓",
+	"┃ _ ┃ ┃ ┃",
+	"┣━━━┛ ┃ ┃",
+	"┗━┛   ┗━┛",
 ] as const;
 
 let activeTheme: ThemeLike | undefined;
@@ -159,7 +158,7 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	return [summary, "", ...renderSystemContextPanel(theme, systemContextItems, visibleWidth(summary))].join("\n");
 }
 
-function compactHeader(theme: ThemeLike): string {
+function compactHeader(theme: ThemeLike, width: number): string {
 	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => visibleWidth(line)));
 	const gap = "   ";
 	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
@@ -169,22 +168,43 @@ function compactHeader(theme: ThemeLike): string {
 		theme.bold(keyHint("app.tools.expand", "more")),
 	].join(theme.fg("muted", " · "));
 	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
-	const details = [title, hints, status, "", ""];
+	const details = [title, hints, status, ""];
+	const safeWidth = Math.max(1, width);
+	const detailWidth = safeWidth - logoWidth - visibleWidth(gap);
 
-	return PI_ASCII_LOGO
-		.map((line, index) => {
-			const logoPadding = " ".repeat(Math.max(0, logoWidth - visibleWidth(line)));
-			const detail = details[index] ?? "";
-			return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
-		})
-		.join("\n");
+	if (detailWidth >= 12) {
+		return PI_ASCII_LOGO
+			.map((line, index) => {
+				const logoPadding = " ".repeat(Math.max(0, logoWidth - visibleWidth(line)));
+				const detail = details[index] ? truncateToWidth(details[index]!, detailWidth, "…") : "";
+				return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
+			})
+			.join("\n");
+	}
+
+	if (safeWidth >= logoWidth) {
+		return [
+			...PI_ASCII_LOGO.map((line) => theme.fg("accent", line)),
+			truncateToWidth(title, safeWidth, "…"),
+			truncateToWidth(hints, safeWidth, "…"),
+			truncateToWidth(status, safeWidth, "…"),
+		].join("\n");
+	}
+
+	return [title, status].map((line) => truncateToWidth(line, safeWidth, "…")).join("\n");
 }
 
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
 	if (isQuietStartup(cwd)) return;
 	ui.setHeader((_tui, theme) => {
-		activeTheme = theme as ThemeLike;
-		return new Text(compactHeader(activeTheme), 0, 0);
+		const headerTheme = theme as ThemeLike;
+		activeTheme = headerTheme;
+		return {
+			invalidate() {},
+			render(width: number): string[] {
+				return compactHeader(headerTheme, width).split("\n");
+			},
+		};
 	});
 }
 
