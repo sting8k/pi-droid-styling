@@ -9,8 +9,7 @@ import {
 	countDiffStats,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { getTextOutput, isExpanded, renderToolCallHeader, renderToolMetricsFooter, resolveRelativePath } from "./common.js";
-import { formatToolMetricsFromValues } from "./elapsed.js";
+import { formatBoxedWords, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
 
 const RESULT_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.result.patched");
 const CALL_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.call.patched");
@@ -20,24 +19,24 @@ const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
 const MAX_HIGHLIGHT_DIFF_ROWS = 120;
 
 type QuickEditToolConfig = {
-	headerLabel: string;
+	toolLabel: string;
 	applyingLabel: string;
 	fallbackLabel: string;
 };
 
 const QUICK_EDIT_TOOLS: Record<string, QuickEditToolConfig> = {
 	quick_edit: {
-		headerLabel: "QUICK EDIT",
+		toolLabel: "Quick Edit",
 		applyingLabel: "quick-edit",
 		fallbackLabel: "Quick edit applied",
 	},
 	substitute_edit: {
-		headerLabel: "SUBSTITUTE EDIT",
+		toolLabel: "Substitute Edit",
 		applyingLabel: "substitute-edit",
 		fallbackLabel: "Substitute edit applied",
 	},
 	target_edit: {
-		headerLabel: "TARGET EDIT",
+		toolLabel: "Target Edit",
 		applyingLabel: "target-edit",
 		fallbackLabel: "Target edit applied",
 	},
@@ -115,19 +114,22 @@ function renderQuickEditCall(args: any, theme: any, config: QuickEditToolConfig,
 	const rawPath = String(args?.path ?? "");
 	const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 	const detail = relPath || "(unknown)";
-	return renderToolCallHeader(theme, config.headerLabel, detail);
+	return renderBoxedToolCall(theme, config.toolLabel, [`${theme.fg("dim", "Path: ")}${detail}`]);
 }
 
-function getQuickEditMetrics(output: string, context: QuickEditRenderContext): string {
+function getQuickEditElapsedMs(context: QuickEditRenderContext): number | undefined {
 	const state = context.state;
-	let elapsedMs: number | undefined;
-	if (state && typeof state === "object") {
-		if (typeof state[ELAPSED_MS_KEY] !== "number" && typeof state[STARTED_AT_KEY] === "number") {
-			state[ELAPSED_MS_KEY] = performance.now() - state[STARTED_AT_KEY];
-		}
-		if (typeof state[ELAPSED_MS_KEY] === "number") elapsedMs = state[ELAPSED_MS_KEY];
+	if (!state || typeof state !== "object") return undefined;
+	if (typeof state[ELAPSED_MS_KEY] !== "number" && typeof state[STARTED_AT_KEY] === "number") {
+		state[ELAPSED_MS_KEY] = performance.now() - state[STARTED_AT_KEY];
 	}
-	return formatToolMetricsFromValues(elapsedMs, output.length);
+	return typeof state[ELAPSED_MS_KEY] === "number" ? state[ELAPSED_MS_KEY] : undefined;
+}
+
+function formatQuickEditFooter(theme: any, context: QuickEditRenderContext, output = ""): string {
+	const elapsedMs = getQuickEditElapsedMs(context);
+	const wall = elapsedMs === undefined ? "--" : `${(elapsedMs / 1000).toFixed(2)}s`;
+	return theme.fg("dim", `[Wall: ${wall} | ${formatBoxedWords(output)}]`);
 }
 
 function renderQuickEditResult(
@@ -138,20 +140,22 @@ function renderQuickEditResult(
 	context: QuickEditRenderContext = {},
 ) {
 	if (options.isPartial) {
-		return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", `Applying ${config.applyingLabel}...`)}`, 0, 0);
+		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", `Applying ${config.applyingLabel}...`)}`]);
 	}
 
 	const output = getTextOutput(result);
 	if (context.isError || result?.isError) {
-		return new Text(`${theme.fg("error", stripAnsi(output).trim() || "Error")}`, 0, 0);
+		return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
+			footerLines: [formatQuickEditFooter(theme, context, output)],
+		});
 	}
 
 	const diff = extractQuickEditDiff(output);
 	if (!diff) {
 		const fallback = stripAnsi(output).trim() || config.fallbackLabel;
-		const metrics = getQuickEditMetrics(output, context);
-		const suffix = metrics ? ` ${theme.fg("dim", "–")} ${theme.italic(theme.fg("muted", metrics))}` : "";
-		return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", fallback)}${suffix}`, 0, 0);
+		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", fallback)}`], {
+			footerLines: [formatQuickEditFooter(theme, context, output)],
+		});
 	}
 
 	const rows = buildSplitRows(diff);
@@ -165,7 +169,6 @@ function renderQuickEditResult(
 
 	const { additions, removals } = countDiffStats(diff);
 	const meter = renderDiffMeter(theme, additions, removals);
-	const metrics = getQuickEditMetrics(output, context);
 	const summary =
 		`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 		` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
@@ -176,16 +179,18 @@ function renderQuickEditResult(
 	const maxRows = expanded ? 160 : 36;
 	const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 
-	return {
+	return renderBoxedToolResult(theme, {
 		render(width: number): string[] {
-			const safeWidth = Math.max(20, width - 1);
+			const safeWidth = Math.max(20, width);
 			const headerLines = new Text(summary, 0, 0).render(safeWidth);
-			return [...headerLines, ...split.render(safeWidth), ...renderToolMetricsFooter(theme, safeWidth, metrics)];
+			return [...headerLines, ...split.render(safeWidth)];
 		},
 		invalidate(): void {
 			split.invalidate();
 		},
-	};
+	}, {
+		footerLines: [formatQuickEditFooter(theme, context, output)],
+	});
 }
 
 export function installQuickEditRenderer(ToolExecutionComponentClass: any): void {

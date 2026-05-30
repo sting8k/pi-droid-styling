@@ -5,8 +5,8 @@ import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { getTextOutput, getToolBodyWidth, indentToolBodyLines, isExpanded, parens, renderToolCallHeaderLines, replaceTabs } from "./common.js";
-import { formatToolMetrics, wrapExecuteWithTiming } from "./elapsed.js";
+import { boxedToolWidthKey, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
 const MAX_LINE_CHARS = 2000;
@@ -134,6 +134,41 @@ function stripBashToolNoticeLines(text: string): string {
 	return filteredLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
+function bashWidthKey(rawCommand: string, timeout: unknown): string {
+	return boxedToolWidthKey("Bash", `${rawCommand}|${timeout ?? ""}`);
+}
+
+function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknown, widthKey: string): Component {
+	const maxCommandLines = 5;
+	const shownCount = Math.min(commandLines.length, maxCommandLines + 1);
+	const detailLines: string[] = [];
+	for (let i = 0; i < shownCount; i++) {
+		const prefix = i === 0 ? theme.fg("dim", "$ ") : theme.fg("dim", "> ");
+		detailLines.push(`${prefix}${highlightBashLine(commandLines[i] ?? "", theme)}`);
+	}
+	if (commandLines.length > maxCommandLines + 1) {
+		detailLines.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
+	}
+	return renderBoxedToolCall(theme, "Bash", detailLines, { widthKey });
+}
+
+function formatTimeout(context: any): string {
+	const timeout = context?.args?.timeout ?? 300;
+	return `${timeout}s`;
+}
+
+function renderBoxedBashResult(theme: any, inner: Component, result: any, context: any): Component {
+	const rawCommand = String(context?.args?.command ?? "...");
+	const timeout = context?.args?.timeout;
+	const referenceLines = rawCommand.split("\n").map((line, index) => `${index === 0 ? "$ " : "> "}${line}`);
+	return renderBoxedToolResult(theme, inner, {
+		widthKey: bashWidthKey(rawCommand, timeout),
+		referenceLines,
+		footerLines: [formatBoxedFooter(theme, result, [`Timeout: ${formatTimeout(context)}`])],
+		isError: context?.isError,
+	});
+}
+
 function createBashResultPreview(
 	theme: any,
 	text: string,
@@ -150,11 +185,10 @@ function createBashResultPreview(
 			cacheLines = null;
 		},
 		render(width: number): string[] {
-			const renderWidth = Math.max(1, width);
-			const bodyWidth = getToolBodyWidth(renderWidth);
+			const bodyWidth = Math.max(1, width);
 			const cfg = loadConfig();
 			const expanded = isExpanded(options);
-			const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
+			const cacheId = `${bodyWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
 			if (cacheLines && cacheKey === cacheId) return cacheLines;
 
 			if (!expanded) {
@@ -199,13 +233,13 @@ function createBashResultPreview(
 
 				if (remaining <= 0) {
 					cacheKey = cacheId;
-					cacheLines = ["", ...indentToolBodyLines(truncatedShown)];
+					cacheLines = truncatedShown;
 					return cacheLines;
 				}
 
-				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, renderWidth - 1, "…");
+				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, bodyWidth, "…");
 				cacheKey = cacheId;
-				cacheLines = ["", ...indentToolBodyLines(truncatedShown), "", theme.fg("muted", hint)];
+				cacheLines = [...truncatedShown, "", theme.fg("muted", hint)];
 				return cacheLines;
 			}
 
@@ -229,12 +263,12 @@ function createBashResultPreview(
 				const remaining = expandedLines.length - cfg.maxExpandedLines;
 				truncated.unshift(theme.fg("dim", `… ${remaining} earlier lines`));
 				cacheKey = cacheId;
-				cacheLines = ["", ...indentToolBodyLines(truncated)];
+				cacheLines = truncated;
 				return cacheLines;
 			}
 
 			cacheKey = cacheId;
-			cacheLines = ["", ...indentToolBodyLines(expandedLines.map(applyColor))];
+			cacheLines = expandedLines.map(applyColor);
 			return cacheLines;
 		},
 	};
@@ -253,30 +287,11 @@ export function registerBashTool(pi: ExtensionAPI): void {
 		}),
 		renderCall(args: any, theme: any) {
 			const rawCommand = String(args?.command ?? "...");
-			const timeout = args?.timeout;
-			const timeoutSuffix = timeout ? ` (timeout ${timeout}s)` : "";
-			const commandLines = rawCommand.split("\n");
-			const maxCommandLines = 5;
-			const details = [highlightBashLine(commandLines[0], theme) + (commandLines.length === 1 ? timeoutSuffix : "")];
-			const showCount = Math.min(commandLines.length, maxCommandLines + 1);
-			for (let i = 1; i < showCount; i++) {
-				details.push(highlightBashLine(commandLines[i], theme));
-			}
-			if (commandLines.length > maxCommandLines + 1) {
-				details.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
-			}
-			if (commandLines.length > 1 && timeoutSuffix) {
-				details.push(theme.fg("muted", timeoutSuffix.trim()));
-			}
-			return renderToolCallHeaderLines(theme, "EXECUTE", [parens(theme, details[0] ?? "", true), ...details.slice(1)]);
+			return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout));
 		},
 		renderResult(result, options, theme: any, context: any) {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
-			const metrics = formatToolMetrics(result);
-			const metricsFooter = metrics
-				? indentToolBodyLines([theme.italic(theme.fg("dim", `↳ ${metrics}`))])[0] ?? ""
-				: "";
 
 			if (!isExpanded(options)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
@@ -294,27 +309,11 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
 				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore);
-				if (!metricsFooter) return inner;
-				return {
-					invalidate() { inner.invalidate(); },
-					render(width: number): string[] {
-						const lines = [...inner.render(width)];
-						lines.push(metricsFooter);
-						return lines;
-					},
-				};
+				return renderBoxedBashResult(theme, inner, result, context);
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
 			const inner = createBashResultPreview(theme, output, options, outputColor, 0);
-			if (!metricsFooter) return inner;
-			return {
-				invalidate() { inner.invalidate(); },
-				render(width: number): string[] {
-					const lines = [...inner.render(width)];
-					lines.push(metricsFooter);
-					return lines;
-				},
-			};
+			return renderBoxedBashResult(theme, inner, result, context);
 		},
 	});
 }

@@ -40,8 +40,13 @@ export function formatToolMetricsFromValues(elapsedMs: number | undefined, outpu
 	return [formatElapsedMs(elapsedMs), formatOutputChars(outputChars)].filter(Boolean).join(" · ");
 }
 
+export function getElapsedMs(result: AgentToolResult<any> | undefined): number | undefined {
+	const elapsed = (result?.details as any)?.[ELAPSED_KEY];
+	return typeof elapsed === "number" && Number.isFinite(elapsed) ? elapsed : undefined;
+}
+
 export function formatElapsed(result: AgentToolResult<any> | undefined): string {
-	return formatElapsedMs((result?.details as any)?.[ELAPSED_KEY]);
+	return formatElapsedMs(getElapsedMs(result));
 }
 
 export function formatOutputSize(result: AgentToolResult<any> | undefined): string {

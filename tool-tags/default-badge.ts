@@ -1,51 +1,91 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
+import type { Component } from "@mariozechner/pi-tui";
 
-import { fgHex, hexToRgb, isHexColor } from "../ansi.js";
-import { getThemeExtra } from "../theme-extras.js";
+import { boxBorder, boxedWrappedLines, boxWidth, formatBoxedFooter, formatBoxedToolTitle, formatToolName, formatToolParamLines } from "./common.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
+const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
+const BOXED_FALLBACK_FLAG = Symbol("__defaultBadge_boxedFallback__");
 
-const CUSTOM_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "find", "grep"]);
+const CUSTOM_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "find", "grep", "quick_edit", "substitute_edit", "target_edit"]);
 
 let cachedTheme: any = null;
 
-function formatBadgeLabel(toolName: string): string {
-	return toolName.toUpperCase().replace(/[_-]/g, " ");
+const fallbackTheme = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+};
+
+function getRenderTheme(): any {
+	return cachedTheme ?? fallbackTheme;
 }
 
-function makeBadge(t: any, label: string): string {
-	const tagBg = getThemeExtra(t, "tagBgColor");
-	return t.inverse(fgHex(t, tagBg, t.bold(` ${label} `)));
-}
-
-function makeBadgeFallback(label: string): string {
-	const tagBg = getThemeExtra(null, "tagBgColor");
-	const { r, g, b } = hexToRgb(isHexColor(tagBg) ? tagBg : "#79c0ff");
-	return `\x1b[1m\x1b[48;2;${r};${g};${b}m\x1b[30m ${label} \x1b[0m`;
-}
-
-function restAfterToolName(current: string, toolName: string): string {
-	const idx = current.indexOf(toolName);
-	if (idx < 0) return "";
-
-	// Skip past the tool name and any ANSI reset sequences after it.
-	let afterName = idx + toolName.length;
-	while (afterName < current.length && current[afterName] === "\x1b") {
-		const end = current.indexOf("m", afterName);
-		if (end >= 0) afterName = end + 1;
-		else break;
+function getTextOutput(owner: any): string {
+	try {
+		if (typeof owner.getTextOutput === "function") return String(owner.getTextOutput() ?? "").replace(/\r/g, "").trimEnd();
+	} catch {
+		// Fall back to raw result content below.
 	}
-	return current.slice(afterName);
+	const content = owner.result?.content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((block: any) => block?.type === "text")
+		.map((block: any) => String(block.text ?? ""))
+		.join("\n")
+		.replace(/\r/g, "")
+		.trimEnd();
 }
 
-function applyBadgeToFirstTextChild(container: any, toolName: string, badgeText: string): boolean {
-	if (!container?.children?.length) return false;
-	const firstChild = container.children[0];
-	if (!firstChild || typeof firstChild.setText !== "function") return false;
+function createBoxedFallbackComponent(owner: any): Component {
+	return {
+		invalidate() {},
+		render(width: number): string[] {
+			const theme = getRenderTheme();
+			const renderedWidth = boxWidth(width);
+			const title = formatBoxedToolTitle(theme, formatToolName(String(owner.toolName ?? "Tool")), Boolean(owner.result?.isError));
+			const paramLines = formatToolParamLines(owner.args, theme);
+			const output = getTextOutput(owner);
+			const rawOutputLines = output ? output.split("\n") : [];
+			const outputLines = rawOutputLines.length > 0 ? rawOutputLines : [theme.fg("muted", "∅ (no output)")];
+			if (owner.result?.isError) outputLines.unshift(theme.fg("error", "✗ Error"));
 
-	const current: string = firstChild.text ?? "";
-	firstChild.setText(`${badgeText}${restAfterToolName(current, toolName)}`);
-	return true;
+			const lines = [
+				boxBorder(theme, "┌", "┐", renderedWidth, title),
+				...paramLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
+			];
+
+			if (owner.result) {
+				lines.push(
+					boxBorder(theme, "├", "┤", renderedWidth),
+					...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
+					...boxedWrappedLines(theme, formatBoxedFooter(theme, owner.result), renderedWidth),
+				);
+			}
+
+			lines.push(boxBorder(theme, "└", "┘", renderedWidth));
+			return lines;
+		},
+	};
+}
+
+function installBoxedFallback(thisArg: any): void {
+	const component = thisArg[BOXED_FALLBACK_FLAG] ?? createBoxedFallbackComponent(thisArg);
+	thisArg[BOXED_FALLBACK_FLAG] = component;
+
+	const hasRendererDefinition = Boolean(thisArg.hasRendererDefinition?.());
+	const usesSelfRenderShell = hasRendererDefinition && thisArg.getRenderShell?.() === "self";
+	const targetContainer = usesSelfRenderShell ? thisArg.selfRenderContainer : thisArg.contentBox;
+	if (targetContainer && typeof targetContainer.clear === "function" && typeof targetContainer.addChild === "function") {
+		if (!hasRendererDefinition && typeof targetContainer.setBgFn === "function" && cachedTheme?.bg) {
+			const bgName = thisArg.isPartial ? "toolPendingBg" : thisArg.result?.isError ? "toolErrorBg" : "toolSuccessBg";
+			targetContainer.setBgFn((text: string) => cachedTheme.bg(bgName, text));
+		}
+		targetContainer.clear();
+		targetContainer.addChild(component);
+	}
+
+	const childIndex = Array.isArray(thisArg.children) ? thisArg.children.indexOf(thisArg.contentText) : -1;
+	if (childIndex >= 0) thisArg.children[childIndex] = thisArg.contentBox;
 }
 
 export function setDefaultBadgeTheme(theme: any): void {
@@ -62,39 +102,24 @@ export function installDefaultBadge(): void {
 
 	const baseUpdateDisplay = proto.updateDisplay;
 	proto.updateDisplay = function patchedDefaultBadge(this: any, ...args: any[]) {
+		// Force invalidate cached renderer on first render to fix resume render issue
+		// (only for completed tools that haven't been rendered yet)
+		if (!this[RENDERED_FLAG] && this.resultRendererComponent && typeof this.resultRendererComponent.invalidate === "function") {
+			try {
+				this.resultRendererComponent.invalidate();
+			} catch {
+				// best effort
+			}
+		}
+		this[RENDERED_FLAG] = true;
+
 		const result = baseUpdateDisplay.apply(this, args);
 
 		const toolName: string | undefined = this.toolName;
 		if (!toolName || CUSTOM_TOOLS.has(toolName)) return result;
 
-		const label = formatBadgeLabel(toolName);
-		const badgeText = cachedTheme
-			? makeBadge(cachedTheme, label)
-			: makeBadgeFallback(label);
-
-		// Case 1: contentBox with children (default renderer shell path)
-		if (applyBadgeToFirstTextChild(this.contentBox, toolName, badgeText)) {
-			return result;
-		}
-
-		// Case 2: selfRenderContainer with children (renderShell: "self" tools)
-		if (applyBadgeToFirstTextChild(this.selfRenderContainer, toolName, badgeText)) {
-			return result;
-		}
-
-		// Case 3: contentText (no renderer fallback)
-		if (this.contentText && typeof this.contentText.setText === "function") {
-			const current: string = this.contentText.text ?? "";
-			if (current) {
-				const newlineIdx = current.indexOf("\n");
-				if (newlineIdx >= 0) {
-					this.contentText.setText(`${badgeText}${current.slice(newlineIdx)}`);
-				} else {
-					this.contentText.setText(badgeText);
-				}
-			}
-		}
-
+		installBoxedFallback(this);
+		this[BOXED_FALLBACK_FLAG]?.invalidate?.();
 		return result;
 	};
 }

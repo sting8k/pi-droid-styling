@@ -1,9 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createFindTool } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
-
 import { stripAnsi } from "../ansi.js";
-import { countLines, dimWithElapsed, getTextOutput, indentToolBody, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, countLines, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerFindTool(pi: ExtensionAPI): void {
@@ -22,12 +20,24 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
-			return renderToolCallHeader(theme, "FIND FILES", detail);
+			return renderBoxedToolCall(theme, "Find", [`${theme.fg("dim", "Query: ")}${detail}`], {
+				widthKey: boxedToolWidthKey("Find", detail),
+			});
 		},
 		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
+			const pattern = String(context?.args?.pattern ?? "");
+			const rawPath = String(context?.args?.path ?? ".");
+			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
+			const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
+			const widthKey = boxedToolWidthKey("Find", detail);
+			const referenceLines = [`Query: ${detail}`];
 			if (context?.isError) {
-				return new Text(`\n${theme.fg("error", indentToolBody(output || "Error"))}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			let fileCount = 0;
@@ -40,7 +50,11 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			}
 
 			const summary = `↳ Found ${fileCount} ${fileCount === 1 ? "file" : "files"}.`;
-			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
+			return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+				widthKey,
+				referenceLines,
+				footerLines: [formatBoxedFooter(theme, result)],
+			});
 		},
 	});
 }

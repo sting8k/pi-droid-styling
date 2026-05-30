@@ -15,8 +15,8 @@ import {
 	firstText,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { dimWithElapsed, getTextOutput, isExpanded, renderToolCallHeader, renderToolMetricsFooter, resolveRelativePath } from "./common.js";
-import { formatToolMetrics, wrapExecuteWithTiming } from "./elapsed.js";
+import { formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
+import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_DIFF_CHARS = 12000;
 const MAX_HIGHLIGHT_DIFF_ROWS = 120;
@@ -73,18 +73,20 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
-			return renderToolCallHeader(theme, "EDIT", detail);
+			return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", "Path: ")}${detail}`]);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
 			// Handle partial/streaming state
 			if (options.isPartial) {
-				return new Text(`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`]);
 			}
 
 			// Handle errors
 			if (result.isError) {
 				const output = getTextOutput(result);
-				return new Text(`${theme.fg("error", stripAnsi(output).trim() || "Error")}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			// Extract diff from result details
@@ -94,7 +96,9 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			if (!diff) {
 				const output = stripAnsi(getTextOutput(result)).trim();
 				const fallback = `↳ ${output || "Edit applied"}`;
-				return new Text(dimWithElapsed(theme, fallback, result), 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("dim", fallback)], {
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			// Resolve language for syntax highlighting
@@ -114,7 +118,6 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			// Build summary header with diff stats and meter
 			const { additions, removals } = countDiffStats(diff);
 			const meter = renderDiffMeter(theme, additions, removals);
-			const metrics = formatToolMetrics(result);
 			const summary =
 				`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 				` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
@@ -126,16 +129,18 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			const maxRows = expanded ? 160 : 36;
 			const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 
-			return {
+			return renderBoxedToolResult(theme, {
 				render(width: number): string[] {
-					const safeWidth = Math.max(20, width - 1);
+					const safeWidth = Math.max(20, width);
 					const headerLines = new Text(summary, 0, 0).render(safeWidth);
-					return [...headerLines, ...split.render(safeWidth), ...renderToolMetricsFooter(theme, safeWidth, metrics)];
+					return [...headerLines, ...split.render(safeWidth)];
 				},
 				invalidate(): void {
 					split.invalidate();
 				},
-			};
+			}, {
+				footerLines: [formatBoxedFooter(theme, result)],
+			});
 		},
 	});
 }

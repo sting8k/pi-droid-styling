@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createReadTool, getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
-import { Text, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { countLines, dimWithElapsed, extractTrailingNotice, getTextOutput, isExpanded, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
@@ -66,13 +66,32 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const detail = path ? `${path}${range}` : "(unknown)";
-			return renderToolCallHeader(theme, "READ", detail);
+			return renderBoxedToolCall(theme, "Read", [`${theme.fg("dim", "Path: ")}${detail}`], {
+				widthKey: boxedToolWidthKey("Read", detail),
+			});
 		},
 		renderResult(result: any, options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
+			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+			const path = shortenPath(rawPath);
+			const offset = context?.args?.offset;
+			const limit = context?.args?.limit;
+			let range = "";
+			if (offset !== undefined || limit !== undefined) {
+				const start = offset ?? 1;
+				const end = limit !== undefined ? start + limit - 1 : "";
+				range = `:${start}${end ? `-${end}` : ""}`;
+			}
+			const detail = path ? `${path}${range}` : "(unknown)";
+			const widthKey = boxedToolWidthKey("Read", detail);
+			const referenceLines = [`Path: ${detail}`];
 
 			if (result.isError) {
-				return new Text(`${theme.fg("error", output || "Error")}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			const imageCount = Array.isArray(result.content)
@@ -80,7 +99,11 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				: 0;
 			if (imageCount > 0) {
 				const summary = `↳ Read ${imageCount} ${imageCount === 1 ? "image" : "images"}.`;
-				return new Text(`${theme.fg("dim", summary)}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			const stripped = stripTrailingNotice(output);
@@ -91,10 +114,14 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					? result.details.truncation.outputLines
 					: parsed.numberedLines?.length ?? countLines(parsed.body);
 
-			const summary = dimWithElapsed(theme, `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`, result);
+			const summary = theme.fg("dim", `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`);
 
 			if (!isExpanded(options)) {
-				return new Text(summary, 0, 0);
+				return renderBoxedToolResult(theme, () => [summary], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			// Expanded: show syntax-highlighted content
@@ -102,7 +129,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const lang = getLanguageFromPath(filePath);
 			let cacheKey = "";
 			let cacheLines: string[] | null = null;
-			return {
+			const body = {
 				invalidate() {
 					cacheKey = "";
 					cacheLines = null;
@@ -169,15 +196,20 @@ export function registerReadTool(pi: ExtensionAPI): void {
 						truncated.push(theme.fg("dim", `… ${remaining} more lines`));
 						truncated.push(...footer);
 						cacheKey = cacheId;
-						cacheLines = ["", ...truncated];
+						cacheLines = truncated;
 						return cacheLines;
 					}
 					highlighted.push(...footer);
 					cacheKey = cacheId;
-					cacheLines = ["", ...highlighted];
+					cacheLines = highlighted;
 					return cacheLines;
 				},
 			};
+			return renderBoxedToolResult(theme, body, {
+				widthKey,
+				referenceLines,
+				footerLines: [formatBoxedFooter(theme, result)],
+			});
 		},
 	});
 }

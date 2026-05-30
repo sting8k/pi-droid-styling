@@ -1,9 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createWriteTool } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
-
 import { stripAnsi } from "../ansi.js";
-import { dimWithElapsed, getTextOutput, renderToolCallHeader, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 function parseWriteSummary(output: string): string | undefined {
@@ -44,30 +42,53 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
-			return renderToolCallHeader(theme, "WRITE", detail);
+			return renderBoxedToolCall(theme, "Write", [`${theme.fg("dim", "Path: ")}${detail}`], {
+				widthKey: boxedToolWidthKey("Write", detail),
+			});
 		},
 		renderResult(result: any, _options, theme: any, context: any) {
 			const output = getTextOutput(result);
+			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+			const detail = relPath || "(unknown)";
+			const widthKey = boxedToolWidthKey("Write", detail);
+			const referenceLines = [`Path: ${detail}`];
 
 			if (result.isError) {
-				return new Text(`${theme.fg("error", stripAnsi(output).trim() || "Error")}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			const content = String(context?.args?.content ?? "");
 			const lineCount = content ? content.split("\n").length : 0;
 			if (lineCount > 0) {
 				const summary = `↳ Wrote ${lineCount} ${lineCount === 1 ? "line" : "lines"}.`;
-				return new Text(dimWithElapsed(theme, summary, result), 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			const summary = parseWriteSummary(output);
 			if (summary) {
-				return new Text(dimWithElapsed(theme, summary, result), 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			const normalized = stripTrailingNotice(stripAnsi(output)).trim();
 			const fallback = normalized ? `↳ ${normalized}` : "↳ Wrote file.";
-			return new Text(dimWithElapsed(theme, fallback, result), 0, 0);
+			return renderBoxedToolResult(theme, () => [theme.fg("dim", fallback)], {
+				widthKey,
+				referenceLines,
+				footerLines: [formatBoxedFooter(theme, result)],
+			});
 		},
 	});
 }

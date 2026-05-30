@@ -1,9 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLsTool } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
-
 import { stripAnsi } from "../ansi.js";
-import { countLines, dimWithElapsed, getTextOutput, indentToolBody, renderToolCallHeader, shortenPath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, countLines, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 export function registerLsTool(pi: ExtensionAPI): void {
@@ -20,12 +18,22 @@ export function registerLsTool(pi: ExtensionAPI): void {
 		renderCall(args: any, theme: any) {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
-			return renderToolCallHeader(theme, "LIST DIRECTORY", displayPath);
+			return renderBoxedToolCall(theme, "List", [`${theme.fg("dim", "Path: ")}${displayPath}`], {
+				widthKey: boxedToolWidthKey("List", displayPath),
+			});
 		},
 		renderResult(result, _options, theme: any, context: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
+			const rawPath = String(context?.args?.path ?? ".");
+			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
+			const widthKey = boxedToolWidthKey("List", displayPath);
+			const referenceLines = [`Path: ${displayPath}`];
 			if (context?.isError) {
-				return new Text(`\n${theme.fg("error", indentToolBody(output || "Error"))}`, 0, 0);
+				return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
+					widthKey,
+					referenceLines,
+					footerLines: [formatBoxedFooter(theme, result)],
+				});
 			}
 
 			let itemCount = 0;
@@ -38,7 +46,11 @@ export function registerLsTool(pi: ExtensionAPI): void {
 			}
 
 			const summary = `↳ Listed ${itemCount} ${itemCount === 1 ? "item" : "items"}.`;
-			return new Text(dimWithElapsed(theme, summary, result), 0, 0);
+			return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+				widthKey,
+				referenceLines,
+				footerLines: [formatBoxedFooter(theme, result)],
+			});
 		},
 	});
 }
