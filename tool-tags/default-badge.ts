@@ -1,7 +1,7 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 
-import { boxBg, boxBorder, boxedToolBgName, boxedWrappedLines, boxWidth, formatBoxedFooter, formatBoxedToolTitle, formatToolName, formatToolParamLines } from "./common.js";
+import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult } from "./common.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
 const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
@@ -41,35 +41,23 @@ function createBoxedFallbackComponent(owner: any): Component {
 		invalidate() {},
 		render(width: number): string[] {
 			const theme = getRenderTheme();
-			const renderedWidth = boxWidth(width);
-			const bgName = boxedToolBgName(Boolean(owner.result?.isError), Boolean(owner.isPartial));
-			const title = formatBoxedToolTitle(theme, formatToolName(String(owner.toolName ?? "Tool")), Boolean(owner.result?.isError));
-			const paramLines = formatToolParamLines(owner.args, theme);
+			const isError = Boolean(owner.result?.isError);
+			const isPartial = Boolean(owner.isPartial);
+			const hasResult = Boolean(owner.result);
+			const call = renderBoxedToolCall(theme, formatToolName(String(owner.toolName ?? "Tool")), formatToolParamLines(owner.args, theme), {
+				isError,
+				isPartial,
+				isPending: isPartial && !hasResult,
+			});
+			if (!hasResult) return call.render(width);
+
 			const output = getTextOutput(owner);
-			const rawOutputLines = output ? output.split("\n") : [];
-			const outputLines = rawOutputLines.length > 0 ? rawOutputLines : [theme.fg("muted", "∅ (no output)")];
-			if (owner.result?.isError) outputLines.unshift(theme.fg("error", "✗ Error"));
-
-			const lines = [
-				boxBorder(theme, "┌", "┐", renderedWidth, title),
-				...paramLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
-			];
-
-			if (owner.result) {
-				lines.push(
-					boxBorder(theme, "├", "┤", renderedWidth),
-					...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
-					...boxedWrappedLines(theme, formatBoxedFooter(theme, owner.result), renderedWidth),
-				);
-			} else if (owner.isPartial) {
-				lines.push(
-					boxBorder(theme, "├", "┤", renderedWidth),
-					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", "Waiting for output…")}`, renderedWidth),
-				);
-			}
-
-			lines.push(boxBorder(theme, "└", "┘", renderedWidth));
-			return lines.map((line) => boxBg(theme, line, bgName));
+			const result = renderBoxedToolResult(theme, () => (output ? output.split("\n") : []), {
+				footerLines: [formatBoxedFooter(theme, owner.result)],
+				isError,
+				isPartial,
+			});
+			return [...call.render(width), ...result.render(width)];
 		},
 	};
 }

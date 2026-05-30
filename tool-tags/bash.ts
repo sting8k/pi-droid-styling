@@ -169,7 +169,7 @@ function renderBoxedBashResult(theme: any, inner: Component, result: any, contex
 	return renderBoxedToolResult(theme, inner, {
 		widthKey: bashWidthKey(rawCommand, timeout),
 		referenceLines,
-		footerLines: [formatBoxedFooter(theme, result, [`Timeout: ${formatTimeout(context)}`])],
+		footerLines: [formatBoxedFooter(theme, result, [`⏹ ${formatTimeout(context)}`])],
 		isError: context?.isError,
 		isPartial: Boolean(context?.isPartial),
 	});

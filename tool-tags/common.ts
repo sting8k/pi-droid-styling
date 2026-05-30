@@ -91,7 +91,7 @@ function formatCompactCount(value: number): string {
 }
 
 export function formatBoxedWords(text: string): string {
-	return `Words: ~${formatCompactCount(countWords(text))}w`;
+	return `✎ ~${formatCompactCount(countWords(text))} words`;
 }
 
 export function badge(theme: any, label: string): string {
@@ -270,7 +270,6 @@ export function boxLine(theme: any, content: string, width: number): string {
 export function boxedWrappedLines(theme: any, content: string, width: number): string[] {
 	return wrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
 }
-
 export function renderBoxedToolCall(
 	theme: any,
 	toolName: string,
@@ -317,12 +316,15 @@ export function renderBoxedToolResult(
 			const errorPrefix = options.isError ? [theme.fg("error", "✗ Error")] : [];
 			const outputLines = bodyLines.length > 0 ? [...errorPrefix, ...bodyLines] : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const footerLines = options.footerLines ?? [];
+			const renderedFooterLines = footerLines.length > 0
+				? [boxLine(theme, "", renderedWidth), ...footerLines.map((line) => boxLine(theme, line, renderedWidth))]
+				: [];
 			const outputLabel = options.outputLabel ?? "";
 			const separatorLabel = outputLabel || undefined;
 			return boxBgLines(theme, [
 				boxBorder(theme, "├", "┤", renderedWidth, separatorLabel),
 				...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
-				...footerLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
+				...renderedFooterLines,
 				boxBorder(theme, "└", "┘", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
 		},
@@ -336,8 +338,8 @@ export function formatBoxedWallTime(result: AgentToolResult<any> | undefined): s
 }
 
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {
-	const parts = [`Wall: ${formatBoxedWallTime(result)}`, ...extraParts.filter(Boolean), formatBoxedWords(getTextOutput(result))];
-	return theme.fg("dim", `[${parts.join(" | ")}]`);
+	const parts = [`◷ ${formatBoxedWallTime(result)}`, ...extraParts.filter(Boolean), formatBoxedWords(getTextOutput(result))];
+	return theme.fg("toolOutput", `[${parts.join(" · ")}]`);
 }
 
 const TOOL_BODY_INDENT = 2;

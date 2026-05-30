@@ -135,7 +135,7 @@ function getQuickEditElapsedMs(context: QuickEditRenderContext): number | undefi
 function formatQuickEditFooter(theme: any, context: QuickEditRenderContext, output = ""): string {
 	const elapsedMs = getQuickEditElapsedMs(context);
 	const wall = elapsedMs === undefined ? "--" : `${(elapsedMs / 1000).toFixed(2)}s`;
-	return theme.fg("dim", `[Wall: ${wall} | ${formatBoxedWords(output)}]`);
+	return theme.fg("toolOutput", `[◷ ${wall} · ${formatBoxedWords(output)}]`);
 }
 
 function renderQuickEditResult(
