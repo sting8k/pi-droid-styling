@@ -1,5 +1,6 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { homedir } from "node:os";
 
 import { fgHex, stripAnsi } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
@@ -67,12 +68,15 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+const PANEL_PADDING_X = 2;
+
 export class BoxEditor extends CustomEditor {
 	constructor(
 		tui: any,
 		theme: any,
 		kb: any,
 		private readonly fullTheme: any,
+		private readonly sessionCwd: string,
 		private readonly getContextUsage?: ContextUsageProvider,
 		private readonly getModelInfo?: ModelInfoProvider,
 		private readonly getBranch?: BranchProvider,
@@ -225,31 +229,29 @@ export class BoxEditor extends CustomEditor {
 		return lines;
 	}
 
-	private formatContextDots(percent: number | null): string {
-		if (percent === null) return "";
-		const total = 4;
-		const filled = Math.max(0, Math.min(total, Math.round((percent / 100) * total)));
-		return "◼".repeat(filled) + "◻".repeat(total - filled);
+	private tone(color: string, text: string): string {
+		try {
+			return typeof this.fullTheme?.fg === "function" ? this.fullTheme.fg(color, text) : text;
+		} catch {
+			return text;
+		}
 	}
 
-	private formatResponseSpeedBadge(): string | null {
-		const speed = this.getResponseSpeed?.();
-		if (typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) return null;
-		const rounded = speed >= 100 ? Math.round(speed).toString() : speed.toFixed(1).replace(/\.0$/, "");
-		return `${rounded} words/s`;
+	private bg(color: string, text: string): string {
+		try {
+			return typeof this.fullTheme?.bg === "function" ? this.fullTheme.bg(color, text) : text;
+		} catch {
+			return text;
+		}
 	}
 
-	private formatContextBadge(): string | null {
-		const speed = this.formatResponseSpeedBadge();
-		const usage = this.getContextUsage?.();
-		if (!usage || !usage.contextWindow) return speed;
-		const used = usage.tokens === null ? "?" : this.formatCompactTokens(usage.tokens);
-		const percent = usage.percent === null ? "?" : `${usage.percent.toFixed(1)}%`;
-		const dots = this.formatContextDots(usage.percent);
-		const context = dots
-			? `${dots} ${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`
-			: `${used} · ${percent}/${this.formatCompactTokens(usage.contextWindow)}`;
-		return speed ? `${context} · ${speed}` : context;
+	private bold(text: string): string {
+		return typeof this.fullTheme?.bold === "function" ? this.fullTheme.bold(text) : text;
+	}
+
+	private pad(content: string, width: number): string {
+		const truncated = visibleWidth(content) > width ? truncateToWidth(content, width, "") : content;
+		return `${truncated}${" ".repeat(Math.max(0, width - visibleWidth(truncated)))}`;
 	}
 
 	private formatCompactTokens(count: number): string {
@@ -260,104 +262,173 @@ export class BoxEditor extends CustomEditor {
 		return `${Math.round(count / 1000000)}M`;
 	}
 
-	private formatModelBadge(): string | null {
+	private contextUsage(): { tokens: number | null; contextWindow: number; percent: number | null } | null {
+		const usage = this.getContextUsage?.();
+		if (!usage || !usage.contextWindow) return null;
+		const percent = typeof usage.percent === "number" && Number.isFinite(usage.percent)
+			? usage.percent
+			: typeof usage.tokens === "number" && usage.contextWindow > 0
+				? (usage.tokens / usage.contextWindow) * 100
+				: null;
+		return { tokens: usage.tokens, contextWindow: usage.contextWindow, percent };
+	}
+
+	private formatTokenBar(percent: number | null): string {
+		if (percent === null || !Number.isFinite(percent)) return "";
+		const total = 12;
+		const filled = Math.max(0, Math.min(total, Math.round((percent / 100) * total)));
+		const fillColor = percent >= 90 ? "error" : "syntaxOperator";
+		const full = filled > 0 ? this.tone(fillColor, "━".repeat(filled)) : "";
+		const empty = filled < total ? this.tone("borderMuted", "━".repeat(total - filled)) : "";
+		return `${full}${empty}`;
+	}
+
+	private formatTokenMeter(): string | null {
+		const usage = this.contextUsage();
+		if (!usage || usage.percent === null) return null;
+		return `${this.tone("dim", "Tokens:")} ${this.formatTokenBar(usage.percent)} ${this.tone("muted", `${usage.percent.toFixed(1)}%`)}`;
+	}
+
+	private formatResponseSpeedBadge(): string | null {
+		const speed = this.getResponseSpeed?.();
+		if (typeof speed !== "number" || !Number.isFinite(speed) || speed <= 0) return null;
+		const rounded = speed >= 100 ? Math.round(speed).toString() : speed.toFixed(1).replace(/\.0$/, "");
+		return `${rounded} words/s`;
+	}
+
+	private formatContextMetric(): string | null {
+		const usage = this.contextUsage();
+		if (!usage || usage.percent === null) return null;
+		return `${usage.percent.toFixed(1)}%/${this.formatCompactTokens(usage.contextWindow)}`;
+	}
+
+	private formatModelBadge(): { plain: string; rendered: string } | null {
 		const info = this.getModelInfo?.();
 		if (!info || !info.id) return null;
-		let badge = info.provider ? `[${info.provider}] ${info.id}` : info.id;
-		if (info.reasoning && info.thinkingLevel) {
-			badge += info.thinkingLevel === "off" ? " (thinking off)" : ` (${info.thinkingLevel})`;
-		}
-		return badge;
+		const provider = info.provider ? `[${String(info.provider).toUpperCase()}] ` : "";
+		const level = info.reasoning && info.thinkingLevel
+			? info.thinkingLevel === "off" ? " (thinking off)" : ` (${info.thinkingLevel})`
+			: "";
+		const plain = `${provider}${info.id}${level}`;
+		return {
+			plain,
+			rendered: this.bg("selectedBg", ` ${this.tone("muted", provider)}${this.tone("text", `${info.id}${level}`)} `),
+		};
+	}
+
+	private formatCwd(): string {
+		const home = homedir().replace(/\\/g, "/");
+		const normalized = (this.sessionCwd || process.cwd()).replace(/\\/g, "/");
+		const display = normalized.startsWith(home) ? `~${normalized.slice(home.length)}` : normalized;
+		const parts = display.split("/").filter(Boolean);
+		if (display.startsWith("~")) parts[0] = "~";
+		if (parts.length <= 3) return parts.join("/") || ".";
+		return `${parts[0]} …/${parts.slice(-1)[0]}`;
+	}
+
+	private panelContentWidth(width: number): number {
+		const innerWidth = Math.max(1, width - 2);
+		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
+		return Math.max(1, innerWidth - sidePadding * 2);
+	}
+
+	private formatBranchBadge(): { plain: string; rendered: string } | null {
+		const info = this.getBranch?.();
+		if (!info?.branch) return null;
+		const icon = "⎇";
+		const diffPlain = [
+			info.insertions ? `[+${info.insertions}]` : "",
+			info.deletions ? `[-${info.deletions}]` : "",
+		].filter(Boolean);
+		const plain = [icon, info.branch, ...diffPlain].join(" ");
+		const renderedDiff = [
+			info.insertions ? this.tone("success", `[+${info.insertions}]`) : "",
+			info.deletions ? this.tone("error", `[-${info.deletions}]`) : "",
+		].filter(Boolean).join(" ");
+		const rendered = [
+			this.tone("bashMode", icon),
+			this.bold(this.tone("bashMode", info.branch)),
+			renderedDiff,
+		].filter(Boolean).join(" ");
+		return { plain, rendered };
+	}
+
+	private renderPanelLine(content: string, width: number, border: (text: string) => string): string {
+		const innerWidth = Math.max(1, width - 2);
+		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
+		const sidePad = " ".repeat(sidePadding);
+		const contentWidth = Math.max(1, innerWidth - sidePadding * 2);
+		return `${border("│")}${sidePad}${this.pad(content, contentWidth)}${sidePad}${border("│")}`;
+	}
+
+	private renderTopRow(width: number): string {
+		const sep = this.tone("borderMuted", "│");
+		const model = this.formatModelBadge();
+		const leftParts = [this.tone("syntaxOperator", this.formatCwd()), model?.rendered].filter(Boolean);
+		let left = leftParts.join(` ${sep} `);
+		const tokenMeter = this.formatTokenMeter() ?? "";
+		const branch = this.formatBranchBadge();
+		const right = branch ? `${sep} ${branch.rendered}` : "";
+		const rightPlainWidth = branch ? visibleWidth(`│ ${branch.plain}`) : 0;
+		const available = Math.max(1, width - rightPlainWidth - (right ? 1 : 0));
+		const main = tokenMeter ? `${left}  ${tokenMeter}` : left;
+		const trimmedMain = visibleWidth(main) > available ? truncateToWidth(main, available, "…") : main;
+		const gap = right ? " ".repeat(Math.max(1, width - visibleWidth(trimmedMain) - rightPlainWidth)) : "";
+		return this.pad(`${trimmedMain}${gap}${right}`, width);
+	}
+
+	private renderRuntimeRow(width: number): string {
+		const bullet = this.tone("bashMode", "●");
+		const metrics = [
+			this.formatContextMetric(),
+			this.formatResponseSpeedBadge(),
+		].filter(Boolean).map((item) => `${bullet} ${this.tone("muted", item!)}`);
+		return this.pad(metrics.join("  "), width);
 	}
 
 	render(width: number): string[] {
 		const innerWidth = Math.max(1, width - 2);
-		const border = this.fullTheme
-			? (text: string) => fgHex(this.fullTheme, getThemeExtra(this.fullTheme, "inputBorderColor"), text)
-			: this.borderColor;
+		const contentInnerWidth = this.panelContentWidth(width);
+		const border = (text: string) => this.tone("borderMuted", text);
 
 		const text = this.getText();
 		const isBashMode = text.startsWith("!");
-		const isDoubleBang = text.startsWith("!!");
-
-		const promptChar = isDoubleBang ? "!!" : isBashMode ? "!" : ">";
-		const prompt = this.fullTheme
-			? isBashMode
-				? fgHex(this.fullTheme, getThemeExtra(this.fullTheme, "bashPromptColor"), promptChar)
-				: this.fullTheme.fg("accent", ">")
-			: promptChar;
-		const promptPrefix = ` ${prompt} `;
+		const prompt = this.bold(this.tone("syntaxOperator", "❯"));
+		const promptPrefix = `${prompt} `;
 		const prefixWidth = visibleWidth(promptPrefix);
-		const contentWidth = Math.max(1, innerWidth - prefixWidth);
-
+		const contentWidth = Math.max(1, contentInnerWidth - prefixWidth);
 		const parentLines = super.render(contentWidth);
 		if (parentLines.length === 0) return parentLines;
 
 		const bottomBorderIndex = findLastBorderIndex(parentLines);
-		const rawContentLines =
-			bottomBorderIndex > 0 ? parentLines.slice(1, bottomBorderIndex) : parentLines.slice(1);
+		const rawContentLines = bottomBorderIndex > 0 ? parentLines.slice(1, bottomBorderIndex) : parentLines.slice(1);
 		const autocompleteLines = bottomBorderIndex >= 0 ? parentLines.slice(bottomBorderIndex + 1) : [];
 
 		const displayLines = rawContentLines.length > 0 ? [...rawContentLines] : [""];
-		if (isBashMode && displayLines[0]) {
-			displayLines[0] = stripBashPrefix(displayLines[0]);
-		}
+		if (isBashMode && displayLines[0]) displayLines[0] = stripBashPrefix(displayLines[0]);
 
-		const boxedLines = displayLines.map((line, index) => {
+		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
-			const lineWidth = visibleWidth(line);
-			const padding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-			return `${border("│")}${prefix}${line}${padding}${border("│")}`;
+			const renderedLine = index === 0 && stripAnsi(line).trim().length === 0 ? this.tone("syntaxOperator", "█") : line;
+			const available = Math.max(1, contentInnerWidth - visibleWidth(prefix));
+			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width, border);
 		});
 
-		const contextBadge = this.formatContextBadge();
-		const branchInfo = this.getBranch?.();
-		const leftSegment = contextBadge ? ` ${contextBadge} ` : "";
-		let rightSegment = "";
-		let rightRendered = "";
-		if (branchInfo) {
-			let diffPlain = "";
-			let diffColored = "";
-			if (branchInfo.insertions || branchInfo.deletions) {
-				const insPlain = branchInfo.insertions ? `+${branchInfo.insertions}` : "";
-				const delPlain = branchInfo.deletions ? `-${branchInfo.deletions}` : "";
-				diffPlain = [insPlain, delPlain].filter(Boolean).join(" ");
-				const insColored = branchInfo.insertions ? this.color(getThemeExtra(this.fullTheme, "gitInsertionColor"), insPlain) : "";
-				const delColored = branchInfo.deletions ? this.color(getThemeExtra(this.fullTheme, "gitDeletionColor"), delPlain) : "";
-				diffColored = [insColored, delColored].filter(Boolean).join(" ");
-			}
-			rightSegment = diffPlain ? ` (${branchInfo.branch}) ${diffPlain} ` : ` (${branchInfo.branch}) `;
-			rightRendered = diffColored ? `${border(` (${branchInfo.branch}) `)}${diffColored}${border(" ")}` : border(rightSegment);
-		}
-		const leftWidth = visibleWidth(leftSegment);
-		const rightWidth = visibleWidth(rightSegment);
-		const fillWidth = innerWidth - leftWidth - rightWidth;
-		const topBorder =
-			fillWidth >= 1
-				? `${border("┌")}${leftSegment ? border(leftSegment) : ""}${border("─".repeat(fillWidth))}${rightRendered || ""}${border("┐")}`
-				: border(`┌${"─".repeat(innerWidth)}┐`);
-		const bottomBorder = (() => {
-			const modelBadge = this.formatModelBadge();
-			if (modelBadge) {
-				const seg = ` ${modelBadge} `;
-				const segWidth = visibleWidth(seg);
-				if (segWidth < innerWidth) {
-					return `${border("└")}${border("─".repeat(innerWidth - segWidth))}${border(seg)}${border("┘")}`;
-				}
-			}
-			return border(`└${"─".repeat(innerWidth)}┘`);
-		})();
+		const separator = border(`├${"─".repeat(innerWidth)}┤`);
+		const lines = [
+			border(`╭${"─".repeat(innerWidth)}╮`),
+			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width, border),
+			separator,
+			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width, border),
+			separator,
+			...inputLines,
+			border(`╰${"─".repeat(innerWidth)}╯`),
+		];
 
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, border);
-		if (customSlashAutocomplete) {
-			return [topBorder, ...boxedLines, bottomBorder, ...customSlashAutocomplete];
-		}
+		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
 
-		const paddedAutocomplete = autocompleteLines.map((line) => {
-			const padding = " ".repeat(Math.max(0, width - visibleWidth(line)));
-			return `${line}${padding}`;
-		});
-
-		return [topBorder, ...boxedLines, bottomBorder, ...paddedAutocomplete];
+		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`);
+		return [...lines, ...paddedAutocomplete];
 	}
 }

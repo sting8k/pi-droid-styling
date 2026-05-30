@@ -240,7 +240,7 @@ export default function (pi: ExtensionAPI) {
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
 			return new BoxEditor(
-				tui, theme, kb, sessionUi.theme ?? theme,
+				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {
 					try {
 						return ctx.getContextUsage();

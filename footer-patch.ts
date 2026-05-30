@@ -32,11 +32,9 @@ export function installFooterStatsPatch() {
 			if (sanitized !== l) lines[i] = sanitized;
 		}
 
-		// lines[0] = pwd/branch, lines[1] = stats, lines[2+] = extension statuses
-		// Remove the stats line (index 1)
-		if (lines.length >= 2) {
-			lines.splice(1, 1);
-		}
-		return lines;
+		// lines[0] = pwd/branch/session, lines[1] = stats, lines[2+] = extension statuses.
+		// The custom input dock owns cwd/model/context/branch metadata now,
+		// so keep only extension status lines to avoid duplicate footer chrome.
+		return lines.slice(2);
 	};
 }
