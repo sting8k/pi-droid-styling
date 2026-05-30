@@ -329,9 +329,8 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private panelContentWidth(width: number): number {
-		const innerWidth = Math.max(1, width - 2);
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
-		return Math.max(1, innerWidth - sidePadding * 2);
+		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
+		return Math.max(1, width - sidePadding * 2);
 	}
 
 	private formatBranchBadge(): { plain: string; rendered: string } | null {
@@ -355,26 +354,32 @@ export class BoxEditor extends CustomEditor {
 		return { plain, rendered };
 	}
 
-	private renderPanelLine(content: string, width: number, border: (text: string) => string): string {
-		const innerWidth = Math.max(1, width - 2);
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
+	private renderPanelLine(content: string, width: number): string {
+		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
 		const sidePad = " ".repeat(sidePadding);
-		const contentWidth = Math.max(1, innerWidth - sidePadding * 2);
-		return `${border("│")}${sidePad}${this.pad(content, contentWidth)}${sidePad}${border("│")}`;
+		const contentWidth = Math.max(1, width - sidePadding * 2);
+		return `${sidePad}${this.pad(content, contentWidth)}${sidePad}`;
 	}
 
-	private renderPanelDivider(width: number, frame: (text: string) => string, divider: (text: string) => string): string {
-		const innerWidth = Math.max(1, width - 2);
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, innerWidth - 1) / 2));
-		const sidePad = " ".repeat(sidePadding);
-		const lineWidth = Math.max(1, innerWidth - sidePadding * 2);
-		return `${frame("│")}${sidePad}${divider("─".repeat(lineWidth))}${sidePad}${frame("│")}`;
+	private renderTopBorder(width: number): string {
+		const prefix = this.tone("syntaxOperator", "== [root] == ");
+		const remaining = Math.max(0, width - visibleWidth(prefix));
+		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
+	}
+
+	private renderBoldDivider(width: number): string {
+		return this.bold(this.tone("border", "━".repeat(Math.max(1, width))));
+	}
+
+	private formatCellLabel(label: string): string {
+		return ` ${this.pad(this.tone("syntaxOperator", `[${label}]`), 7)} `;
 	}
 
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
-		const leftParts = [this.tone("syntaxOperator", this.formatCwd()), model?.rendered].filter(Boolean);
+		const path = `${this.formatCellLabel("env")}${this.tone("syntaxOperator", this.formatCwd())}`;
+		const leftParts = [path, model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
 		const branch = this.formatBranchBadge();
 		const right = branch ? `${sep} ${branch.rendered}` : "";
@@ -407,7 +412,8 @@ export class BoxEditor extends CustomEditor {
 			this.formatResponseSpeedBadge(),
 		].filter(Boolean).map((item) => `${bullet} ${this.tone("muted", item!)}`);
 		const tokenMeter = this.formatTokenMeter();
-		const left = [tokenMeter, ...metrics].filter(Boolean).join("  ");
+		const usageParts = [tokenMeter, ...metrics].filter(Boolean);
+		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
 		const footerStatus = this.getFooterStatus?.() ?? "";
 		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
 		if (!rightPlain) return this.pad(left, width);
@@ -421,11 +427,7 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
-		const innerWidth = Math.max(1, width - 2);
 		const contentInnerWidth = this.panelContentWidth(width);
-		const frame = (text: string) => this.tone("border", text);
-		const divider = (text: string) => this.tone("borderMuted", text);
-
 		const text = this.getText();
 		const prompt = this.bold(this.tone("syntaxOperator", "❯"));
 		const promptPrefix = `${prompt} `;
@@ -442,21 +444,19 @@ export class BoxEditor extends CustomEditor {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const renderedLine = line;
 			const available = Math.max(1, contentInnerWidth - visibleWidth(prefix));
-			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width, frame);
+			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width);
 		});
 
-		const separator = this.renderPanelDivider(width, frame, divider);
 		const lines = [
-			frame(`┌${"─".repeat(innerWidth)}┐`),
-			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width, frame),
-			separator,
-			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width, frame),
-			separator,
+			this.renderTopBorder(width),
+			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width),
+			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width),
+			this.renderBoldDivider(width),
 			...inputLines,
-			frame(`└${"─".repeat(innerWidth)}┘`),
+			this.renderPanelLine("", width),
 		];
 
-		const customSlashAutocomplete = this.renderSlashAutocomplete(width, frame);
+		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.tone("border", value));
 		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
 
 		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`);
