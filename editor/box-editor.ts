@@ -1,6 +1,6 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
-import { homedir } from "node:os";
+import { homedir, hostname, userInfo } from "node:os";
 
 import { fgHex, stripAnsi } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
@@ -67,6 +67,19 @@ function normalizeSingleLine(text: string): string {
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
+}
+
+function currentUsername(): string {
+	try {
+		return userInfo().username || process.env.USER || process.env.LOGNAME || "user";
+	} catch {
+		return process.env.USER || process.env.LOGNAME || "user";
+	}
+}
+function currentUserHost(): string {
+	const user = currentUsername();
+	const host = hostname().split(".")[0] || "host";
+	return `${user}@${host}`;
 }
 
 const PANEL_PADDING_X = 2;
@@ -362,7 +375,7 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private renderTopBorder(width: number): string {
-		const prefix = this.tone("syntaxOperator", "== [root] == ");
+		const prefix = this.tone("syntaxOperator", `== [${currentUserHost()}] == `);
 		const remaining = Math.max(0, width - visibleWidth(prefix));
 		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
 	}
