@@ -68,7 +68,6 @@ export default function (pi: ExtensionAPI) {
 		assistantTextStartMs = null;
 		assistantLastTextMs = null;
 		currentAssistantWordsPerSecond = null;
-		lastAssistantWordsPerSecond = null;
 		lastAssistantWordCount = 0;
 		lastSpeedUpdateMs = 0;
 	});
