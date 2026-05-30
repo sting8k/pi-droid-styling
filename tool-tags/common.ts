@@ -305,7 +305,7 @@ export function renderBoxedToolCall(
 			const title = formatBoxedToolTitle(theme, toolName, options.isError);
 			const renderedWidth = boxWidth(width);
 			const lines = [
-				boxBorder(theme, "╭", "╮", renderedWidth),
+				boxBorder(theme, "┌", "┐", renderedWidth),
 				boxLine(theme, title, renderedWidth),
 				boxInsetDivider(theme, renderedWidth),
 				...detailLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
@@ -315,7 +315,7 @@ export function renderBoxedToolCall(
 				lines.push(
 					boxInsetDivider(theme, renderedWidth),
 					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", pendingText)}`, renderedWidth),
-					boxBorder(theme, "╰", "╯", renderedWidth),
+					boxBorder(theme, "└", "┘", renderedWidth),
 				);
 			}
 			const rendered = boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
@@ -349,7 +349,7 @@ export function renderBoxedToolResult(
 				boxInsetDivider(theme, renderedWidth),
 				...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 				...renderedFooterLines,
-				boxBorder(theme, "╰", "╯", renderedWidth),
+				boxBorder(theme, "└", "┘", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
 			return rendered;
 		},

@@ -198,7 +198,7 @@ export class BoxEditor extends CustomEditor {
 		const lines: string[] = [];
 		lines.push(" ".repeat(width));
 
-		lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
+		lines.push(border(`┌${"─".repeat(innerWidth)}┐`));
 		if (visibleItems.length === 0) {
 			const noMatch = this.color(getThemeExtra(this.fullTheme, "slashDescriptionColor"), "  No matching commands");
 			const paddedNoMatch = `${noMatch}${" ".repeat(Math.max(0, innerWidth - visibleWidth(noMatch)))}`;
@@ -219,7 +219,7 @@ export class BoxEditor extends CustomEditor {
 				lines.push(`${border("│")}${paddedRow}${border("│")}`);
 			}
 		}
-		lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
+		lines.push(border(`└${"─".repeat(innerWidth)}┘`));
 
 		const shownStart = visibleItems.length > 0 ? startIndex + 1 : 0;
 		const shownEnd = startIndex + visibleItems.length;
@@ -447,13 +447,13 @@ export class BoxEditor extends CustomEditor {
 
 		const separator = this.renderPanelDivider(width, frame, divider);
 		const lines = [
-			frame(`╭${"─".repeat(innerWidth)}╮`),
+			frame(`┌${"─".repeat(innerWidth)}┐`),
 			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width, frame),
 			separator,
 			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width, frame),
 			separator,
 			...inputLines,
-			frame(`╰${"─".repeat(innerWidth)}╯`),
+			frame(`└${"─".repeat(innerWidth)}┘`),
 		];
 
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, frame);
