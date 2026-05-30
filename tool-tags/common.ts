@@ -228,7 +228,7 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 
 export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
 	const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
-	return `${icon} ${theme.bold(theme.fg("accent", name))}`;
+	return `${theme.fg("warning", "→")} ${theme.bold(theme.fg("accent", name))} ${icon}`;
 }
 
 const RESET_INTENSITY = "\x1b[22m";
