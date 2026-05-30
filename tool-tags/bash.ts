@@ -5,7 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
-import { boxedToolWidthKey, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
+import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
@@ -230,8 +230,8 @@ function createBashResultPreview(
 
 				const truncatedShown = shownLines.map((line) => {
 					const truncated = truncateToWidth(line, bodyWidth, "…");
-					if (color === "error") return theme.fg(color, truncated);
-					return cfg.dimToolOutput ? theme.fg("toolOutput", truncated) : truncated;
+					if (color === "error") return formatToolOutputLine(theme, truncated, "error");
+					return cfg.dimToolOutput ? formatToolOutputLine(theme, truncated) : formatToolOutputLine(theme, truncated, "text");
 				});
 
 				// Count remaining lines (lines before scanFrom)
@@ -263,7 +263,7 @@ function createBashResultPreview(
 			const clamped = logicalLines.join("\n");
 			const wrapped = wrapTextWithAnsi(clamped, bodyWidth);
 			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
-			const applyColor = (l: string) => color === "error" ? theme.fg(color, l) : cfg.dimToolOutput ? theme.fg("toolOutput", l) : l;
+			const applyColor = (l: string) => color === "error" ? formatToolOutputLine(theme, l, "error") : cfg.dimToolOutput ? formatToolOutputLine(theme, l) : formatToolOutputLine(theme, l, "text");
 			if (cfg.maxExpandedLines > 0 && expandedLines.length > cfg.maxExpandedLines) {
 				const truncated = expandedLines.slice(-cfg.maxExpandedLines).map(applyColor);
 				const remaining = expandedLines.length - cfg.maxExpandedLines;

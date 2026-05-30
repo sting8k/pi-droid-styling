@@ -4,7 +4,7 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/p
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
-import { fgHex } from "../ansi.js";
+import { fgHex, isHexColor, stripAnsi } from "../ansi.js";
 import { loadConfig } from "../config.js";
 import { getThemeExtra } from "../theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
@@ -118,6 +118,8 @@ export function parens(theme: any, text: string, skipTextColor?: boolean): strin
 }
 
 const BOX_HORIZONTAL = "─";
+const BOX_VERTICAL = "│";
+const BOX_SIDE_PADDING = 2;
 const BOX_MIN_WIDTH = 12;
 const BOX_WIDTH_CACHE = new Map<string, number>();
 
@@ -126,13 +128,13 @@ export function boxWidth(width: number): number {
 }
 
 export function boxInnerWidth(width: number): number {
-	return Math.max(1, boxWidth(width) - 4);
+	return Math.max(1, boxWidth(width) - 2 - BOX_SIDE_PADDING * 2);
 }
 
 function tightBoxWidth(availableWidth: number, contentLines: string[], labelWidths: number[] = [], widthKey?: string): number {
 	const contentWidth = contentLines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
 	const labelWidth = labelWidths.reduce((max, width) => Math.max(max, width), 0);
-	const neededWidth = Math.max(BOX_MIN_WIDTH, contentWidth + 4, labelWidth);
+	const neededWidth = Math.max(BOX_MIN_WIDTH, contentWidth + 2 + BOX_SIDE_PADDING * 2, labelWidth + 2 + BOX_SIDE_PADDING * 2);
 	const measuredWidth = Math.min(boxWidth(availableWidth), neededWidth);
 	if (!widthKey) return measuredWidth;
 	const cachedWidth = BOX_WIDTH_CACHE.get(widthKey) ?? 0;
@@ -226,45 +228,66 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 	return lines;
 }
 
-export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
-	const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
-	return `${theme.fg("warning", "→")} ${theme.bold(theme.fg("accent", name))} ${icon}`;
-}
-
 const RESET_INTENSITY = "\x1b[22m";
 
-function boxText(theme: any, text: string): string {
-	return `${RESET_INTENSITY}${theme.fg("toolOutput", text)}`;
+function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, text: string): string {
+	const color = getThemeExtra(theme, extraKey);
+	if (color) {
+		if (isHexColor(color)) return fgHex(theme, color, text);
+		try {
+			return typeof theme?.fg === "function" ? theme.fg(color, text) : text;
+		} catch {
+			// Fall back to semantic theme color below.
+		}
+	}
+	return typeof theme?.fg === "function" ? theme.fg(fallbackColor, text) : text;
 }
+
+export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+	const icon = isError ? "✗" : "✓";
+	const title = colorFromExtra(theme, "bashPromptColor", "bashMode", `➔ ${name} ${icon}`);
+	return `${title} ${boxText(theme, "|")}`;
+}
+
+function boxText(theme: any, text: string): string {
+	return `${RESET_INTENSITY}${theme.fg("borderMuted", text)}`;
+}
+function boxFrameText(theme: any, text: string): string {
+	return `${RESET_INTENSITY}${theme.fg("dim", text)}`;
+}
+
 export function boxedToolBgName(isError?: boolean, isPartial?: boolean): string {
 	return isPartial ? "toolPendingBg" : isError ? "toolErrorBg" : "toolSuccessBg";
 }
 
-export function boxBg(theme: any, text: string, bgName = "toolSuccessBg"): string {
-	return typeof theme?.bg === "function" ? theme.bg(bgName, text) : text;
+export function boxBg(_theme: any, text: string, _bgName = "toolSuccessBg"): string {
+	return text;
 }
 
-function boxBgLines(theme: any, lines: string[], bgName?: string): string[] {
-	return lines.map((line) => boxBg(theme, line, bgName));
+function boxBgLines(_theme: any, lines: string[], _bgName?: string): string[] {
+	return lines;
 }
 
-export function boxBorder(theme: any, left: string, right: string, width: number, label?: string): string {
+export function boxBorder(theme: any, left: string, right: string, width: number): string {
 	const renderedWidth = boxWidth(width);
 	const innerWidth = renderedWidth - 2;
-	if (!label) return boxText(theme, `${left}${BOX_HORIZONTAL.repeat(innerWidth)}${right}`);
-
-	const before = `${BOX_HORIZONTAL} `;
-	const afterPrefix = " ";
-	const afterWidth = Math.max(0, innerWidth - visibleWidth(before) - visibleWidth(label) - visibleWidth(afterPrefix));
-	return `${boxText(theme, `${left}${before}`)}${label}${boxText(theme, `${afterPrefix}${BOX_HORIZONTAL.repeat(afterWidth)}${right}`)}`;
+	return boxFrameText(theme, `${left}${BOX_HORIZONTAL.repeat(innerWidth)}${right}`);
 }
 
 export function boxLine(theme: any, content: string, width: number): string {
 	const renderedWidth = boxWidth(width);
-	const innerWidth = boxInnerWidth(renderedWidth);
-	const truncated = truncateToWidth(content, innerWidth, "…");
-	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(truncated)));
-	return `${boxText(theme, "│")} ${truncated}${padding} ${boxText(theme, "│")}`;
+	const contentWidth = boxInnerWidth(renderedWidth);
+	const truncated = truncateToWidth(content, contentWidth, "…");
+	const fill = " ".repeat(Math.max(0, contentWidth - visibleWidth(truncated)));
+	const sidePad = " ".repeat(BOX_SIDE_PADDING);
+	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${truncated}${fill}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
+}
+
+function boxInsetDivider(theme: any, width: number): string {
+	const renderedWidth = boxWidth(width);
+	const lineWidth = boxInnerWidth(renderedWidth);
+	const sidePad = " ".repeat(BOX_SIDE_PADDING);
+	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${boxText(theme, BOX_HORIZONTAL.repeat(lineWidth))}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
 }
 
 export function boxedWrappedLines(theme: any, content: string, width: number): string[] {
@@ -282,19 +305,22 @@ export function renderBoxedToolCall(
 			const title = formatBoxedToolTitle(theme, toolName, options.isError);
 			const renderedWidth = boxWidth(width);
 			const lines = [
-				boxBorder(theme, "┌", "┐", renderedWidth, title),
+				boxBorder(theme, "╭", "╮", renderedWidth),
+				boxLine(theme, title, renderedWidth),
+				boxInsetDivider(theme, renderedWidth),
 				...detailLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 			];
 			if (options.isPending) {
 				const pendingText = options.pendingText ?? "Waiting for output…";
 				lines.push(
-					boxBorder(theme, "├", "┤", renderedWidth),
+					boxInsetDivider(theme, renderedWidth),
 					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", pendingText)}`, renderedWidth),
-					boxBorder(theme, "└", "┘", renderedWidth),
+					boxBorder(theme, "╰", "╯", renderedWidth),
 				);
 			}
-			return boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
-		},
+			const rendered = boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
+			return rendered;
+		}
 	};
 }
 
@@ -317,16 +343,15 @@ export function renderBoxedToolResult(
 			const outputLines = bodyLines.length > 0 ? [...errorPrefix, ...bodyLines] : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const footerLines = options.footerLines ?? [];
 			const renderedFooterLines = footerLines.length > 0
-				? [boxLine(theme, "", renderedWidth), ...footerLines.map((line) => boxLine(theme, line, renderedWidth))]
+				? [boxInsetDivider(theme, renderedWidth), ...footerLines.map((line) => boxLine(theme, line, renderedWidth))]
 				: [];
-			const outputLabel = options.outputLabel ?? "";
-			const separatorLabel = outputLabel || undefined;
-			return boxBgLines(theme, [
-				boxBorder(theme, "├", "┤", renderedWidth, separatorLabel),
+			const rendered = boxBgLines(theme, [
+				boxInsetDivider(theme, renderedWidth),
 				...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 				...renderedFooterLines,
-				boxBorder(theme, "└", "┘", renderedWidth),
+				boxBorder(theme, "╰", "╯", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
+			return rendered;
 		},
 	};
 }
@@ -338,8 +363,8 @@ export function formatBoxedWallTime(result: AgentToolResult<any> | undefined): s
 }
 
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {
-	const parts = [`◷ ${formatBoxedWallTime(result)}`, ...extraParts.filter(Boolean), formatBoxedWords(getTextOutput(result))];
-	return theme.fg("toolOutput", `[${parts.join(" · ")}]`);
+	const parts = [`${theme.fg("text", "◷")} ${theme.fg("dim", formatBoxedWallTime(result))}`, ...extraParts.filter(Boolean).map((part) => theme.fg("dim", part)), theme.fg("dim", formatBoxedWords(getTextOutput(result)))];
+	return `${theme.fg("dim", "[")}${parts.join(theme.fg("dim", " · "))}${theme.fg("dim", "]")}`;
 }
 
 const TOOL_BODY_INDENT = 2;
@@ -395,6 +420,16 @@ function clampLine(line: string): string {
 	return line.slice(0, MAX_RENDER_LINE_CHARS) + "… (truncated)";
 }
 
+export function formatToolOutputLine(theme: any, line: string, color: "toolOutput" | "error" | "text" = "toolOutput"): string {
+	if (color === "error") return theme.fg("error", line);
+
+	const clean = stripAnsi(line);
+	if (/^##\s/.test(clean)) return theme.fg("muted", line);
+	if (/^\?\?\s/.test(clean)) return theme.bold(theme.fg("syntaxVariable", line));
+
+	return theme.fg(color, line);
+}
+
 export function renderLines(
 	theme: any,
 	text: string,
@@ -407,7 +442,7 @@ export function renderLines(
 	const renderWidth = cfg.width ? getToolBodyWidth(cfg.width) : undefined;
 	const renderLine = (line: string) => {
 		const rendered = renderWidth ? truncateToWidth(line, renderWidth, "…") : line;
-		return theme.fg(color, rendered);
+		return formatToolOutputLine(theme, rendered, color);
 	};
 
 	if (lines.length === 0) {
