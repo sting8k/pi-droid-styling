@@ -400,12 +400,15 @@ export class BoxEditor extends CustomEditor {
 		].filter(Boolean).map((item) => `${bullet} ${this.tone("muted", item!)}`);
 		const tokenMeter = this.formatTokenMeter();
 		const left = [tokenMeter, ...metrics].filter(Boolean).join("  ");
-		const right = this.getFooterStatus?.() ?? "";
-		if (!right) return this.pad(left, width);
+		const footerStatus = this.getFooterStatus?.() ?? "";
+		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
+		if (!rightPlain) return this.pad(left, width);
 
-		const availableLeft = Math.max(1, width - visibleWidth(right) - 2);
+		const right = this.tone("dim", rightPlain);
+		const rightWidth = visibleWidth(rightPlain);
+		const availableLeft = Math.max(1, width - rightWidth - 2);
 		const trimmedLeft = visibleWidth(left) > availableLeft ? truncateToWidth(left, availableLeft, "…") : left;
-		const gap = " ".repeat(Math.max(2, width - visibleWidth(trimmedLeft) - visibleWidth(right)));
+		const gap = " ".repeat(Math.max(2, width - visibleWidth(trimmedLeft) - rightWidth));
 		return this.pad(`${trimmedLeft}${gap}${right}`, width);
 	}
 

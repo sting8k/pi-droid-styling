@@ -1,19 +1,53 @@
 import { FooterComponent } from "@mariozechner/pi-coding-agent";
 
 const PATCHED = Symbol.for("pi-droid-styling.footer-stats.patched");
-let latestFooterStatusLines: string[] = [];
+const ORIGINAL_RENDER = Symbol.for("pi-droid-styling.footer-stats.original-render");
+const FOOTER_STATE = Symbol.for("pi-droid-styling.footer-stats.state");
+const PATCH_VERSION = 2;
 
-export function getFooterStatusLine(): string | null {
-	return latestFooterStatusLines.length > 0 ? latestFooterStatusLines.join("  ") : null;
+type FooterState = {
+	latestStatusLines: string[];
+};
+
+function footerState(): FooterState {
+	const globalState = globalThis as Record<symbol, FooterState | undefined>;
+	let state = globalState[FOOTER_STATE];
+	if (!state) {
+		state = { latestStatusLines: [] };
+		globalState[FOOTER_STATE] = state;
+	}
+	return state;
 }
 
+function sanitizeStatusText(text: string): string {
+	return text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim();
+}
+
+function readExtensionStatusLines(owner: any): string[] {
+	try {
+		const statuses = owner?.footerData?.getExtensionStatuses?.();
+		if (!(statuses instanceof Map) || statuses.size === 0) return [];
+		return Array.from(statuses.entries())
+			.sort(([a], [b]) => String(a).localeCompare(String(b)))
+			.map(([, text]) => sanitizeStatusText(String(text ?? "")))
+			.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+export function getFooterStatusLine(): string | null {
+	const statusLines = footerState().latestStatusLines;
+	return statusLines.length > 0 ? statusLines.join("  ") : null;
+}
 
 export function installFooterStatsPatch() {
 	const proto = FooterComponent.prototype as any;
-	if (proto[PATCHED]) return;
-	proto[PATCHED] = true;
+	if (proto[PATCHED] === PATCH_VERSION) return;
 
-	const origRender = proto.render;
+	const origRender = proto[ORIGINAL_RENDER] ?? proto.render;
+	proto[ORIGINAL_RENDER] = origRender;
+	proto[PATCHED] = PATCH_VERSION;
 	proto.render = function (width: number): string[] {
 		const lines: string[] = origRender.call(this, width);
 
@@ -41,7 +75,11 @@ export function installFooterStatsPatch() {
 		// lines[0] = pwd/branch/session, lines[1] = stats, lines[2+] = extension statuses.
 		// The custom input dock owns footer metadata now. Capture extension status lines
 		// for the dock, then suppress core footer chrome to avoid duplicate bottom rows.
-		latestFooterStatusLines = lines.slice(2).filter((line) => Boolean(line?.trim()));
+		const directStatusLines = readExtensionStatusLines(this);
+		const statusLines = directStatusLines.length > 0
+			? directStatusLines
+			: lines.slice(2).filter((line) => Boolean(line?.trim()));
+		if (statusLines.length > 0) footerState().latestStatusLines = statusLines;
 		return [];
 	};
 }
