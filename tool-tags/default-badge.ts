@@ -1,13 +1,14 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 
-import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult } from "./common.js";
+import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult, renderLines } from "./common.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
 const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
 const BOXED_FALLBACK_FLAG = Symbol("__defaultBadge_boxedFallback__");
 
 const CUSTOM_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "find", "grep", "quick_edit", "substitute_edit", "target_edit"]);
+const MAX_FALLBACK_PREVIEW_LINES = 10;
 
 let cachedTheme: any = null;
 
@@ -52,7 +53,15 @@ function createBoxedFallbackComponent(owner: any): Component {
 			if (!hasResult) return call.render(width);
 
 			const output = getTextOutput(owner);
-			const result = renderBoxedToolResult(theme, () => (output ? output.split("\n") : []), {
+			const renderOptions = { expanded: Boolean(owner.expanded), isPartial };
+			const result = renderBoxedToolResult(theme, (contentWidth) => {
+				const body = renderLines(theme, output, renderOptions, {
+					maxLines: MAX_FALLBACK_PREVIEW_LINES,
+					color: isError ? "error" : "toolOutput",
+					width: contentWidth,
+				});
+				return body ? body.split("\n") : [];
+			}, {
 				footerLines: [formatBoxedFooter(theme, owner.result)],
 				isError,
 				isPartial,
