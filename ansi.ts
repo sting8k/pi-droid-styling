@@ -4,11 +4,11 @@ import { visibleWidth } from "@mariozechner/pi-tui";
 
 // Strip ANSI escape codes (pre-compiled regexes for performance)
 const RE_CSI = /\x1b\[[0-9;]*[a-zA-Z]/g;
-const RE_OSC_HYPERLINK = /\x1b\]8;;[^\x07]*\x07/g;
+const RE_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 const RE_APC = /\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 export function stripAnsi(str: string): string {
-	return str.replace(RE_CSI, "").replace(RE_OSC_HYPERLINK, "").replace(RE_APC, "");
+	return str.replace(RE_CSI, "").replace(RE_OSC, "").replace(RE_APC, "");
 }
 
 // ------------------------------------------------------------

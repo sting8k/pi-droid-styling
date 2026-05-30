@@ -1,20 +1,36 @@
 import { UserMessageComponent } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
-import { dropLeadingColumns, fgHex, stripAnsi } from "../ansi.js";
+import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../ansi.js";
 import { getThemeExtra } from "../theme-extras.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
 
-function buildPrefixSegment(): string {
-	const char = getThemeExtra(activeTheme, "userPrefix");
-	const color = getThemeExtra(activeTheme, "userPrefixColor");
-	const prefix = activeTheme ? fgHex(activeTheme, color, char) : char;
-	if (typeof activeTheme?.bg === "function") {
-		return activeTheme.bg("userMessageBg", `${prefix}  `);
+function usesLegacyQuotePrefix(): boolean {
+	return getThemeExtra(activeTheme, "quoteStyle") === "true" && getThemeExtra(activeTheme, "userPrefix") === "│";
+}
+
+function colorUserPrefix(text: string): string {
+	const color = usesLegacyQuotePrefix() ? "accent" : getThemeExtra(activeTheme, "userPrefixColor");
+	if (!activeTheme || !color) return text;
+	if (isHexColor(color)) return fgHex(activeTheme, color, text);
+
+	try {
+		return typeof activeTheme.fg === "function" ? activeTheme.fg(color, text) : text;
+	} catch {
+		return text;
 	}
-	return `${prefix}  `;
+}
+
+function buildPrefixSegment(): string {
+	const configuredChar = getThemeExtra(activeTheme, "userPrefix");
+	const char = usesLegacyQuotePrefix() ? "❯" : configuredChar;
+	const prefix = colorUserPrefix(char);
+	if (typeof activeTheme?.bg === "function") {
+		return activeTheme.bg("userMessageBg", `${prefix} `);
+	}
+	return `${prefix} `;
 }
 
 function buildDividerLine(width: number): string {
@@ -24,13 +40,29 @@ function buildDividerLine(width: number): string {
 	const line = char.repeat(width);
 	return activeTheme ? fgHex(activeTheme, color, line) : line;
 }
+function stripEmphasisAnsi(text: string): string {
+	return text.replace(/\x1b\[(?:(?:1|3|22|23);)*(?:1|3|22|23)m/g, "");
+}
+
+function buildContinuationSegment(): string {
+	const char = getThemeExtra(activeTheme, "quoteChar") || "┆";
+	const prefix = colorUserPrefix(char);
+	if (typeof activeTheme?.bg === "function") {
+		return activeTheme.bg("userMessageBg", `${prefix} `);
+	}
+	return `${prefix} `;
+}
 
 function alignContinuationLines(lines: string[], targetIndex: number): void {
-	const indent = " ".repeat(visibleWidth(buildPrefixSegment()));
+	const continuationSegment = buildContinuationSegment();
 	for (let i = targetIndex + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
-		if (stripAnsi(line).trim().length === 0) continue;
-		lines[i] = `${indent}${dropLeadingColumns(line, 1)}`;
+		const clean = stripAnsi(line);
+		if (clean.trim().length === 0) {
+			lines[i] = continuationSegment.trimEnd();
+			continue;
+		}
+		lines[i] = `${continuationSegment}${dropLeadingColumns(line, 1)}`;
 	}
 }
 
@@ -69,76 +101,16 @@ export function installUserMessagePrefix(theme: any): void {
 			}
 		}
 
-		const quoteStyle = getThemeExtra(activeTheme, "quoteStyle") === "true";
-		let result: string[];
+		const prefixSegment = buildPrefixSegment();
+		const line = output[targetIndex] ?? "";
+		const remainder = stripEmphasisAnsi(dropLeadingColumns(line, 1));
+		output[targetIndex] = `${prefixSegment}${remainder}`;
+		alignContinuationLines(output, targetIndex);
 
-		if (quoteStyle) {
-			const quoteColor = getThemeExtra(activeTheme, "quoteColor");
-			const quoteChar = getThemeExtra(activeTheme, "quoteChar") || "│";
-			const border = activeTheme && quoteColor ? fgHex(activeTheme, quoteColor, quoteChar) : quoteChar;
-
-			const verticalBarChars = new Set([
-				"│", "┃", "¦", "║", "╎", "╏", "┆", "┇", "┊", "┋", "︱", "︲", "￨", "|",
-			]);
-
-			const findBarIndex = (stripped: string): number => {
-				for (let i = 0; i < stripped.length; i++) {
-					if (verticalBarChars.has(stripped[i]!)) return i;
-				}
-				return -1;
-			};
-
-			// Extract content lines, stripping blockquote structure
-			// Also strip OSC sequences (e.g. shell integration markers \x1b]....\x07)
-			const stripOsc = (s: string) => s.replace(/\x1b\][^\x07]*\x07/g, "");
-			const contentLines: string[] = [];
-			for (const line of output) {
-				const stripped = stripOsc(stripAnsi(line));
-				const trimmed = stripped.trim();
-
-				if (trimmed.length === 0) continue;
-
-				const barIdx = findBarIndex(stripped);
-				if (barIdx >= 0) {
-					const afterBar = stripped.slice(barIdx + 1);
-					const text = afterBar.trimEnd();
-					if (text.replace(/\s/g, "").length > 0) {
-						contentLines.push(text.startsWith(" ") ? text.slice(1) : text);
-					}
-				} else {
-					const meaningful = trimmed.replace(/[\s│┃¦║╎╏┆┇┊┋︱︲￨|>]/gu, "");
-					if (meaningful.length > 0) {
-						contentLines.push(trimmed);
-					}
-				}
-			}
-
-			if (contentLines.length === 0) {
-				for (const line of output) {
-					const t = stripAnsi(line).trim();
-					if (t.length > 0) contentLines.push(t);
-				}
-			}
-
-			result = contentLines.map((text) => {
-				const colored = activeTheme && quoteColor
-					? `\x1b[1m\x1b[3m${fgHex(activeTheme, quoteColor, text)}\x1b[23m\x1b[22m`
-					: `\x1b[1m\x1b[3m${text}\x1b[23m\x1b[22m`;
-				const quoted = `${border} ${colored}`;
-				return visibleWidth(quoted) > width ? truncateToWidth(quoted, width, "") : quoted;
-			});
-		} else {
-			const prefixSegment = buildPrefixSegment();
-			const line = output[targetIndex] ?? "";
-			const remainder = dropLeadingColumns(line, 1);
-			output[targetIndex] = `${prefixSegment}${remainder}`;
-			alignContinuationLines(output, targetIndex);
-
-			result = output.map((renderedLine) => {
-				const bolded = activeTheme ? activeTheme.bold(renderedLine) : renderedLine;
-				return visibleWidth(bolded) > width ? truncateToWidth(bolded, width, "") : bolded;
-			});
-		}
+		const result = output.map((renderedLine) => {
+			const plainLine = stripEmphasisAnsi(renderedLine);
+			return visibleWidth(plainLine) > width ? truncateToWidth(plainLine, width, "") : plainLine;
+		});
 
 		// Add turn divider before user message
 		const divider = buildDividerLine(width);
