@@ -166,7 +166,7 @@ function renderQuickEditResult(
 	}
 
 	const rows = buildSplitRows(diff);
-	const expanded = isExpanded(options);
+	const expanded = isExpanded(options, context?.state);
 	const argPath = String(context?.args?.path ?? "");
 	const language = argPath ? getLanguageFromPath(argPath) : undefined;
 	const shouldHighlight =

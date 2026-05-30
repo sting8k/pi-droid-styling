@@ -28,7 +28,8 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
-		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
+		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
+			const state = context?.state as Record<string, unknown> | undefined;
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			const stripped = stripTrailingNotice(output);
 
@@ -38,6 +39,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 						maxLines: MAX_GREP_PREVIEW_LINES,
 						color: "error",
 						width,
+						state,
 					});
 					return body ? body.split("\n") : [];
 				}, {
@@ -72,6 +74,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					maxLines: MAX_GREP_PREVIEW_LINES,
 					color: "toolOutput",
 					width,
+					state,
 				});
 				return body ? [summary, ...body.split("\n")] : [summary];
 			}, {

@@ -52,6 +52,7 @@ function createBoxedFallbackComponent(owner: any): Component {
 			});
 			if (!hasResult) return call.render(width);
 
+			const state = owner.rendererState as Record<string, unknown> | undefined;
 			const output = getTextOutput(owner);
 			const renderOptions = { expanded: Boolean(owner.expanded), isPartial };
 			const result = renderBoxedToolResult(theme, (contentWidth) => {
@@ -59,6 +60,7 @@ function createBoxedFallbackComponent(owner: any): Component {
 					maxLines: MAX_FALLBACK_PREVIEW_LINES,
 					color: isError ? "error" : "toolOutput",
 					width: contentWidth,
+					state,
 				});
 				return body ? body.split("\n") : [];
 			}, {

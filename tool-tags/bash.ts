@@ -181,6 +181,7 @@ function createBashResultPreview(
 	options: ToolRenderResultOptions,
 	color: "toolOutput" | "error",
 	extraLinesBefore: number = 0,
+	state?: Record<string, unknown>,
 ): Component {
 	let cacheKey = "";
 	let cacheLines: string[] | null = null;
@@ -193,7 +194,7 @@ function createBashResultPreview(
 		render(width: number): string[] {
 			const bodyWidth = Math.max(1, width);
 			const cfg = loadConfig();
-			const expanded = isExpanded(options);
+			const expanded = isExpanded(options, state);
 			const cacheId = `${bodyWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
 			if (cacheLines && cacheKey === cacheId) return cacheLines;
 
@@ -299,7 +300,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
 
-			if (!isExpanded(options)) {
+			if (!isExpanded(options, context?.state)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
 				let nlCount = 0;
 				let tailStart = 0;
@@ -314,11 +315,11 @@ export function registerBashTool(pi: ExtensionAPI): void {
 				}
 				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
 				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
-				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore);
+				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore, context?.state);
 				return renderBoxedBashResult(theme, inner, result, context);
 			}
 			const output = stripBashToolNoticeLines(stripAnsi(raw));
-			const inner = createBashResultPreview(theme, output, options, outputColor, 0);
+			const inner = createBashResultPreview(theme, output, options, outputColor, 0, context?.state);
 			return renderBoxedBashResult(theme, inner, result, context);
 		},
 	});

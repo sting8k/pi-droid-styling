@@ -9,9 +9,39 @@ import { loadConfig } from "../config.js";
 import { getThemeExtra } from "../theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
-export function isExpanded(options: ToolRenderResultOptions): boolean {
-	if (typeof options?.expanded === "boolean") return options.expanded;
-	return loadConfig().alwaysExpanded;
+const EXPANSION_STATE_KEY = "__droidStylingExpansionState";
+
+type ExpansionState = {
+	initialized: boolean;
+	previousCoreExpanded: boolean;
+	userExpanded: boolean;
+};
+
+export function isExpanded(options: ToolRenderResultOptions, state?: Record<string, unknown>): boolean {
+	const config = loadConfig();
+	if (config.alwaysExpanded) return true;
+
+	const coreExpanded = typeof options?.expanded === "boolean" ? options.expanded : false;
+	if (!state) return coreExpanded;
+
+	const expansionState = (state[EXPANSION_STATE_KEY] ??= {
+		initialized: false,
+		previousCoreExpanded: coreExpanded,
+		userExpanded: false,
+	}) as ExpansionState;
+
+	if (!expansionState.initialized) {
+		expansionState.initialized = true;
+		expansionState.previousCoreExpanded = coreExpanded;
+		return false;
+	}
+
+	if (coreExpanded !== expansionState.previousCoreExpanded) {
+		expansionState.userExpanded = coreExpanded;
+		expansionState.previousCoreExpanded = coreExpanded;
+	}
+
+	return expansionState.userExpanded;
 }
 
 export function shortenPath(path: string): string {
@@ -434,7 +464,7 @@ export function renderLines(
 	theme: any,
 	text: string,
 	options: ToolRenderResultOptions,
-	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number } = { maxLines: 10 },
+	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number; state?: Record<string, unknown> } = { maxLines: 10 },
 ): string {
 	const color = cfg.color ?? "toolOutput";
 	const rawLines = (text ?? "").split("\n").map(clampLine);
@@ -449,7 +479,7 @@ export function renderLines(
 		return "";
 	}
 
-	if (isExpanded(options) || lines.length <= cfg.maxLines) {
+	if (isExpanded(options, cfg.state) || lines.length <= cfg.maxLines) {
 		return lines.map(renderLine).join("\n");
 	}
 
