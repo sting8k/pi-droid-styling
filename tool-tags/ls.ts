@@ -15,11 +15,14 @@ export function registerLsTool(pi: ExtensionAPI): void {
 			const tool = createLsTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			return renderBoxedToolCall(theme, "List", [`${theme.fg("dim", "Path: ")}${displayPath}`], {
 				widthKey: boxedToolWidthKey("List", displayPath),
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result, _options, theme: any, context: any) {
@@ -33,6 +36,7 @@ export function registerLsTool(pi: ExtensionAPI): void {
 					widthKey,
 					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 

@@ -69,16 +69,20 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 			const tool = createEditToolDefinition(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal, onUpdate, ctx);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
-			return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", "Path: ")}${detail}`]);
+			return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", "Path: ")}${detail}`], {
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
+			});
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
 			// Handle partial/streaming state
 			if (options.isPartial) {
-				return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`]);
+				return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", "Applying edit...")}`], { isPartial: true });
 			}
 
 			// Handle errors
@@ -86,6 +90,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 				const output = getTextOutput(result);
 				return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 

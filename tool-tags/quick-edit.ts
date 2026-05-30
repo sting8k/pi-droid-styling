@@ -49,6 +49,8 @@ function getQuickEditToolConfig(toolName: unknown): QuickEditToolConfig | undefi
 type QuickEditRenderContext = {
 	args?: any;
 	isError?: boolean;
+	isPartial?: boolean;
+	hasResult?: boolean;
 	state?: Record<string, any>;
 	executionStarted?: boolean;
 };
@@ -114,7 +116,11 @@ function renderQuickEditCall(args: any, theme: any, config: QuickEditToolConfig,
 	const rawPath = String(args?.path ?? "");
 	const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 	const detail = relPath || "(unknown)";
-	return renderBoxedToolCall(theme, config.toolLabel, [`${theme.fg("dim", "Path: ")}${detail}`]);
+	return renderBoxedToolCall(theme, config.toolLabel, [`${theme.fg("dim", "Path: ")}${detail}`], {
+		isError: Boolean(context.isError),
+		isPartial: Boolean(context.isPartial),
+		isPending: Boolean(context.isPartial && !context.hasResult),
+	});
 }
 
 function getQuickEditElapsedMs(context: QuickEditRenderContext): number | undefined {
@@ -140,13 +146,14 @@ function renderQuickEditResult(
 	context: QuickEditRenderContext = {},
 ) {
 	if (options.isPartial) {
-		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", `Applying ${config.applyingLabel}...`)}`]);
+		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", `Applying ${config.applyingLabel}...`)}`], { isPartial: true });
 	}
 
 	const output = getTextOutput(result);
 	if (context.isError || result?.isError) {
 		return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
 			footerLines: [formatQuickEditFooter(theme, context, output)],
+			isError: true,
 		});
 	}
 

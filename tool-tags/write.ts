@@ -38,12 +38,15 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 			const tool = createWriteTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
 			const detail = relPath || "(unknown)";
 			return renderBoxedToolCall(theme, "Write", [`${theme.fg("dim", "Path: ")}${detail}`], {
 				widthKey: boxedToolWidthKey("Write", detail),
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result: any, _options, theme: any, context: any) {
@@ -59,6 +62,7 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 					widthKey,
 					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 

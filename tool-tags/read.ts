@@ -52,7 +52,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const tool = createReadTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
 			const path = shortenPath(rawPath);
 			const offset = args?.offset;
@@ -68,6 +68,9 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const detail = path ? `${path}${range}` : "(unknown)";
 			return renderBoxedToolCall(theme, "Read", [`${theme.fg("dim", "Path: ")}${detail}`], {
 				widthKey: boxedToolWidthKey("Read", detail),
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result: any, options, theme: any, context: any) {
@@ -91,6 +94,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					widthKey,
 					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 

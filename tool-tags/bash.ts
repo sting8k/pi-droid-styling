@@ -138,7 +138,7 @@ function bashWidthKey(rawCommand: string, timeout: unknown): string {
 	return boxedToolWidthKey("Bash", `${rawCommand}|${timeout ?? ""}`);
 }
 
-function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknown, widthKey: string): Component {
+function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknown, widthKey: string, context?: any): Component {
 	const maxCommandLines = 5;
 	const shownCount = Math.min(commandLines.length, maxCommandLines + 1);
 	const detailLines: string[] = [];
@@ -149,7 +149,12 @@ function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknow
 	if (commandLines.length > maxCommandLines + 1) {
 		detailLines.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
 	}
-	return renderBoxedToolCall(theme, "Bash", detailLines, { widthKey });
+	return renderBoxedToolCall(theme, "Bash", detailLines, {
+		widthKey,
+		isError: Boolean(context?.isError),
+		isPartial: Boolean(context?.isPartial),
+		isPending: Boolean(context?.isPartial && !context?.hasResult),
+	});
 }
 
 function formatTimeout(context: any): string {
@@ -166,6 +171,7 @@ function renderBoxedBashResult(theme: any, inner: Component, result: any, contex
 		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [`Timeout: ${formatTimeout(context)}`])],
 		isError: context?.isError,
+		isPartial: Boolean(context?.isPartial),
 	});
 }
 
@@ -285,9 +291,9 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const tool = createBashTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal, onUpdate);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const rawCommand = String(args?.command ?? "...");
-			return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout));
+			return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout), context);
 		},
 		renderResult(result, options, theme: any, context: any) {
 			const raw = getTextOutput(result);

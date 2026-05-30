@@ -1,7 +1,7 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 
-import { boxBorder, boxedWrappedLines, boxWidth, formatBoxedFooter, formatBoxedToolTitle, formatToolName, formatToolParamLines } from "./common.js";
+import { boxBg, boxBorder, boxedToolBgName, boxedWrappedLines, boxWidth, formatBoxedFooter, formatBoxedToolTitle, formatToolName, formatToolParamLines } from "./common.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
 const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
@@ -42,6 +42,7 @@ function createBoxedFallbackComponent(owner: any): Component {
 		render(width: number): string[] {
 			const theme = getRenderTheme();
 			const renderedWidth = boxWidth(width);
+			const bgName = boxedToolBgName(Boolean(owner.result?.isError), Boolean(owner.isPartial));
 			const title = formatBoxedToolTitle(theme, formatToolName(String(owner.toolName ?? "Tool")), Boolean(owner.result?.isError));
 			const paramLines = formatToolParamLines(owner.args, theme);
 			const output = getTextOutput(owner);
@@ -60,12 +61,27 @@ function createBoxedFallbackComponent(owner: any): Component {
 					...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 					...boxedWrappedLines(theme, formatBoxedFooter(theme, owner.result), renderedWidth),
 				);
+			} else if (owner.isPartial) {
+				lines.push(
+					boxBorder(theme, "├", "┤", renderedWidth),
+					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", "Waiting for output…")}`, renderedWidth),
+				);
 			}
 
 			lines.push(boxBorder(theme, "└", "┘", renderedWidth));
-			return lines;
+			return lines.map((line) => boxBg(theme, line, bgName));
 		},
 	};
+}
+
+function tightenBoxedContainer(thisArg: any): void {
+	const renderShell = typeof thisArg.getRenderShell === "function" ? thisArg.getRenderShell() : "default";
+	const container = renderShell === "self" ? thisArg.selfRenderContainer : thisArg.contentBox;
+	if (!container) return;
+	container.paddingX = 0;
+	container.paddingY = 0;
+	if (typeof container.setBgFn === "function") container.setBgFn((text: string) => text);
+	if (typeof container.invalidateCache === "function") container.invalidateCache();
 }
 
 function installBoxedFallback(thisArg: any): void {
@@ -78,9 +94,7 @@ function installBoxedFallback(thisArg: any): void {
 	if (targetContainer && typeof targetContainer.clear === "function" && typeof targetContainer.addChild === "function") {
 		// Boxed fallback owns its own visual boundary; avoid container-level bg
 		// so the status background does not spill beyond the box.
-		if (!hasRendererDefinition && typeof targetContainer.setBgFn === "function") {
-			targetContainer.setBgFn((text: string) => text);
-		}
+		tightenBoxedContainer(thisArg);
 		targetContainer.clear();
 		targetContainer.addChild(component);
 	}
@@ -101,6 +115,14 @@ export function installDefaultBadge(): void {
 	const proto = ToolExecutionComponent.prototype as any;
 	if (!proto || typeof proto.updateDisplay !== "function") return;
 
+	const baseGetRenderContext = proto.getRenderContext;
+	if (typeof baseGetRenderContext === "function") {
+		proto.getRenderContext = function patchedBoxedRenderContext(this: any, ...args: any[]) {
+			const context = baseGetRenderContext.apply(this, args);
+			return { ...context, hasResult: Boolean(this.result) };
+		};
+	}
+
 	const baseUpdateDisplay = proto.updateDisplay;
 	proto.updateDisplay = function patchedDefaultBadge(this: any, ...args: any[]) {
 		// Force invalidate cached renderer on first render to fix resume render issue
@@ -117,7 +139,11 @@ export function installDefaultBadge(): void {
 		const result = baseUpdateDisplay.apply(this, args);
 
 		const toolName: string | undefined = this.toolName;
-		if (!toolName || CUSTOM_TOOLS.has(toolName)) return result;
+		if (!toolName) return result;
+		if (CUSTOM_TOOLS.has(toolName)) {
+			tightenBoxedContainer(this);
+			return result;
+		}
 
 		installBoxedFallback(this);
 		this[BOXED_FALLBACK_FLAG]?.invalidate?.();

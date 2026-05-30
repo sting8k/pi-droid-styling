@@ -234,7 +234,18 @@ export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean
 const RESET_INTENSITY = "\x1b[22m";
 
 function boxText(theme: any, text: string): string {
-	return `${RESET_INTENSITY}${theme.fg("text", text)}`;
+	return `${RESET_INTENSITY}${theme.fg("toolOutput", text)}`;
+}
+export function boxedToolBgName(isError?: boolean, isPartial?: boolean): string {
+	return isPartial ? "toolPendingBg" : isError ? "toolErrorBg" : "toolSuccessBg";
+}
+
+export function boxBg(theme: any, text: string, bgName = "toolSuccessBg"): string {
+	return typeof theme?.bg === "function" ? theme.bg(bgName, text) : text;
+}
+
+function boxBgLines(theme: any, lines: string[], bgName?: string): string[] {
+	return lines.map((line) => boxBg(theme, line, bgName));
 }
 
 export function boxBorder(theme: any, left: string, right: string, width: number, label?: string): string {
@@ -260,16 +271,30 @@ export function boxedWrappedLines(theme: any, content: string, width: number): s
 	return wrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
 }
 
-export function renderBoxedToolCall(theme: any, toolName: string, detailLines: string[], options: { widthKey?: string; isError?: boolean } = {}): Component {
+export function renderBoxedToolCall(
+	theme: any,
+	toolName: string,
+	detailLines: string[],
+	options: { widthKey?: string; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+): Component {
 	return {
 		invalidate() {},
 		render(width: number): string[] {
 			const title = formatBoxedToolTitle(theme, toolName, options.isError);
 			const renderedWidth = boxWidth(width);
-			return [
+			const lines = [
 				boxBorder(theme, "┌", "┐", renderedWidth, title),
 				...detailLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 			];
+			if (options.isPending) {
+				const pendingText = options.pendingText ?? "Waiting for output…";
+				lines.push(
+					boxBorder(theme, "├", "┤", renderedWidth),
+					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", pendingText)}`, renderedWidth),
+					boxBorder(theme, "└", "┘", renderedWidth),
+				);
+			}
+			return boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
 		},
 	};
 }
@@ -279,7 +304,7 @@ type BoxedResultBody = Component | ((contentWidth: number) => string[]);
 export function renderBoxedToolResult(
 	theme: any,
 	body: BoxedResultBody,
-	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; isError?: boolean } = {},
+	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; isError?: boolean; isPartial?: boolean } = {},
 ): Component {
 	return {
 		invalidate() {
@@ -294,12 +319,12 @@ export function renderBoxedToolResult(
 			const footerLines = options.footerLines ?? [];
 			const outputLabel = options.outputLabel ?? "";
 			const separatorLabel = outputLabel || undefined;
-			return [
+			return boxBgLines(theme, [
 				boxBorder(theme, "├", "┤", renderedWidth, separatorLabel),
 				...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 				...footerLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
 				boxBorder(theme, "└", "┘", renderedWidth),
-			];
+			], boxedToolBgName(options.isError, options.isPartial));
 		},
 	};
 }

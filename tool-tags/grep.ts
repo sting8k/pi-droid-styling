@@ -17,12 +17,16 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			const tool = createGrepTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const pattern = String(args?.pattern ?? "");
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
-			return renderBoxedToolCall(theme, "Search", [`${theme.fg("dim", "Query: ")}${detail}`]);
+			return renderBoxedToolCall(theme, "Search", [`${theme.fg("dim", "Query: ")}${detail}`], {
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
+			});
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any) {
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
@@ -38,6 +42,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					return body ? body.split("\n") : [];
 				}, {
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 

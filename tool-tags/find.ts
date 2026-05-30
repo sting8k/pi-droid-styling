@@ -15,13 +15,16 @@ export function registerFindTool(pi: ExtensionAPI): void {
 			const tool = createFindTool(ctx.cwd);
 			return tool.execute(toolCallId, params as any, signal);
 		}),
-		renderCall(args: any, theme: any) {
+		renderCall(args: any, theme: any, context: any) {
 			const pattern = String(args?.pattern ?? "");
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
 			return renderBoxedToolCall(theme, "Find", [`${theme.fg("dim", "Query: ")}${detail}`], {
 				widthKey: boxedToolWidthKey("Find", detail),
+				isError: Boolean(context?.isError),
+				isPartial: Boolean(context?.isPartial),
+				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result, _options, theme: any, context: any) {
@@ -37,6 +40,7 @@ export function registerFindTool(pi: ExtensionAPI): void {
 					widthKey,
 					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
+					isError: true,
 				});
 			}
 
