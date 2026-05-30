@@ -434,7 +434,7 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private renderRuntimeRow(width: number): string {
-		const bullet = this.tone("accent", "●");
+		const bullet = this.tone("bashMode", "●");
 		const tokenMeter = this.formatTokenMeter();
 		const speedBadge = this.formatResponseSpeedBadge();
 		const usageParts = [
