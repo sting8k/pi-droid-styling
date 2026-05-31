@@ -1,6 +1,6 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { type FixedZoneCluster, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
+import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 
 interface TerminalLike {
 	write(data: string): void;
@@ -21,7 +21,10 @@ export interface TerminalSplitOptions {
 
 const MIN_SCROLLABLE_ROWS = 3;
 const WHEEL_SCROLL_LINES = 3;
-const PAGE_SCROLL_LINES = 8;
+const JUMP_BOTTOM_INPUT = "\x07";
+const JUMP_TOP_INPUT = "\x14";
+const TOP_HINT = "^Shift T TOP";
+const BOTTOM_HINT = "^Shift G BOT";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
 
@@ -69,9 +72,15 @@ function parseScrollInput(data: string): number {
 		delta += wheelButton === 0 ? WHEEL_SCROLL_LINES : -WHEEL_SCROLL_LINES;
 	}
 	if (delta !== 0) return delta;
-	if (data === "\x1b[5~") return PAGE_SCROLL_LINES;
-	if (data === "\x1b[6~") return -PAGE_SCROLL_LINES;
 	return 0;
+}
+
+function isJumpBottomInput(data: string): boolean {
+	return data === JUMP_BOTTOM_INPUT || matchesKey(data, "ctrl+shift+g") || matchesKey(data, "ctrl+g");
+}
+
+function isJumpTopInput(data: string): boolean {
+	return data === JUMP_TOP_INPUT || matchesKey(data, "ctrl+shift+t") || matchesKey(data, "ctrl+t");
 }
 
 export class TerminalSplitCompositor {
@@ -87,7 +96,7 @@ export class TerminalSplitCompositor {
 	private lastRootLineCount = 0;
 	private renderingCluster = false;
 	private lastClusterHeight = 0;
-	private clusterCache: { width: number; rawRows: number; cluster: FixedZoneCluster } | undefined;
+	private clusterCache: { width: number; rawRows: number; stateKey: string; cluster: FixedZoneCluster } | undefined;
 	private renderPassActive = false;
 
 	constructor(
@@ -123,6 +132,14 @@ export class TerminalSplitCompositor {
 
 	handleInput(data: string): { consume?: boolean } | undefined {
 		if (this.disposed) return undefined;
+		if (isJumpBottomInput(data)) {
+			this.jumpToBottom();
+			return { consume: true };
+		}
+		if (isJumpTopInput(data)) {
+			this.jumpToTop();
+			return { consume: true };
+		}
 		const delta = parseScrollInput(data);
 		if (delta === 0) return undefined;
 		this.scrollBy(delta);
@@ -175,18 +192,29 @@ export class TerminalSplitCompositor {
 	private renderCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
 		this.renderingCluster = true;
 		try {
-			return renderFixedUserZoneCluster(this.hiddenRenderables, width, this.getMaxClusterRows(rawRows));
+			return renderFixedUserZoneCluster(this.hiddenRenderables, width, this.getMaxClusterRows(rawRows), this.getClusterOptions());
 		} finally {
 			this.renderingCluster = false;
 		}
 	}
 
+	private getClusterOptions(): FixedZoneClusterOptions {
+		return this.scrollOffset > 0
+			? { scrollHint: BOTTOM_HINT, showScrollDivider: true }
+			: { scrollHint: TOP_HINT };
+	}
+
+	private getClusterStateKey(): string {
+		return this.scrollOffset > 0 ? "scrolled" : "bottom";
+	}
+
 	private refreshCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
+		const stateKey = this.getClusterStateKey();
 		const cached = this.clusterCache;
-		if (cached && cached.width === width && cached.rawRows === rawRows) return cached.cluster;
+		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) return cached.cluster;
 		const cluster = this.renderCluster(width, rawRows);
 		this.lastClusterHeight = cluster.lines.length;
-		this.clusterCache = { width, rawRows, cluster };
+		this.clusterCache = { width, rawRows, stateKey, cluster };
 		return cluster;
 	}
 
@@ -210,9 +238,23 @@ export class TerminalSplitCompositor {
 		return lines.slice(start, start + scrollableRows);
 	}
 
+	private getMaxScrollOffset(): number {
+		return Math.max(0, this.lastRootLineCount - this.getScrollableRows());
+	}
+
 	private scrollBy(delta: number): void {
-		const maxOffset = Math.max(0, this.lastRootLineCount - this.getScrollableRows());
+		const maxOffset = this.getMaxScrollOffset();
 		this.scrollOffset = Math.max(0, Math.min(maxOffset, this.scrollOffset + delta));
+		this.tui.requestRender();
+	}
+
+	private jumpToTop(): void {
+		this.scrollOffset = this.getMaxScrollOffset();
+		this.tui.requestRender();
+	}
+
+	private jumpToBottom(): void {
+		this.scrollOffset = 0;
 		this.tui.requestRender();
 	}
 
