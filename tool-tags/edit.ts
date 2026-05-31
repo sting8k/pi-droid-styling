@@ -114,7 +114,7 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 
 			// Build split-diff rows
 			const rows = buildSplitRows(diff);
-			const expanded = isExpanded(options, context?.state);
+			const expanded = isExpanded(options);
 			const shouldHighlight =
 				Boolean(language) &&
 				diff.length <= MAX_HIGHLIGHT_DIFF_CHARS &&

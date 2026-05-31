@@ -8,36 +8,8 @@ import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
-const EXPANSION_STATE_KEY = "__droidStylingExpansionState";
-
-type ExpansionState = {
-	initialized: boolean;
-	previousCoreExpanded: boolean;
-	userExpanded: boolean;
-};
-
-export function isExpanded(options: ToolRenderResultOptions, state?: Record<string, unknown>): boolean {
-	const coreExpanded = typeof options?.expanded === "boolean" ? options.expanded : false;
-	if (!state) return coreExpanded;
-
-	const expansionState = (state[EXPANSION_STATE_KEY] ??= {
-		initialized: false,
-		previousCoreExpanded: coreExpanded,
-		userExpanded: coreExpanded,
-	}) as ExpansionState;
-
-	if (!expansionState.initialized) {
-		expansionState.initialized = true;
-		expansionState.previousCoreExpanded = coreExpanded;
-		return coreExpanded;
-	}
-
-	if (coreExpanded !== expansionState.previousCoreExpanded) {
-		expansionState.userExpanded = coreExpanded;
-		expansionState.previousCoreExpanded = coreExpanded;
-	}
-
-	return expansionState.userExpanded;
+export function isExpanded(options: ToolRenderResultOptions): boolean {
+	return typeof options?.expanded === "boolean" ? options.expanded : false;
 }
 
 export function shortenPath(path: string): string {
@@ -460,7 +432,7 @@ export function renderLines(
 	theme: any,
 	text: string,
 	options: ToolRenderResultOptions,
-	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number; state?: Record<string, unknown> } = { maxLines: 10 },
+	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number } = { maxLines: 10 },
 ): string {
 	const color = cfg.color ?? "toolOutput";
 	const rawLines = (text ?? "").split("\n").map(clampLine);
@@ -475,7 +447,7 @@ export function renderLines(
 		return "";
 	}
 
-	if (isExpanded(options, cfg.state) || lines.length <= cfg.maxLines) {
+	if (isExpanded(options) || lines.length <= cfg.maxLines) {
 		return lines.map(renderLine).join("\n");
 	}
 

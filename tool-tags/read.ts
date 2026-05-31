@@ -120,7 +120,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 
 			const summary = theme.fg("dim", `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`);
 
-			if (!isExpanded(options, context?.state)) {
+			if (!isExpanded(options)) {
 				return renderBoxedToolResult(theme, () => [summary], {
 					widthKey,
 					referenceLines,
@@ -142,7 +142,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					const renderWidth = Math.max(1, width);
 					const cfg = loadConfig();
 					const maxLines = cfg.maxExpandedLines;
-					const expanded = isExpanded(options, context?.state);
+					const expanded = isExpanded(options);
 					const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${maxLines}|${cfg.dimToolOutput ? 1 : 0}`;
 					if (cacheLines && cacheKey === cacheId) return cacheLines;
 

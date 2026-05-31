@@ -194,7 +194,7 @@ function createBashResultPreview(
 		render(width: number): string[] {
 			const bodyWidth = Math.max(1, width);
 			const cfg = loadConfig();
-			const expanded = isExpanded(options, state);
+			const expanded = isExpanded(options);
 			const cacheId = `${bodyWidth}|${expanded ? 1 : 0}|${cfg.maxExpandedLines}|${cfg.dimToolOutput ? 1 : 0}`;
 			if (cacheLines && cacheKey === cacheId) return cacheLines;
 
@@ -300,7 +300,7 @@ export function registerBashTool(pi: ExtensionAPI): void {
 			const raw = getTextOutput(result);
 			const outputColor = context?.isError ? "error" : "toolOutput";
 
-			if (!isExpanded(options, context?.state)) {
+			if (!isExpanded(options)) {
 				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
 				let nlCount = 0;
 				let tailStart = 0;

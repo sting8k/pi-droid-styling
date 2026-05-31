@@ -88,10 +88,11 @@ export default function (pi: ExtensionAPI) {
 			sessionUi.setWorkingIndicator();
 		}
 
-		// Preserve "alwaysExpanded" as initial state only.
-		// Let core-driven toggle (Ctrl+o) remain authoritative afterward.
-		if (config.alwaysExpanded && !sessionUi.getToolsExpanded()) {
-			sessionUi.setToolsExpanded(true);
+		// Treat `alwaysExpanded` as the session-start preference only.
+		// Ctrl+o remains authoritative after the session is initialized.
+		const initialToolsExpanded = Boolean(config.alwaysExpanded);
+		if (sessionUi.getToolsExpanded() !== initialToolsExpanded) {
+			sessionUi.setToolsExpanded(initialToolsExpanded);
 		}
 
 		// No setTheme() call — use whatever theme is selected in settings
