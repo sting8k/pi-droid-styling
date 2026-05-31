@@ -28,9 +28,9 @@ function buildPrefixSegment(): string {
 	const char = usesLegacyQuotePrefix() ? "❯" : configuredChar;
 	const prefix = colorUserPrefix(char);
 	if (typeof activeTheme?.bg === "function") {
-		return activeTheme.bg("userMessageBg", `${prefix} `);
+		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix} `;
+	return `${prefix}  `;
 }
 
 function buildDividerLine(width: number): string {
@@ -48,9 +48,9 @@ function buildContinuationSegment(): string {
 	const char = getThemeExtra(activeTheme, "quoteChar") || "┆";
 	const prefix = colorUserPrefix(char);
 	if (typeof activeTheme?.bg === "function") {
-		return activeTheme.bg("userMessageBg", `${prefix} `);
+		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix} `;
+	return `${prefix}  `;
 }
 
 function alignContinuationLines(lines: string[], targetIndex: number): void {

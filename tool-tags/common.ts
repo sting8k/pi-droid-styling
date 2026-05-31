@@ -123,7 +123,7 @@ const BOX_WIDTH_CACHE = new Map<string, number>();
 const COMPACT_TOOL_NAME_WIDTH = visibleWidth("Search");
 const COMPACT_FOOTER_ELAPSED_WIDTH = 8;
 const COMPACT_FOOTER_EXTRA_WIDTH = 8;
-const COMPACT_FOOTER_WORDS_WIDTH = 12;
+const COMPACT_FOOTER_WORDS_WIDTH = visibleWidth("✎ ~1.2k words");
 
 export function boxWidth(width: number): number {
 	return Math.max(BOX_MIN_WIDTH, width);
@@ -459,7 +459,7 @@ function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undef
 }
 
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {
-	return `${theme.fg("dim", "[")}${formatBoxedFooterParts(theme, result, extraParts)}${theme.fg("dim", "]")}`;
+	return formatBoxedFooterParts(theme, result, extraParts);
 }
 
 export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, options: { state?: any; isError?: boolean; isPartial?: boolean } = {}): Component {
