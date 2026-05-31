@@ -458,9 +458,10 @@ export class BoxEditor extends CustomEditor {
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
 		const prompt = this.bold(this.tone("accent", "❯"));
-		const promptPrefix = `${prompt} `;
+		const promptPrefix = `${prompt}  `;
 		const prefixWidth = visibleWidth(promptPrefix);
-		const contentWidth = Math.max(1, contentInnerWidth - prefixWidth);
+		const inputInnerWidth = Math.max(1, width);
+		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
 		const parentLines = super.render(contentWidth);
 		if (parentLines.length === 0) return parentLines;
 
@@ -471,8 +472,8 @@ export class BoxEditor extends CustomEditor {
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const renderedLine = line;
-			const available = Math.max(1, contentInnerWidth - visibleWidth(prefix));
-			return this.renderPanelLine(`${prefix}${this.pad(renderedLine, available)}`, width);
+			const available = Math.max(1, inputInnerWidth - visibleWidth(prefix));
+			return this.pad(`${prefix}${this.pad(renderedLine, available)}`, width);
 		});
 
 		const lines = [

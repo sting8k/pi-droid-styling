@@ -10,6 +10,11 @@ const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
+const MESSAGE_TEXT_INDENT = "   ";
+const STARTUP_PANEL_SIDE_PADDING = 2;
+const SYSTEM_CONTEXT_TYPE_WIDTH = visibleWidth("System & Context");
+const SYSTEM_CONTEXT_METRIC_WIDTH = visibleWidth("Words/Lines");
+const RESOURCE_ROW_GAP = "  ·  ";
 const PI_ASCII_LOGO = [
 	"┏━━━┓ ┏━┓",
 	"┃ _ ┃ ┃ ┃",
@@ -93,47 +98,59 @@ function countLines(text: string): number {
 	return /\r\n$|\r$|\n$/.test(text) ? lines - 1 : lines;
 }
 
-function plural(count: number, label: string): string {
-	return `${count} ${label}${count === 1 ? "" : "s"}`;
+function indentStartupLines(lines: string[]): string[] {
+	return lines.map((line) => `${MESSAGE_TEXT_INDENT}${line}`);
 }
 
-function renderPanelTitle(theme: ThemeLike, title: string, panelWidth: number): string {
-	const innerWidth = panelWidth + 2;
-	const titleWidth = visibleWidth(title);
-	const ruleWidth = Math.max(0, innerWidth - titleWidth - 2);
-	const leftRuleWidth = Math.floor(ruleWidth / 2);
-	const rightRuleWidth = ruleWidth - leftRuleWidth;
-	return `┌${"─".repeat(leftRuleWidth)} ${theme.bold(theme.fg("accent", title))} ${"─".repeat(rightRuleWidth)}┐`;
+function startupBodyWidth(width: number): number {
+	return Math.max(1, width - visibleWidth(MESSAGE_TEXT_INDENT));
+}
+
+function renderPanelBorder(theme: ThemeLike, left: string, right: string, panelWidth: number): string {
+	return theme.fg("dim", `${left}${"─".repeat(panelWidth + STARTUP_PANEL_SIDE_PADDING * 2)}${right}`);
+}
+
+function renderPanelLine(theme: ThemeLike, content: string, panelWidth: number): string {
+	const sidePadding = " ".repeat(STARTUP_PANEL_SIDE_PADDING);
+	const padding = " ".repeat(Math.max(0, panelWidth - visibleWidth(content)));
+	return `${theme.fg("dim", "│")}${sidePadding}${content}${padding}${sidePadding}${theme.fg("dim", "│")}`;
 }
 
 function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], minTotalWidth = 0): string[] {
 	const sortedItems = [...items].sort((a, b) => a.priority - b.priority);
-	const title = `System & Context · ${plural(sortedItems.length, "file")}`;
+	const titleLabel = "System & Context";
+	const titleLine = theme.bold(theme.fg("accent", titleLabel));
+	const outerWidth = STARTUP_PANEL_SIDE_PADDING * 2 + 2;
 
 	if (sortedItems.length === 0) {
-		const message = "No system or context files loaded";
-		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - 4, visibleWidth(title) + 2, visibleWidth(message));
-		const padding = " ".repeat(Math.max(0, panelWidth - visibleWidth(message)));
+		const message = theme.fg("dim", "No system or context files loaded");
+		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, visibleWidth(titleLine), visibleWidth(message));
 		return [
-			renderPanelTitle(theme, title, panelWidth),
-			`│ ${theme.fg("dim", message)}${padding} │`,
-			`└${"─".repeat(panelWidth + 2)}┘`,
+			renderPanelBorder(theme, "┌", "┐", panelWidth),
+			renderPanelLine(theme, titleLine, panelWidth),
+			renderPanelLine(theme, message, panelWidth),
+			renderPanelBorder(theme, "└", "┘", panelWidth),
 		];
 	}
 
-	const typeWidth = Math.max("type".length, ...sortedItems.map((item) => visibleWidth(item.kind)));
-	const metricLabel = "words/lines";
-	const metricWidth = Math.max(metricLabel.length, ...sortedItems.map((item) => `${item.words}/${item.lines}`.length));
-	let pathWidth = Math.max("path".length, ...sortedItems.map((item) => visibleWidth(item.path)));
-	const baseRowWidth = typeWidth + 2 + pathWidth + 2 + metricWidth;
-	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - 4, visibleWidth(title) + 2, baseRowWidth);
+	const typeHeader = "Type";
+	const pathHeader = "Path";
+	const metricLabel = "Words/Lines";
+	const typeWidth = Math.max(SYSTEM_CONTEXT_TYPE_WIDTH, typeHeader.length, ...sortedItems.map((item) => visibleWidth(item.kind)));
+	const columnDivider = ` ${theme.fg("muted", "|")} `;
+	const columnDividerWidth = visibleWidth(columnDivider);
+	const metricWidth = Math.max(SYSTEM_CONTEXT_METRIC_WIDTH, metricLabel.length, ...sortedItems.map((item) => `${item.words}/${item.lines}`.length));
+	let pathWidth = Math.max(pathHeader.length, ...sortedItems.map((item) => visibleWidth(item.path)));
+	const baseRowWidth = typeWidth + columnDividerWidth + pathWidth + columnDividerWidth + metricWidth;
+	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, visibleWidth(titleLine), baseRowWidth);
 	pathWidth += panelWidth - baseRowWidth;
-	const header = `${"type".padEnd(typeWidth)}  ${"path".padEnd(pathWidth)}  ${metricLabel.padStart(metricWidth)}`;
-	const separator = `${"─".repeat(typeWidth)}  ${"─".repeat(pathWidth)}  ${"─".repeat(metricWidth)}`;
+	const header = `${theme.fg("muted", typeHeader.padEnd(typeWidth))}${columnDivider}${theme.fg("muted", pathHeader.padEnd(pathWidth))}${columnDivider}${theme.fg("muted", metricLabel.padStart(metricWidth))}`;
+	const separator = `${theme.fg("dim", "─".repeat(typeWidth))}${columnDivider}${theme.fg("dim", "─".repeat(pathWidth))}${columnDivider}${theme.fg("dim", "─".repeat(metricWidth))}`;
 	const lines = [
-		renderPanelTitle(theme, title, panelWidth),
-		`│ ${theme.fg("muted", header)} │`,
-		`│ ${theme.fg("muted", separator)} │`,
+		renderPanelBorder(theme, "┌", "┐", panelWidth),
+		renderPanelLine(theme, titleLine, panelWidth),
+		renderPanelLine(theme, header, panelWidth),
+		renderPanelLine(theme, separator, panelWidth),
 	];
 
 	for (const item of sortedItems) {
@@ -141,21 +158,34 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 		const typePadding = " ".repeat(Math.max(0, typeWidth - visibleWidth(item.kind)));
 		const pathPadding = " ".repeat(Math.max(0, pathWidth - visibleWidth(item.path)));
 		const metricPadding = " ".repeat(Math.max(0, metricWidth - visibleWidth(metric)));
-		lines.push(
-			`│ ${theme.fg("mdHeading", item.kind)}${typePadding}  ${theme.fg("dim", item.path)}${pathPadding}  ${metricPadding}${theme.fg("success", metric)} │`,
-		);
+		lines.push(renderPanelLine(
+			theme,
+			`${theme.fg("dim", item.kind)}${typePadding}${columnDivider}${theme.fg("dim", item.path)}${pathPadding}${columnDivider}${metricPadding}${theme.fg("dim", metric)}`,
+			panelWidth,
+		));
 	}
 
-	lines.push(`└${"─".repeat(panelWidth + 2)}┘`);
+	lines.push(renderPanelBorder(theme, "└", "┘", panelWidth));
 	return lines;
 }
 
+function renderResourceChip(theme: ThemeLike, row: ResourceRow, highlighted: boolean): string {
+	const label = theme.fg(highlighted ? "text" : "muted", row.label);
+	const count = theme.bold(theme.fg("success", String(row.items.length)));
+	const content = `${label} ${count}`;
+	return content;
+}
+
 function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContextItems: SystemContextItem[], expanded: boolean): string {
-	const total = rows.map((row) => `${row.label} ${theme.fg("success", String(row.items.length))}`).join(theme.fg("muted", " · "));
-	const summary = theme.bold(theme.fg("accent", "◆ Resources")) + theme.fg("muted", total ? ` · ${total}` : "");
+	const primaryLabel = systemContextItems.some((item) => item.kind === "system") ? "system" : rows[0]?.label;
+	const total = rows
+		.map((row) => renderResourceChip(theme, row, row.label === primaryLabel))
+		.join(theme.fg("dim", RESOURCE_ROW_GAP));
+	const summary = theme.bold(theme.fg("accent", "◆")) + MESSAGE_TEXT_INDENT.slice(1) + theme.bold(theme.fg("accent", "Resources")) + theme.fg("dim", total ? RESOURCE_ROW_GAP : "") + total;
 	if (!expanded) return summary;
 
-	return [summary, "", ...renderSystemContextPanel(theme, systemContextItems, visibleWidth(summary))].join("\n");
+	const panelBodyWidth = Math.max(1, visibleWidth(summary) - visibleWidth(MESSAGE_TEXT_INDENT));
+	return [summary, "", ...indentStartupLines(renderSystemContextPanel(theme, systemContextItems, panelBodyWidth))].join("\n");
 }
 
 function compactHeader(theme: ThemeLike, width: number): string {
@@ -202,7 +232,7 @@ export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): vo
 		return {
 			invalidate() {},
 			render(width: number): string[] {
-				return compactHeader(headerTheme, width).split("\n");
+				return indentStartupLines(compactHeader(headerTheme, startupBodyWidth(width)).split("\n"));
 			},
 		};
 	});
