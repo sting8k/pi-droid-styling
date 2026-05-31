@@ -12,6 +12,7 @@ interface TuiLike {
 	terminal: TerminalLike;
 	render(width: number): string[];
 	requestRender(force?: boolean): void;
+	doRender?(): void;
 }
 
 export interface TerminalSplitOptions {
@@ -76,6 +77,7 @@ function parseScrollInput(data: string): number {
 export class TerminalSplitCompositor {
 	private readonly originalTerminalWrite: TerminalLike["write"];
 	private readonly originalTuiRender: TuiLike["render"];
+	private readonly originalTuiDoRender?: () => void;
 	private readonly originalRowsOwnDescriptor?: PropertyDescriptor;
 	private readonly originalRowsDescriptor?: PropertyDescriptor;
 	private readonly hadOwnRowsDescriptor: boolean;
@@ -86,6 +88,7 @@ export class TerminalSplitCompositor {
 	private renderingCluster = false;
 	private lastClusterHeight = 0;
 	private clusterCache: { width: number; rawRows: number; cluster: FixedZoneCluster } | undefined;
+	private renderPassActive = false;
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -94,6 +97,7 @@ export class TerminalSplitCompositor {
 	) {
 		this.originalTerminalWrite = tui.terminal.write;
 		this.originalTuiRender = tui.render.bind(tui);
+		this.originalTuiDoRender = typeof tui.doRender === "function" ? tui.doRender.bind(tui) : undefined;
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
@@ -109,6 +113,9 @@ export class TerminalSplitCompositor {
 		});
 		this.tui.render = (width: number) => this.renderScrollableRoot(width);
 		terminal.write = (data: string) => this.write(data);
+		if (this.originalTuiDoRender) {
+			this.tui.doRender = () => this.renderPass();
+		}
 		if (this.options.mouseScroll) {
 			this.writeRaw(ENABLE_MOUSE);
 		}
@@ -127,6 +134,9 @@ export class TerminalSplitCompositor {
 		this.disposed = true;
 		this.tui.terminal.write = this.originalTerminalWrite;
 		this.tui.render = this.originalTuiRender;
+		if (this.originalTuiDoRender) {
+			this.tui.doRender = this.originalTuiDoRender;
+		}
 		if (this.hadOwnRowsDescriptor && this.originalRowsOwnDescriptor) {
 			Object.defineProperty(this.tui.terminal, "rows", this.originalRowsOwnDescriptor);
 		} else {
@@ -181,13 +191,15 @@ export class TerminalSplitCompositor {
 	}
 
 	private getScrollableRows(): number {
+		if (this.disposed || this.painting || this.renderingCluster) return this.getRawRows();
 		const rawRows = this.getRawRows();
-		return Math.max(1, rawRows - this.lastClusterHeight);
+		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		return Math.max(1, rawRows - cluster.lines.length);
 	}
 
 	private renderScrollableRoot(width: number): string[] {
 		const rawRows = this.getRawRows();
-		this.clusterCache = undefined;
+		if (!this.renderPassActive) this.clusterCache = undefined;
 		this.refreshCluster(width, rawRows);
 		const scrollableRows = this.getScrollableRows();
 		const lines = this.originalTuiRender(width);
@@ -202,6 +214,33 @@ export class TerminalSplitCompositor {
 		const maxOffset = Math.max(0, this.lastRootLineCount - this.getScrollableRows());
 		this.scrollOffset = Math.max(0, Math.min(maxOffset, this.scrollOffset + delta));
 		this.tui.requestRender();
+	}
+
+	private renderPass(): void {
+		if (!this.originalTuiDoRender) return;
+		this.renderPassActive = true;
+		this.clusterCache = undefined;
+		try {
+			this.originalTuiDoRender();
+			this.requestRepaint();
+		} finally {
+			this.renderPassActive = false;
+			this.clusterCache = undefined;
+		}
+	}
+
+	private requestRepaint(): void {
+		if (this.disposed || this.painting) return;
+		const rawRows = this.getRawRows();
+		const width = this.getRawColumns();
+		const cluster = this.refreshCluster(width, rawRows);
+		if (cluster.lines.length === 0) return;
+		this.painting = true;
+		try {
+			this.writeRaw(this.buildFixedClusterPaint(cluster, rawRows, width));
+		} finally {
+			this.painting = false;
+		}
 	}
 
 	private write(data: string): void {
@@ -220,7 +259,8 @@ export class TerminalSplitCompositor {
 				return;
 			}
 			const scrollBottom = Math.max(1, rawRows - clusterHeight);
-			this.writeRaw(setScrollRegion(1, scrollBottom) + data + this.buildFixedClusterPaint(cluster, rawRows, width));
+			const scopedWrite = setScrollRegion(1, scrollBottom) + data;
+			this.writeRaw(this.renderPassActive ? scopedWrite : scopedWrite + this.buildFixedClusterPaint(cluster, rawRows, width));
 		} finally {
 			this.painting = false;
 		}
