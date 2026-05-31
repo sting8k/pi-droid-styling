@@ -7,6 +7,8 @@ export interface DroidStylingConfig {
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
 	customWorkingMessage: boolean;
+	fixedUserZone: boolean;
+	fixedUserZoneMouseScroll: boolean;
 }
 
 const DEFAULTS: DroidStylingConfig = {
@@ -14,6 +16,8 @@ const DEFAULTS: DroidStylingConfig = {
 	maxExpandedLines: 50,
 	dimToolOutput: false,
 	customWorkingMessage: false,
+	fixedUserZone: false,
+	fixedUserZoneMouseScroll: true,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
@@ -43,6 +47,8 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		maxExpandedLines: maxExpandedLinesOrDefault(config.maxExpandedLines),
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
+		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
+		fixedUserZoneMouseScroll: booleanOrDefault(config.fixedUserZoneMouseScroll, DEFAULTS.fixedUserZoneMouseScroll),
 	};
 }
 
@@ -53,6 +59,23 @@ function scaffoldIfMissing(): void {
 		writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2) + "\n", "utf-8");
 	} catch {
 		// ignore — read path will fall back to DEFAULTS
+	}
+}
+
+function backfillMissingDefaults(raw: unknown): void {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+	const config = raw as Record<string, unknown>;
+	let changed = false;
+	for (const [key, value] of Object.entries(DEFAULTS) as Array<[keyof DroidStylingConfig, boolean | number]>) {
+		if (key in config) continue;
+		config[key] = value;
+		changed = true;
+	}
+	if (!changed) return;
+	try {
+		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+	} catch {
+		// ignore — read path will keep using normalized DEFAULTS
 	}
 }
 
@@ -80,6 +103,7 @@ export function loadConfig(): DroidStylingConfig {
 	try {
 		const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		cached = normalizeConfig(raw);
+		backfillMissingDefaults(raw);
 	} catch {
 		cached = { ...DEFAULTS };
 	}

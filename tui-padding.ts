@@ -3,7 +3,7 @@
  * Wraps TUI.render to reduce width and prepend spaces to every line.
  */
 
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 interface AnyComponent {
 	render(width: number): string[];

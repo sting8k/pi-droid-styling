@@ -1,4 +1,4 @@
-import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
+import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";

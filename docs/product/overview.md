@@ -14,6 +14,7 @@ The extension provides:
 - Active-theme integration without forcing a specific theme.
 - Terminal background synchronization with the active theme when supported.
 - Render hot-path patches for streaming assistant output and noisy tool output.
+- Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it.
 
 ## Configuration
 
@@ -26,11 +27,14 @@ Current options:
   "alwaysExpanded": false,
   "maxExpandedLines": 50,
   "dimToolOutput": false,
-  "customWorkingMessage": false
+  "customWorkingMessage": false,
+  "fixedUserZone": false,
+  "fixedUserZoneMouseScroll": true
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
+`fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 
 ## Compatibility Expectations
 

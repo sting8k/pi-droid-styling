@@ -2,9 +2,9 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@mariozechner/pi-coding-agent";
-import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
-import { Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");

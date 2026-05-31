@@ -25,6 +25,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
 - Footer stats including token speed and compact session context.
+- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above.
 - Reload/session-safe patches to avoid stacked padding or spacing.
 
 ## Config
@@ -36,11 +37,14 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "alwaysExpanded": false,
   "maxExpandedLines": 50,
   "dimToolOutput": false,
-  "customWorkingMessage": false
+  "customWorkingMessage": false,
+  "fixedUserZone": false,
+  "fixedUserZoneMouseScroll": true
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
+`fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
 
 ## Notes
 

@@ -1,10 +1,10 @@
 // Split-diff renderer — side-by-side diff view with syntax highlighting and inline emphasis.
 // Adapted from nielpattin/dotfiles diff-renderer.ts for pi-droid-styling.
 
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
-import type { Component } from "@mariozechner/pi-tui";
-import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripAnsi } from "./theme/ansi.js";
 

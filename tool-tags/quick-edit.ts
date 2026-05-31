@@ -1,6 +1,6 @@
-import type { ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { getLanguageFromPath } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 
 import { stripAnsi } from "../theme/ansi.js";
 import {

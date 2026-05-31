@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
 const ELAPSED_KEY = "__elapsedMs";
 const OUTPUT_CHARS_KEY = "__outputChars";

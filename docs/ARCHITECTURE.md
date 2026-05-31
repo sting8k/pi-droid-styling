@@ -6,7 +6,7 @@
 
 - Runtime: Pi extension loaded from `index.ts` through the `package.json` `pi.extensions` entry.
 - Language: TypeScript with ESM-style `.js` import specifiers.
-- Hosts: `@mariozechner/pi-coding-agent` and `@mariozechner/pi-tui`.
+- Hosts: `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`.
 - State: in-memory per process/session; no product database.
 - Harness durable state: local `harness.db`, managed only by `scripts/bin/harness-cli` and ignored by git.
 
@@ -36,6 +36,12 @@ theme/
 performance/
   Debounce, throttle, and virtualization patches for render hot paths
 
+fixed-zone/
+  Opt-in terminal compositor for the true fixed user zone
+  - install/dispose lifecycle
+  - terminal split/scroll-region patching
+  - fixed cluster rendering
+
 startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
   Focused UI patches/components that are still small enough to stay at root
 ```
@@ -45,6 +51,7 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 1. `index.ts` should stay an orchestrator: install modules, wire Pi events, and pass providers into UI components.
 2. Feature logic belongs in the closest domain folder, not inline in `index.ts`.
 3. Patch installers must be idempotent because sessions and extensions can reload.
+   Terminal compositor patches must also restore `terminal.write`, `terminal.rows`, `tui.render`, scroll regions, and input listeners on dispose.
 4. Tool rendering belongs in `tool-tags/` until that domain grows enough to justify subfolders.
 5. Theme and ANSI behavior belongs in `theme/`; performance wrappers belong in `performance/`.
 6. Runtime providers used by UI components should be cheap on render paths and cache background work when needed.
@@ -53,7 +60,7 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 
 ```text
 index.ts
-  -> core, editor, messages, performance, theme, tool-tags, root UI modules
+  -> core, editor, fixed-zone, messages, performance, theme, tool-tags, root UI modules
 
 editor/messages/tool-tags/root UI modules
   -> theme helpers when they need color or ANSI behavior

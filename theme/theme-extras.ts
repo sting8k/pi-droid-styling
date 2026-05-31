@@ -52,8 +52,10 @@ function addThemeDir(searchDirs: Set<string>, dir: string): void {
 
 function addBundledThemeDirs(searchDirs: Set<string>): void {
 	for (const root of [extensionDir, process.cwd()]) {
-		addThemeDir(searchDirs, resolve(root, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "modes", "interactive", "theme"));
-		addThemeDir(searchDirs, resolve(root, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "theme"));
+		for (const scope of ["@earendil-works", "@mariozechner"]) {
+			addThemeDir(searchDirs, resolve(root, "node_modules", scope, "pi-coding-agent", "dist", "modes", "interactive", "theme"));
+			addThemeDir(searchDirs, resolve(root, "node_modules", scope, "pi-coding-agent", "dist", "theme"));
+		}
 	}
 }
 

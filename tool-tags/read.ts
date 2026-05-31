@@ -1,6 +1,6 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createReadTool, getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
-import { wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createReadTool, getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";

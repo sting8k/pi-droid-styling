@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { createGrepTool } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { createGrepTool } from "@earendil-works/pi-coding-agent";
 import { stripAnsi } from "../theme/ansi.js";
 import { countLines, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
@@ -29,7 +29,6 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			});
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
-			const state = context?.state as Record<string, unknown> | undefined;
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			const stripped = stripTrailingNotice(output);
 
@@ -39,7 +38,6 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 						maxLines: MAX_GREP_PREVIEW_LINES,
 						color: "error",
 						width,
-						state,
 					});
 					return body ? body.split("\n") : [];
 				}, {
@@ -74,7 +72,6 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					maxLines: MAX_GREP_PREVIEW_LINES,
 					color: "toolOutput",
 					width,
-					state,
 				});
 				return body ? [summary, ...body.split("\n")] : [summary];
 			}, {

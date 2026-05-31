@@ -1,7 +1,8 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
+import { installFixedUserZone } from "./fixed-zone/install.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
 import { installAssistantUpdateDebounce } from "./performance/debounce-update.js";
@@ -23,6 +24,7 @@ import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
 let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
+let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
 let terminalSignalHandlersInstalled = false;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 
@@ -59,6 +61,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		syncTerminalThemeForCurrentSession = undefined;
+		disposeFixedUserZoneForCurrentSession?.();
+		disposeFixedUserZoneForCurrentSession = undefined;
 		try {
 			ctx.ui.setEditorComponent(undefined);
 		} catch {
@@ -78,6 +82,8 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = loadConfig();
+		disposeFixedUserZoneForCurrentSession?.();
+		disposeFixedUserZoneForCurrentSession = undefined;
 		if (config.customWorkingMessage) {
 			const workingMessage = getRandomWorkingMessage() ?? "Working...";
 			sessionUi.setWorkingMessage("");
@@ -152,6 +158,10 @@ export default function (pi: ExtensionAPI) {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
+			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
+				enabled: config.fixedUserZone,
+				mouseScroll: config.fixedUserZoneMouseScroll,
+			});
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {

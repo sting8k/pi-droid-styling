@@ -1,6 +1,6 @@
 // Shared ANSI helpers for the pi-neapple extension
 
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 // Strip ANSI escape codes (pre-compiled regexes for performance)
 const RE_CSI = /\x1b\[[0-9;]*[a-zA-Z]/g;

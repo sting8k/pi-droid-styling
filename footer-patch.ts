@@ -1,4 +1,4 @@
-import { FooterComponent } from "@mariozechner/pi-coding-agent";
+import { FooterComponent } from "@earendil-works/pi-coding-agent";
 
 const PATCHED = Symbol.for("pi-droid-styling.footer-stats.patched");
 const ORIGINAL_RENDER = Symbol.for("pi-droid-styling.footer-stats.original-render");
