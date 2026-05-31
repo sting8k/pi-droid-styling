@@ -11,7 +11,7 @@ export interface DroidStylingConfig {
 
 const DEFAULTS: DroidStylingConfig = {
 	alwaysExpanded: false,
-	maxExpandedLines: 80,
+	maxExpandedLines: 50,
 	dimToolOutput: false,
 	customWorkingMessage: false,
 };

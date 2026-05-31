@@ -5,7 +5,6 @@ import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
 import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
-import { loadConfig } from "../config.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
@@ -18,22 +17,19 @@ type ExpansionState = {
 };
 
 export function isExpanded(options: ToolRenderResultOptions, state?: Record<string, unknown>): boolean {
-	const config = loadConfig();
-	if (config.alwaysExpanded) return true;
-
 	const coreExpanded = typeof options?.expanded === "boolean" ? options.expanded : false;
 	if (!state) return coreExpanded;
 
 	const expansionState = (state[EXPANSION_STATE_KEY] ??= {
 		initialized: false,
 		previousCoreExpanded: coreExpanded,
-		userExpanded: false,
+		userExpanded: coreExpanded,
 	}) as ExpansionState;
 
 	if (!expansionState.initialized) {
 		expansionState.initialized = true;
 		expansionState.previousCoreExpanded = coreExpanded;
-		return false;
+		return coreExpanded;
 	}
 
 	if (coreExpanded !== expansionState.previousCoreExpanded) {

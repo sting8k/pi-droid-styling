@@ -34,11 +34,13 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 ```json
 {
   "alwaysExpanded": false,
-  "maxExpandedLines": 80,
+  "maxExpandedLines": 50,
   "dimToolOutput": false,
   "customWorkingMessage": false
 }
 ```
+
+`alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 
 ## Notes
 
