@@ -4,7 +4,7 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
-import { boxedToolWidthKey, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, shortenPath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
@@ -66,14 +66,16 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const detail = path ? `${path}${range}` : "(unknown)";
-			return renderBoxedToolCall(theme, "Read", [`${theme.fg("dim", "Path: ")}${detail}`], {
+			return renderCompactBoxedToolCall(theme, "Read", `${theme.fg("dim", "Path: ")}${detail}`, {
 				widthKey: boxedToolWidthKey("Read", detail),
+				state: context?.state,
 				isError: Boolean(context?.isError),
 				isPartial: Boolean(context?.isPartial),
 				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result: any, options, theme: any, context: any) {
+			clearCompactBoxedFooter(context?.state);
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
 			const path = shortenPath(rawPath);
@@ -102,6 +104,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				? result.content.filter((contentBlock: any) => contentBlock?.type === "image").length
 				: 0;
 			if (imageCount > 0) {
+				if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
 				const summary = `↳ Read ${imageCount} ${imageCount === 1 ? "image" : "images"}.`;
 				return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
 					widthKey,
@@ -120,13 +123,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 
 			const summary = theme.fg("dim", `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`);
 
-			if (!isExpanded(options)) {
-				return renderBoxedToolResult(theme, () => [summary], {
-					widthKey,
-					referenceLines,
-					footerLines: [formatBoxedFooter(theme, result)],
-				});
-			}
+			if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
 
 			// Expanded: show syntax-highlighted content
 			const filePath = String(context?.args?.path ?? context?.args?.file_path ?? "");

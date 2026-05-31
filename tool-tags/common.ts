@@ -120,6 +120,10 @@ const BOX_VERTICAL = "│";
 const BOX_SIDE_PADDING = 2;
 const BOX_MIN_WIDTH = 12;
 const BOX_WIDTH_CACHE = new Map<string, number>();
+const COMPACT_TOOL_NAME_WIDTH = visibleWidth("Search");
+const COMPACT_FOOTER_ELAPSED_WIDTH = 8;
+const COMPACT_FOOTER_EXTRA_WIDTH = 8;
+const COMPACT_FOOTER_WORDS_WIDTH = 12;
 
 export function boxWidth(width: number): number {
 	return Math.max(BOX_MIN_WIDTH, width);
@@ -249,6 +253,15 @@ export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean
 	return `${title} ${boxText(theme, "|")}`;
 }
 
+function formatCompactBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+	const icon = isError ? "✗" : "✓";
+	const paddedName = padVisibleRight(name, COMPACT_TOOL_NAME_WIDTH);
+	const rawTitle = `➔ ${paddedName} ${icon}`;
+	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
+	return `${title} ${boxText(theme, "|")}`;
+}
+
 function boxText(theme: any, text: string): string {
 	return `${RESET_INTENSITY}${theme.fg("borderMuted", text)}`;
 }
@@ -272,6 +285,28 @@ export function boxBorder(theme: any, left: string, right: string, width: number
 	const renderedWidth = boxWidth(width);
 	const innerWidth = renderedWidth - 2;
 	return boxFrameText(theme, `${left}${BOX_HORIZONTAL.repeat(innerWidth)}${right}`);
+}
+
+function padVisibleRight(text: string, width: number): string {
+	return `${text}${" ".repeat(Math.max(0, width - visibleWidth(text)))}`;
+}
+
+function boxLineWithRight(theme: any, left: string, right: string, width: number): string {
+	const renderedWidth = boxWidth(width);
+	const contentWidth = boxInnerWidth(renderedWidth);
+	const divider = ` ${boxText(theme, "|")} `;
+	const dividerWidth = visibleWidth(divider);
+	const rightWidth = visibleWidth(right);
+	const sidePad = " ".repeat(BOX_SIDE_PADDING);
+
+	if (!right || rightWidth + dividerWidth >= contentWidth) {
+		return boxLine(theme, right || left, renderedWidth);
+	}
+
+	const maxLeftWidth = Math.max(1, contentWidth - dividerWidth - rightWidth - 1);
+	const truncatedLeft = truncateToWidth(left, maxLeftWidth, "…");
+	const gap = " ".repeat(Math.max(1, contentWidth - visibleWidth(truncatedLeft) - dividerWidth - rightWidth));
+	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${truncatedLeft}${gap}${divider}${right}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
 }
 
 export function boxLine(theme: any, content: string, width: number): string {
@@ -324,6 +359,53 @@ export function renderBoxedToolCall(
 	};
 }
 
+const COMPACT_FOOTER_KEY = "__droidCompactFooter";
+const COMPACT_FOOTER_ERROR_KEY = "__droidCompactFooterError";
+const COMPACT_FOOTER_PARTIAL_KEY = "__droidCompactFooterPartial";
+
+export function clearCompactBoxedFooter(state: any): void {
+	if (!state || typeof state !== "object") return;
+	delete state[COMPACT_FOOTER_KEY];
+	delete state[COMPACT_FOOTER_ERROR_KEY];
+	delete state[COMPACT_FOOTER_PARTIAL_KEY];
+}
+
+export function renderCompactBoxedToolCall(
+	theme: any,
+	toolName: string,
+	detailLine: string,
+	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+): Component {
+	return {
+		invalidate() {},
+		render(width: number): string[] {
+			const renderedWidth = boxWidth(width);
+			const title = `${formatCompactBoxedToolTitle(theme, toolName, options.isError)} ${detailLine}`;
+			const compactFooter = typeof options.state?.[COMPACT_FOOTER_KEY] === "string" ? options.state[COMPACT_FOOTER_KEY] : "";
+			const footerIsError = Boolean(options.state?.[COMPACT_FOOTER_ERROR_KEY]);
+			const footerIsPartial = Boolean(options.state?.[COMPACT_FOOTER_PARTIAL_KEY]);
+			if (compactFooter) {
+				return boxBgLines(theme, [
+					boxBorder(theme, "┌", "┐", renderedWidth),
+					boxLineWithRight(theme, title, compactFooter, renderedWidth),
+					boxBorder(theme, "└", "┘", renderedWidth),
+				], boxedToolBgName(footerIsError || options.isError, footerIsPartial || options.isPartial));
+			}
+
+			const lines = [boxBorder(theme, "┌", "┐", renderedWidth), boxLine(theme, title, renderedWidth)];
+			if (options.isPending) {
+				const pendingText = options.pendingText ?? "Waiting for output…";
+				lines.push(
+					boxInsetDivider(theme, renderedWidth),
+					...boxedWrappedLines(theme, `${theme.fg("muted", "…")} ${theme.fg("dim", pendingText)}`, renderedWidth),
+					boxBorder(theme, "└", "┘", renderedWidth),
+				);
+			}
+			return boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
+		}
+	};
+}
+
 type BoxedResultBody = Component | ((contentWidth: number) => string[]);
 
 export function renderBoxedToolResult(
@@ -362,9 +444,42 @@ export function formatBoxedWallTime(result: AgentToolResult<any> | undefined): s
 	return `${(elapsedMs / 1000).toFixed(2)}s`;
 }
 
+function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
+	const elapsedPart = `${theme.fg("text", "◷")} ${theme.fg("dim", formatBoxedWallTime(result))}`;
+	const extraPartList = extraParts.filter(Boolean).map((part) => theme.fg("dim", part));
+	const wordsPart = theme.fg("dim", formatBoxedWords(getTextOutput(result)));
+	const parts = fixedColumns
+		? [
+			padVisibleRight(elapsedPart, COMPACT_FOOTER_ELAPSED_WIDTH),
+			...extraPartList.map((part) => padVisibleRight(part, COMPACT_FOOTER_EXTRA_WIDTH)),
+			padVisibleRight(wordsPart, COMPACT_FOOTER_WORDS_WIDTH),
+		]
+		: [elapsedPart, ...extraPartList, wordsPart];
+	return parts.join(theme.fg("dim", " · "));
+}
+
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {
-	const parts = [`${theme.fg("text", "◷")} ${theme.fg("dim", formatBoxedWallTime(result))}`, ...extraParts.filter(Boolean).map((part) => theme.fg("dim", part)), theme.fg("dim", formatBoxedWords(getTextOutput(result)))];
-	return `${theme.fg("dim", "[")}${parts.join(theme.fg("dim", " · "))}${theme.fg("dim", "]")}`;
+	return `${theme.fg("dim", "[")}${formatBoxedFooterParts(theme, result, extraParts)}${theme.fg("dim", "]")}`;
+}
+
+export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, options: { state?: any; isError?: boolean; isPartial?: boolean } = {}): Component {
+	if (options.state && typeof options.state === "object") {
+		options.state[COMPACT_FOOTER_KEY] = formatBoxedFooterParts(theme, result, [], true);
+		options.state[COMPACT_FOOTER_ERROR_KEY] = Boolean(options.isError);
+		options.state[COMPACT_FOOTER_PARTIAL_KEY] = Boolean(options.isPartial);
+		return { invalidate() {}, render: () => [] };
+	}
+
+	return {
+		invalidate() {},
+		render(width: number): string[] {
+			const renderedWidth = boxWidth(width);
+			return boxBgLines(theme, [
+				boxLine(theme, formatBoxedFooterParts(theme, result), renderedWidth),
+				boxBorder(theme, "└", "┘", renderedWidth),
+			], boxedToolBgName(options.isError, options.isPartial));
+		},
+	};
 }
 
 const TOOL_BODY_INDENT = 2;

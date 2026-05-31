@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createWriteTool } from "@earendil-works/pi-coding-agent";
 import { stripAnsi } from "../theme/ansi.js";
-import { boxedToolWidthKey, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, clearCompactBoxedFooter, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, resolveRelativePath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 function parseWriteSummary(output: string): string | undefined {
@@ -43,14 +43,16 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 			const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
 			const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 			const detail = relPath || "(unknown)";
-			return renderBoxedToolCall(theme, "Write", [`${theme.fg("dim", "Path: ")}${detail}`], {
+			return renderCompactBoxedToolCall(theme, "Write", `${theme.fg("dim", "Path: ")}${detail}`, {
 				widthKey: boxedToolWidthKey("Write", detail),
+				state: context?.state,
 				isError: Boolean(context?.isError),
 				isPartial: Boolean(context?.isPartial),
 				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
-		renderResult(result: any, _options, theme: any, context: any) {
+		renderResult(result: any, options, theme: any, context: any) {
+			clearCompactBoxedFooter(context?.state);
 			const output = getTextOutput(result);
 			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
 			const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
@@ -67,6 +69,8 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 					isError: true,
 				});
 			}
+
+			if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
 
 			const content = String(context?.args?.content ?? "");
 			const lineCount = content ? content.split("\n").length : 0;

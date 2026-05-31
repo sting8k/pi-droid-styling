@@ -41,7 +41,7 @@ export function installCompactToolSpacing(): void {
 	proto.render = function patchedToolRender(this: any, width: number): string[] {
 		const lines = baseRender.call(this, width);
 		if (lines.length === 0 || width <= 0) return lines;
-		if (stripAnsi(lines[0] ?? "").startsWith("┌")) return [...lines, ""];
+		if (stripAnsi(lines[0] ?? "").startsWith("┌")) return lines;
 		const showDivider = getThemeExtra(cachedTheme, "showDivider") !== "false";
 		if (!showDivider) return [...lines, ""];
 		if (cachedDividerWidth !== width) {

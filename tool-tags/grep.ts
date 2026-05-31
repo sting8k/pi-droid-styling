@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { createGrepTool } from "@earendil-works/pi-coding-agent";
 import { stripAnsi } from "../theme/ansi.js";
-import { countLines, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
+import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
 const MAX_GREP_PREVIEW_LINES = 10;
@@ -22,15 +22,24 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			const rawPath = String(args?.path ?? ".");
 			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 			const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
-			return renderBoxedToolCall(theme, "Search", [`${theme.fg("dim", "Query: ")}${detail}`], {
+			return renderCompactBoxedToolCall(theme, "Search", `${theme.fg("dim", "Query: ")}${detail}`, {
+				widthKey: boxedToolWidthKey("Search", detail),
+				state: context?.state,
 				isError: Boolean(context?.isError),
 				isPartial: Boolean(context?.isPartial),
 				isPending: Boolean(context?.isPartial && !context?.hasResult),
 			});
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: any) {
+			clearCompactBoxedFooter(context?.state);
 			const output = stripAnsi(getTextOutput(result)).trimEnd();
 			const stripped = stripTrailingNotice(output);
+			const pattern = String(context?.args?.pattern ?? "");
+			const rawPath = String(context?.args?.path ?? ".");
+			const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
+			const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
+			const widthKey = boxedToolWidthKey("Search", detail);
+			const referenceLines = [`Query: ${detail}`];
 
 			if (result.isError) {
 				return renderBoxedToolResult(theme, (width) => {
@@ -41,10 +50,14 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					});
 					return body ? body.split("\n") : [];
 				}, {
+					widthKey,
+					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
 					isError: true,
 				});
 			}
+
+			if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
 
 			let matchCount = 0;
 			if (stripped && stripped !== "No matches found") {
@@ -63,6 +76,8 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			const summary = theme.fg("dim", `↳ Found ${matchCount} ${matchCount === 1 ? "match" : "matches"}.`);
 			if (!stripped || stripped === "No matches found") {
 				return renderBoxedToolResult(theme, () => [summary], {
+					widthKey,
+					referenceLines,
 					footerLines: [formatBoxedFooter(theme, result)],
 				});
 			}
@@ -75,6 +90,8 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				});
 				return body ? [summary, ...body.split("\n")] : [summary];
 			}, {
+				widthKey,
+				referenceLines,
 				footerLines: [formatBoxedFooter(theme, result)],
 			});
 		},
