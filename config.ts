@@ -17,11 +17,34 @@ const DEFAULTS: DroidStylingConfig = {
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
+const MAX_EXPANDED_LINES_LIMIT = 1000;
 
 let cached: DroidStylingConfig = { ...DEFAULTS };
 let cachedMtimeMs = -1;
 let lastStatAt = 0;
 const STAT_INTERVAL_MS = 1000;
+
+function booleanOrDefault(value: unknown, fallback: boolean): boolean {
+	return typeof value === "boolean" ? value : fallback;
+}
+
+function maxExpandedLinesOrDefault(value: unknown): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULTS.maxExpandedLines;
+	const normalized = Math.floor(value);
+	if (normalized < 0) return DEFAULTS.maxExpandedLines;
+	return Math.min(normalized, MAX_EXPANDED_LINES_LIMIT);
+}
+
+function normalizeConfig(raw: unknown): DroidStylingConfig {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULTS };
+	const config = raw as Record<string, unknown>;
+	return {
+		alwaysExpanded: booleanOrDefault(config.alwaysExpanded, DEFAULTS.alwaysExpanded),
+		maxExpandedLines: maxExpandedLinesOrDefault(config.maxExpandedLines),
+		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
+		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
+	};
+}
 
 function scaffoldIfMissing(): void {
 	if (existsSync(CONFIG_PATH)) return;
@@ -56,7 +79,7 @@ export function loadConfig(): DroidStylingConfig {
 	cachedMtimeMs = mtimeMs;
 	try {
 		const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-		cached = { ...DEFAULTS, ...raw };
+		cached = normalizeConfig(raw);
 	} catch {
 		cached = { ...DEFAULTS };
 	}

@@ -71,7 +71,8 @@ export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 		}),
 		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
-			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+			const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
+			const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 			const detail = relPath || "(unknown)";
 			return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", "Path: ")}${detail}`], {
 				isError: Boolean(context?.isError),

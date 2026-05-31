@@ -53,6 +53,7 @@ type QuickEditRenderContext = {
 	hasResult?: boolean;
 	state?: Record<string, any>;
 	executionStarted?: boolean;
+	cwd?: string;
 };
 
 function extractQuickEditDiff(text: string): string | undefined {
@@ -114,7 +115,8 @@ function renderQuickEditCall(args: any, theme: any, config: QuickEditToolConfig,
 		context.state[STARTED_AT_KEY] = performance.now();
 	}
 	const rawPath = String(args?.path ?? "");
-	const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+	const cwd = typeof context.cwd === "string" ? context.cwd : process.cwd();
+	const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 	const detail = relPath || "(unknown)";
 	return renderBoxedToolCall(theme, config.toolLabel, [`${theme.fg("dim", "Path: ")}${detail}`], {
 		isError: Boolean(context.isError),

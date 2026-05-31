@@ -40,7 +40,8 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 		}),
 		renderCall(args: any, theme: any, context: any) {
 			const rawPath = String(args?.path ?? args?.file_path ?? "");
-			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+			const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
+			const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 			const detail = relPath || "(unknown)";
 			return renderBoxedToolCall(theme, "Write", [`${theme.fg("dim", "Path: ")}${detail}`], {
 				widthKey: boxedToolWidthKey("Write", detail),
@@ -52,7 +53,8 @@ export function registerWriteTool(pi: ExtensionAPI): void {
 		renderResult(result: any, _options, theme: any, context: any) {
 			const output = getTextOutput(result);
 			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
-			const relPath = rawPath ? resolveRelativePath(rawPath, process.cwd()) : "";
+			const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
+			const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 			const detail = relPath || "(unknown)";
 			const widthKey = boxedToolWidthKey("Write", detail);
 			const referenceLines = [`Path: ${detail}`];

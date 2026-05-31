@@ -24,6 +24,8 @@ import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelSco
 
 let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
 let terminalSignalHandlersInstalled = false;
+const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
+
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
@@ -103,7 +105,16 @@ export default function (pi: ExtensionAPI) {
 
 		let lastTerminalBg = "";
 		let lastTerminalFg = "";
+		let lastForcedThemeScanAt = 0;
 		const syncTerminalTheme = (force = false) => {
+			if (force) {
+				const now = Date.now();
+				if (lastForcedThemeScanAt > 0 && now - lastForcedThemeScanAt < FORCE_THEME_SCAN_INTERVAL_MS) {
+					force = false;
+				} else {
+					lastForcedThemeScanAt = now;
+				}
+			}
 			setFullTheme(sessionUi.theme, force);
 			const bg = getThemeVar("bg");
 			const fg = getThemeVar("text");
