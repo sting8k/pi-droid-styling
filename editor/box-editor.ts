@@ -291,7 +291,7 @@ export class BoxEditor extends CustomEditor {
 		if (percent === null || !Number.isFinite(percent)) return "";
 		const total = 12;
 		const filled = Math.max(0, Math.min(total, Math.round((percent / 100) * total)));
-		const fillColor = percent >= 90 ? "error" : "accent";
+		const fillColor = percent > 75 ? "error" : percent >= 50 ? "warning" : "accent";
 		const full = filled > 0 ? this.tone(fillColor, "━".repeat(filled)) : "";
 		const empty = filled < total ? this.tone("borderMuted", "━".repeat(total - filled)) : "";
 		return `${full}${empty}`;
