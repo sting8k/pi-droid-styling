@@ -39,7 +39,7 @@ When `fixedUserZone` is enabled, the editor/user zone stays fixed at the bottom 
 | Layer | Expected proof |
 | --- | --- |
 | Unit | Not available; no test runner exists yet. |
-| Integration | Passed: namespace check, import-resolution script, `tsc --noEmit`, `srcwalk review`, `git diff --check`, fixed-zone fake TUI smoke. |
+| Integration | Passed: namespace check, import-resolution script, `tsc --noEmit`, `srcwalk review`, `git diff --check`, fixed-zone fake TUI smoke, fixed-zone streaming cursor smoke. |
 | E2E | Manual Pi smoke still required after merge: long chat/tool output, resize, reload/shutdown. |
 | Platform | Terminal behavior should be manually tested in target terminals. |
 | Release | Harness trace records changed files, verification, and smoke-test gap. |
@@ -54,8 +54,9 @@ No harness policy change expected. This story records the normal-lane product be
 - `srcwalk review --scope . --offset 8 --limit 20 --budget 12000`
 - `srcwalk review --scope . --offset 28 --limit 20 --budget 7000`
 - Namespace check: no legacy Pi package namespace references outside lockfile.
-- Import-resolution script: `ok: 35 ts files checked`.
+- Import-resolution script: `ok: 71 relative .js imports checked`.
 - `npm exec --package typescript -- tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck --strict false --allowJs false ...`: passed.
 - Fixed-zone fake TUI smoke with `tsx`: `fixed-zone smoke ok`; follow-up smoke covers cluster render cache, batched SGR wheel packets, non-forced scroll render, and mouse mode restore.
+- Fixed-zone streaming cursor smoke with `tsx`: `fixed-zone streaming smoke ok`; verifies render-pass writes move the cursor back to Pi TUI's logical scrollable row before streaming text and do not inline-reset the scroll region ahead of the payload.
 - `git diff --check`: passed.
 - Manual Pi terminal smoke not run in this environment.

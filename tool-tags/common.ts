@@ -243,7 +243,9 @@ function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, tex
 
 export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
 	const icon = isError ? "✗" : "✓";
-	const title = colorFromExtra(theme, "bashPromptColor", "bashMode", `➔ ${name} ${icon}`);
+	const rawTitle = `➔ ${name} ${icon}`;
+	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 	return `${title} ${boxText(theme, "|")}`;
 }
 

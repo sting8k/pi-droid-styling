@@ -98,6 +98,7 @@ export class TerminalSplitCompositor {
 	private lastClusterHeight = 0;
 	private clusterCache: { width: number; rawRows: number; stateKey: string; cluster: FixedZoneCluster } | undefined;
 	private renderPassActive = false;
+	private scrollRegionBottom = 0;
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -115,7 +116,9 @@ export class TerminalSplitCompositor {
 	install(): void {
 		if (this.disposed) return;
 		const terminal = this.tui.terminal;
-		this.refreshCluster(this.getRawColumns(), this.getRawRows());
+		const rawRows = this.getRawRows();
+		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -162,6 +165,7 @@ export class TerminalSplitCompositor {
 		if (this.options.mouseScroll) {
 			this.writeRaw(DISABLE_MOUSE);
 		}
+		this.scrollRegionBottom = 0;
 		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())));
 		this.tui.requestRender(true);
 	}
@@ -225,6 +229,31 @@ export class TerminalSplitCompositor {
 		return Math.max(1, rawRows - cluster.lines.length);
 	}
 
+	private getScrollBottom(rawRows: number, clusterHeight: number): number {
+		return Math.max(1, clusterHeight > 0 ? rawRows - clusterHeight : rawRows);
+	}
+
+	private syncScrollRegion(scrollBottom: number): void {
+		if (this.scrollRegionBottom === scrollBottom) return;
+		this.scrollRegionBottom = scrollBottom;
+		this.writeRaw(saveCursor() + setScrollRegion(1, scrollBottom) + restoreCursor());
+	}
+
+	private getTuiCursorScreenRow(scrollableRows: number): number {
+		const state = this.tui as TuiLike & { hardwareCursorRow?: unknown; previousViewportTop?: unknown };
+		const cursorRow = typeof state.hardwareCursorRow === "number" && Number.isFinite(state.hardwareCursorRow)
+			? Math.floor(state.hardwareCursorRow)
+			: 0;
+		const viewportTop = typeof state.previousViewportTop === "number" && Number.isFinite(state.previousViewportTop)
+			? Math.floor(state.previousViewportTop)
+			: 0;
+		return Math.max(1, Math.min(scrollableRows, cursorRow - viewportTop + 1));
+	}
+
+	private moveToTuiCursor(scrollableRows: number): void {
+		this.writeRaw(moveCursor(this.getTuiCursorScreenRow(scrollableRows), 1));
+	}
+
 	private renderScrollableRoot(width: number): string[] {
 		const rawRows = this.getRawRows();
 		if (!this.renderPassActive) this.clusterCache = undefined;
@@ -276,6 +305,7 @@ export class TerminalSplitCompositor {
 		const rawRows = this.getRawRows();
 		const width = this.getRawColumns();
 		const cluster = this.refreshCluster(width, rawRows);
+		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
 		if (cluster.lines.length === 0) return;
 		this.painting = true;
 		try {
@@ -297,12 +327,14 @@ export class TerminalSplitCompositor {
 			const cluster = this.refreshCluster(width, rawRows);
 			const clusterHeight = cluster.lines.length;
 			if (clusterHeight === 0) {
+				this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
 				this.writeRaw(data);
 				return;
 			}
-			const scrollBottom = Math.max(1, rawRows - clusterHeight);
-			const scopedWrite = setScrollRegion(1, scrollBottom) + data;
-			this.writeRaw(this.renderPassActive ? scopedWrite : scopedWrite + this.buildFixedClusterPaint(cluster, rawRows, width));
+			const scrollBottom = this.getScrollBottom(rawRows, clusterHeight);
+			this.syncScrollRegion(scrollBottom);
+			if (this.renderPassActive) this.moveToTuiCursor(scrollBottom);
+			this.writeRaw(this.renderPassActive ? data : data + this.buildFixedClusterPaint(cluster, rawRows, width));
 		} finally {
 			this.painting = false;
 		}
