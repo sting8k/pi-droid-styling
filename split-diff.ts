@@ -6,7 +6,7 @@ import { getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agen
 import type { Component } from "@mariozechner/pi-tui";
 import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
-import { stripAnsi } from "./ansi.js";
+import { stripAnsi } from "./theme/ansi.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 

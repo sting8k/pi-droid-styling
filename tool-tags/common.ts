@@ -4,9 +4,9 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/p
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
-import { fgHex, isHexColor, stripAnsi } from "../ansi.js";
+import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
-import { getThemeExtra } from "../theme-extras.js";
+import { getThemeExtra } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
 const EXPANSION_STATE_KEY = "__droidStylingExpansionState";

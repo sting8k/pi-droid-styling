@@ -2,7 +2,7 @@ import type { ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { getLanguageFromPath } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
-import { stripAnsi } from "../ansi.js";
+import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
 	buildSplitRows,

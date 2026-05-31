@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { createGrepTool } from "@mariozechner/pi-coding-agent";
-import { stripAnsi } from "../ansi.js";
+import { stripAnsi } from "../theme/ansi.js";
 import { countLines, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 

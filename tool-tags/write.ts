@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createWriteTool } from "@mariozechner/pi-coding-agent";
-import { stripAnsi } from "../ansi.js";
+import { stripAnsi } from "../theme/ansi.js";
 import { boxedToolWidthKey, formatBoxedFooter, getTextOutput, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 

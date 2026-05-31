@@ -1,8 +1,8 @@
 import { AssistantMessageComponent } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
-import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../ansi.js";
-import { getThemeExtra } from "../theme-extras.js";
+import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
+import { getThemeExtra } from "../theme/theme-extras.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");

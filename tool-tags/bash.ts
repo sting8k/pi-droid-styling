@@ -3,7 +3,7 @@ import { createBashTool, highlightCode } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
-import { stripAnsi } from "../ansi.js";
+import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";

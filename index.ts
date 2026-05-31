@@ -2,14 +2,16 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
-import { installAssistantUpdateDebounce } from "./debounce-update.js";
-import { installToolExecutionUpdateDebounce } from "./debounce-tool-updates.js";
+import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
+import { createGitBranchFetcher } from "./core/git-status.js";
+import { installAssistantUpdateDebounce } from "./performance/debounce-update.js";
+import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
-import { installRenderThrottle } from "./render-throttle.js";
-import { getThemeVar, setFullTheme } from "./theme-extras.js";
-import { applyTerminalBg, restoreTerminalBg } from "./terminal-bg.js";
+import { installRenderThrottle } from "./performance/render-throttle.js";
+import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
+import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
@@ -17,7 +19,7 @@ import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
-import { virtualizeChatContainer } from "./virtualize-chat.js";
+import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
 let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
@@ -32,69 +34,17 @@ export default function (pi: ExtensionAPI) {
 	registerToolCallTags(pi);
 
 	let currentThinkingLevel: string | undefined;
-	let assistantResponseStartMs: number | null = null;
-	let assistantTextStartMs: number | null = null;
-	let assistantLastTextMs: number | null = null;
-	let currentAssistantWordsPerSecond: number | null = null;
-	let lastAssistantWordsPerSecond: number | null = null;
-	let lastAssistantWordCount = 0;
-	let lastSpeedUpdateMs = 0;
-	const SPEED_UPDATE_INTERVAL_MS = 5000;
-
-	function countWords(text: string): number {
-		return text.match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
-	}
-
-	function countTextWords(message: any): number {
-		const content = message?.content;
-		if (!Array.isArray(content)) return 0;
-		return content.reduce((sum, block) => {
-			if (block?.type !== "text" || typeof block.text !== "string") return sum;
-			return sum + countWords(block.text);
-		}, 0);
-	}
-
-	function computeSpeed(words: number, startMs: number, endMs = Date.now()): number {
-		const elapsedSeconds = Math.max(0.001, (endMs - startMs) / 1000);
-		return words / elapsedSeconds;
-	}
+	const assistantSpeedTracker = createAssistantSpeedTracker();
 
 	const isStaleContextError = (error: unknown): boolean =>
 		error instanceof Error && error.message.includes("stale after session replacement or reload");
 
 	pi.on("message_start", (event) => {
-		if (event.message.role !== "assistant") return;
-		assistantResponseStartMs = Date.now();
-		assistantTextStartMs = null;
-		assistantLastTextMs = null;
-		currentAssistantWordsPerSecond = null;
-		lastAssistantWordCount = 0;
-		lastSpeedUpdateMs = 0;
+		assistantSpeedTracker.handleMessageStart(event.message);
 	});
 
 	pi.on("message_update", (event) => {
-		if (event.message.role !== "assistant") return;
-		if (!assistantResponseStartMs) return;
-		const words = countTextWords(event.message);
-		if (words <= 0) return;
-		const now = Date.now();
-		if (assistantTextStartMs === null) {
-			assistantTextStartMs = now;
-			assistantLastTextMs = now;
-			lastAssistantWordCount = words;
-			lastSpeedUpdateMs = now;
-			return;
-		}
-		if (words <= lastAssistantWordCount) return;
-		assistantLastTextMs = now;
-		lastAssistantWordCount = words;
-		if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;
-		lastSpeedUpdateMs = now;
-		const nextSpeed = computeSpeed(words, assistantTextStartMs, assistantLastTextMs);
-		const normalizedSpeed = nextSpeed >= 100 ? Math.round(nextSpeed) : Math.round(nextSpeed * 10) / 10;
-		if (currentAssistantWordsPerSecond !== normalizedSpeed) {
-			currentAssistantWordsPerSecond = normalizedSpeed;
-		}
+		assistantSpeedTracker.handleMessageUpdate(event.message);
 	});
 
 	pi.on("thinking_level_select", (event) => {
@@ -102,18 +52,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", (event) => {
-		if (event.message.role !== "assistant") return;
-		const startedAt = assistantTextStartMs ?? assistantResponseStartMs;
-		const endedAt = assistantLastTextMs ?? Date.now();
-		assistantResponseStartMs = null;
-		assistantTextStartMs = null;
-		assistantLastTextMs = null;
-		currentAssistantWordsPerSecond = null;
-		lastAssistantWordCount = 0;
-		if (!startedAt) return;
-		const words = countTextWords(event.message);
-		if (words <= 0) return;
-		lastAssistantWordsPerSecond = computeSpeed(words, startedAt, endedAt);
+		assistantSpeedTracker.handleMessageEnd(event.message);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -129,12 +68,7 @@ export default function (pi: ExtensionAPI) {
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
 		setCompactStartupHeader(sessionUi, sessionCwd);
-		assistantResponseStartMs = null;
-		assistantTextStartMs = null;
-		assistantLastTextMs = null;
-		currentAssistantWordsPerSecond = null;
-		lastAssistantWordsPerSecond = null;
-		lastAssistantWordCount = 0;
+		assistantSpeedTracker.resetSession();
 		try {
 			currentThinkingLevel = pi.getThinkingLevel();
 		} catch (error) {
@@ -200,39 +134,7 @@ export default function (pi: ExtensionAPI) {
 		setDefaultBadgeTheme(sessionUi.theme);
 		setToolSpacingTheme(sessionUi.theme);
 
-		let cachedBranch: { branch: string; insertions?: number; deletions?: number } | null = null;
-		let branchLastFetch = 0;
-		let branchFetchInFlight = false;
-		const fetchBranch = () => {
-			const now = Date.now();
-			if (branchFetchInFlight || now - branchLastFetch < 5000) return cachedBranch;
-			branchFetchInFlight = true;
-			branchLastFetch = now;
-			const { spawn } = require("child_process");
-			const runGit = (args: string[]): Promise<string> =>
-				new Promise((resolve) => {
-					try {
-						const p = spawn("git", args, { cwd: sessionCwd, stdio: ["ignore", "pipe", "ignore"] });
-						let out = "";
-						p.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
-						p.on("close", (code: number) => resolve(code === 0 ? out.trim() : ""));
-						p.on("error", () => resolve(""));
-						setTimeout(() => { try { p.kill(); } catch {} }, 1000);
-					} catch { resolve(""); }
-				});
-			(async () => {
-				const branch = await runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
-				if (!branch) { cachedBranch = null; branchFetchInFlight = false; return; }
-				const stat = await runGit(["diff", "--shortstat"]);
-				const insMatch = stat.match(/(\d+) insertion/);
-				const delMatch = stat.match(/(\d+) deletion/);
-				const insertions = insMatch ? parseInt(insMatch[1], 10) : 0;
-				const deletions = delMatch ? parseInt(delMatch[1], 10) : 0;
-				cachedBranch = { branch, insertions: insertions || undefined, deletions: deletions || undefined };
-				branchFetchInFlight = false;
-			})();
-			return cachedBranch;
-		};
+		const fetchBranch = createGitBranchFetcher(sessionCwd);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
@@ -265,7 +167,7 @@ export default function (pi: ExtensionAPI) {
 					}
 				},
 				fetchBranch,
-				() => currentAssistantWordsPerSecond ?? lastAssistantWordsPerSecond,
+				() => assistantSpeedTracker.getWordsPerSecond(),
 				getFooterStatusLine,
 			);
 		});

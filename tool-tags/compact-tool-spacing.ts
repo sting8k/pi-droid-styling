@@ -1,7 +1,7 @@
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 
-import { fgHex, stripAnsi } from "../ansi.js";
-import { getThemeExtra } from "../theme-extras.js";
+import { fgHex, stripAnsi } from "../theme/ansi.js";
+import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 

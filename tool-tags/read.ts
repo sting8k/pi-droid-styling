@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createReadTool, getLanguageFromPath, highlightCode } from "@mariozechner/pi-coding-agent";
 import { wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
-import { stripAnsi } from "../ansi.js";
+import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, shortenPath, stripTrailingNotice } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
