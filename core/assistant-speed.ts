@@ -73,6 +73,11 @@ export function createAssistantSpeedTracker(): AssistantSpeedTracker {
 				return;
 			}
 			if (words <= lastAssistantWordCount) return;
+			const delta = words - lastAssistantWordCount;
+			if (delta > 500) {
+				console.error(`[assistant-speed] Suspicious word spike: +${delta} words (${lastAssistantWordCount} -> ${words})`);
+				console.error(`[assistant-speed] message.content blocks:`, JSON.stringify(message.content?.map((b: any) => ({ type: b?.type, textLen: b?.text?.length })), null, 2));
+			}
 			assistantLastTextMs = now;
 			lastAssistantWordCount = words;
 			if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;

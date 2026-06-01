@@ -27,6 +27,7 @@ export interface FixedZoneClusterOptions {
 const DIM_START = "\x1b[2m";
 const DIM_END = "\x1b[22m";
 const DEFAULT_CONTENT_INSET = 2;
+const MIN_HINT_GAP = 2;
 
 function scrollDividerLine(width: number, inset = DEFAULT_CONTENT_INSET): string {
 	const side = " ".repeat(Math.max(0, Math.min(inset, Math.floor((width - 1) / 2))));
@@ -41,6 +42,10 @@ function normalizeLine(line: string, width: number): string {
 
 function dim(text: string): string {
 	return `${DIM_START}${text}${DIM_END}`;
+}
+
+function occupiedLineWidth(line: string, cursorCol: number): number {
+	return Math.max(cursorCol, visibleWidth(line.replace(/\s+$/u, "")));
 }
 
 function appendRight(line: string, right: string, width: number, rightInset = DEFAULT_CONTENT_INSET): string {
@@ -62,7 +67,11 @@ function scrollHintButton(label: string): string {
 function applyScrollHintButton(lines: string[], cursor: FixedZoneCluster["cursor"], hint: string | undefined, width: number, rightInset = DEFAULT_CONTENT_INSET): FixedZoneCluster["cursor"] {
 	if (!hint || !cursor) return cursor;
 	const rowIndex = cursor.row - 1;
-	lines[rowIndex] = appendRight(lines[rowIndex] ?? "", scrollHintButton(hint), width, rightInset);
+	const line = lines[rowIndex] ?? "";
+	const right = scrollHintButton(hint);
+	const safeInset = Math.max(0, Math.min(rightInset, Math.floor((width - 1) / 2)));
+	if (occupiedLineWidth(line, cursor.col) + MIN_HINT_GAP + visibleWidth(right) + safeInset > width) return cursor;
+	lines[rowIndex] = appendRight(line, right, width, rightInset);
 	return cursor;
 }
 
