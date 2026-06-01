@@ -12,7 +12,7 @@ interface TuiLike extends RenderableLike {
 }
 
 interface SessionUiLike {
-	onTerminalInput?: (handler: (data: string) => { consume?: boolean } | undefined) => () => void;
+	onTerminalInput?: (handler: (data: string) => { consume?: boolean; data?: string } | undefined) => () => void;
 }
 
 export interface FixedUserZoneInstallOptions extends TerminalSplitOptions {

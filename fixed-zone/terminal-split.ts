@@ -63,16 +63,21 @@ function fitLine(line: string, width: number): string {
 	return truncateToWidth(line, width, "");
 }
 
-function parseScrollInput(data: string): number {
+const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);\d+;\d+[mM]/g;
+
+function filterMouseInput(data: string): { delta: number; filtered: string; sawMouse: boolean } {
 	let delta = 0;
-	for (const match of data.matchAll(/\x1b\[<(\d+);\d+;\d+[mM]/g)) {
-		const button = Number(match[1]);
-		if (!Number.isFinite(button) || button < 64) continue;
-		const wheelButton = button & 1;
-		delta += wheelButton === 0 ? WHEEL_SCROLL_LINES : -WHEEL_SCROLL_LINES;
-	}
-	if (delta !== 0) return delta;
-	return 0;
+	let sawMouse = false;
+	const filtered = data.replace(SGR_MOUSE_EVENT_PATTERN, (_event, buttonText: string) => {
+		sawMouse = true;
+		const button = Number(buttonText);
+		if (Number.isFinite(button) && button >= 64) {
+			const wheelButton = button & 1;
+			delta += wheelButton === 0 ? WHEEL_SCROLL_LINES : -WHEEL_SCROLL_LINES;
+		}
+		return "";
+	});
+	return { delta, filtered, sawMouse };
 }
 
 function isJumpBottomInput(data: string): boolean {
@@ -133,20 +138,26 @@ export class TerminalSplitCompositor {
 		}
 	}
 
-	handleInput(data: string): { consume?: boolean } | undefined {
+	handleInput(data: string): { consume?: boolean; data?: string } | undefined {
 		if (this.disposed) return undefined;
-		if (isJumpBottomInput(data)) {
+		let current = data;
+		if (this.options.mouseScroll) {
+			const mouseInput = filterMouseInput(current);
+			if (mouseInput.sawMouse) {
+				if (mouseInput.delta !== 0) this.scrollBy(mouseInput.delta);
+				if (mouseInput.filtered.length === 0) return { consume: true };
+				current = mouseInput.filtered;
+			}
+		}
+		if (isJumpBottomInput(current)) {
 			this.jumpToBottom();
 			return { consume: true };
 		}
-		if (isJumpTopInput(data)) {
+		if (isJumpTopInput(current)) {
 			this.jumpToTop();
 			return { consume: true };
 		}
-		const delta = parseScrollInput(data);
-		if (delta === 0) return undefined;
-		this.scrollBy(delta);
-		return { consume: true };
+		return current === data ? undefined : { data: current };
 	}
 
 	dispose(): void {
