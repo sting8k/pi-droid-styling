@@ -17,6 +17,19 @@ interface TuiLike {
 
 export interface TerminalSplitOptions {
 	mouseScroll: boolean;
+	onCopySelection?: (text: string) => void;
+}
+
+interface SgrMousePacket {
+	button: number;
+	col: number;
+	row: number;
+	final: "M" | "m";
+}
+
+interface SelectionPoint {
+	line: number;
+	col: number;
 }
 
 const MIN_SCROLLABLE_ROWS = 3;
@@ -63,21 +76,63 @@ function fitLine(line: string, width: number): string {
 	return truncateToWidth(line, width, "");
 }
 
-const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);\d+;\d+[mM]/g;
+const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
 
-function filterMouseInput(data: string): { delta: number; filtered: string; sawMouse: boolean } {
-	let delta = 0;
-	let sawMouse = false;
-	const filtered = data.replace(SGR_MOUSE_EVENT_PATTERN, (_event, buttonText: string) => {
-		sawMouse = true;
+function parseMouseInput(data: string): { packets: SgrMousePacket[]; filtered: string } {
+	const packets: SgrMousePacket[] = [];
+	const filtered = data.replace(SGR_MOUSE_EVENT_PATTERN, (_event, buttonText: string, colText: string, rowText: string, finalText: string) => {
 		const button = Number(buttonText);
-		if (Number.isFinite(button) && button >= 64) {
-			const wheelButton = button & 1;
-			delta += wheelButton === 0 ? WHEEL_SCROLL_LINES : -WHEEL_SCROLL_LINES;
+		const col = Number(colText);
+		const row = Number(rowText);
+		if (Number.isFinite(button) && Number.isFinite(col) && Number.isFinite(row)) {
+			packets.push({ button, col, row, final: finalText as "M" | "m" });
 		}
 		return "";
 	});
-	return { delta, filtered, sawMouse };
+	return { packets, filtered };
+}
+
+function mouseBaseButton(button: number): number {
+	return button & ~(4 | 8 | 16 | 32);
+}
+
+function mouseScrollDelta(packet: SgrMousePacket): number {
+	if (packet.final !== "M") return 0;
+	const baseButton = mouseBaseButton(packet.button);
+	if (baseButton === 64) return WHEEL_SCROLL_LINES;
+	if (baseButton === 65) return -WHEEL_SCROLL_LINES;
+	return 0;
+}
+
+function isLeftPress(packet: SgrMousePacket): boolean {
+	return packet.final === "M" && mouseBaseButton(packet.button) === 0 && (packet.button & 32) === 0;
+}
+
+function isLeftDrag(packet: SgrMousePacket): boolean {
+	return packet.final === "M" && mouseBaseButton(packet.button) === 0 && (packet.button & 32) !== 0;
+}
+
+function isMouseRelease(packet: SgrMousePacket): boolean {
+	return packet.final === "m";
+}
+
+function stripAnsi(text: string): string {
+	return text.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function sliceColumns(text: string, startCol: number, endCol: number): string {
+	let col = 0;
+	let result = "";
+	for (const char of Array.from(text)) {
+		const width = Math.max(0, visibleWidth(char));
+		if (col >= startCol && col < endCol) result += char;
+		col += width;
+	}
+	return result;
+}
+
+function compareSelectionPoints(a: SelectionPoint, b: SelectionPoint): number {
+	return a.line === b.line ? a.col - b.col : a.line - b.line;
 }
 
 function isJumpBottomInput(data: string): boolean {
@@ -104,6 +159,12 @@ export class TerminalSplitCompositor {
 	private clusterCache: { width: number; rawRows: number; stateKey: string; cluster: FixedZoneCluster } | undefined;
 	private renderPassActive = false;
 	private scrollRegionBottom = 0;
+	private rootLines: string[] = [];
+	private visibleRootStart = 0;
+	private visibleScrollableRows = 0;
+	private selectionAnchor: SelectionPoint | null = null;
+	private selectionFocus: SelectionPoint | null = null;
+	private selectionDragging = false;
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -142,9 +203,9 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return undefined;
 		let current = data;
 		if (this.options.mouseScroll) {
-			const mouseInput = filterMouseInput(current);
-			if (mouseInput.sawMouse) {
-				if (mouseInput.delta !== 0) this.scrollBy(mouseInput.delta);
+			const mouseInput = parseMouseInput(current);
+			if (mouseInput.packets.length > 0) {
+				for (const packet of mouseInput.packets) this.handleMousePacket(packet);
 				if (mouseInput.filtered.length === 0) return { consume: true };
 				current = mouseInput.filtered;
 			}
@@ -271,11 +332,14 @@ export class TerminalSplitCompositor {
 		this.refreshCluster(width, rawRows);
 		const scrollableRows = this.getScrollableRows();
 		const lines = this.originalTuiRender(width);
+		this.rootLines = lines;
 		this.lastRootLineCount = lines.length;
 		const maxOffset = Math.max(0, lines.length - scrollableRows);
 		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxOffset));
 		const start = Math.max(0, maxOffset - this.scrollOffset);
-		return lines.slice(start, start + scrollableRows);
+		this.visibleRootStart = start;
+		this.visibleScrollableRows = scrollableRows;
+		return lines.slice(start, start + scrollableRows).map((line, index) => this.renderSelectionHighlight(line, start + index));
 	}
 
 	private getMaxScrollOffset(): number {
@@ -284,18 +348,106 @@ export class TerminalSplitCompositor {
 
 	private scrollBy(delta: number): void {
 		const maxOffset = this.getMaxScrollOffset();
+		this.clearSelection();
 		this.scrollOffset = Math.max(0, Math.min(maxOffset, this.scrollOffset + delta));
 		this.tui.requestRender();
 	}
 
 	private jumpToTop(): void {
+		this.clearSelection();
 		this.scrollOffset = this.getMaxScrollOffset();
 		this.tui.requestRender();
 	}
 
 	private jumpToBottom(): void {
+		this.clearSelection();
 		this.scrollOffset = 0;
 		this.tui.requestRender();
+	}
+
+	private handleMousePacket(packet: SgrMousePacket): void {
+		const delta = mouseScrollDelta(packet);
+		if (delta !== 0) {
+			this.scrollBy(delta);
+			return;
+		}
+
+		if (isMouseRelease(packet)) {
+			this.finishSelection(this.selectionPointForPacket(packet));
+			return;
+		}
+
+		const point = this.selectionPointForPacket(packet);
+		if (!point) {
+			if (isLeftPress(packet)) this.clearSelection();
+			return;
+		}
+
+		if (isLeftPress(packet)) {
+			this.selectionAnchor = point;
+			this.selectionFocus = point;
+			this.selectionDragging = true;
+			this.tui.requestRender();
+			return;
+		}
+
+		if (this.selectionDragging && isLeftDrag(packet)) {
+			this.selectionFocus = point;
+			this.tui.requestRender();
+		}
+	}
+
+	private selectionPointForPacket(packet: SgrMousePacket): SelectionPoint | null {
+		if (packet.row < 1 || packet.row > this.visibleScrollableRows) return null;
+		return {
+			line: this.visibleRootStart + packet.row - 1,
+			col: Math.max(0, packet.col - 1),
+		};
+	}
+
+	private finishSelection(point: SelectionPoint | null): void {
+		if (!this.selectionDragging) return;
+		if (point) this.selectionFocus = point;
+		this.selectionDragging = false;
+		const selectedText = this.getSelectedText();
+		if (selectedText) {
+			this.options.onCopySelection?.(selectedText);
+		} else {
+			this.clearSelection();
+		}
+		this.tui.requestRender();
+	}
+
+	private clearSelection(): void {
+		this.selectionAnchor = null;
+		this.selectionFocus = null;
+		this.selectionDragging = false;
+	}
+
+	private getSelectedText(): string {
+		if (!this.selectionAnchor || !this.selectionFocus) return "";
+		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
+		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
+		if (start.line === end.line && start.col === end.col) return "";
+		const selected: string[] = [];
+		for (let lineIndex = start.line; lineIndex <= end.line; lineIndex++) {
+			const line = stripAnsi(this.rootLines[lineIndex] ?? "");
+			selected.push(sliceColumns(line, lineIndex === start.line ? start.col : 0, lineIndex === end.line ? end.col : Number.POSITIVE_INFINITY));
+		}
+		return selected.join("\n").replace(/[ \t]+$/gm, "").trimEnd();
+	}
+
+	private renderSelectionHighlight(line: string, lineIndex: number): string {
+		if (!this.selectionAnchor || !this.selectionFocus) return line;
+		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
+		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
+		if (lineIndex < start.line || lineIndex > end.line) return line;
+		const plain = stripAnsi(line);
+		const lineWidth = visibleWidth(plain);
+		const startCol = lineIndex === start.line ? Math.max(0, Math.min(start.col, lineWidth)) : 0;
+		const endCol = lineIndex === end.line ? Math.max(startCol, Math.min(end.col, lineWidth)) : lineWidth;
+		if (startCol === endCol) return line;
+		return `${sliceColumns(plain, 0, startCol)}\x1b[7m${sliceColumns(plain, startCol, endCol)}\x1b[27m${sliceColumns(plain, endCol, Number.POSITIVE_INFINITY)}`;
 	}
 
 	private renderPass(): void {

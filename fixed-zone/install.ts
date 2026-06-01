@@ -80,7 +80,10 @@ export function installFixedUserZone(
 		return undefined;
 	}
 
-	const compositor = new TerminalSplitCompositor(tui, hidden, { mouseScroll: options.mouseScroll });
+	const compositor = new TerminalSplitCompositor(tui, hidden, {
+		mouseScroll: options.mouseScroll,
+		onCopySelection: options.onCopySelection,
+	});
 	let disposed = false;
 	const state: FixedUserZoneState = {
 		compositor,

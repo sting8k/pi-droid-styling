@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AssistantMessageComponent, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, copyToClipboard, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
 import { installFixedUserZone } from "./fixed-zone/install.js";
@@ -159,6 +159,7 @@ export default function (pi: ExtensionAPI) {
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				mouseScroll: config.fixedUserZoneMouseScroll,
+				onCopySelection: copyToClipboard,
 			});
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			return new BoxEditor(
