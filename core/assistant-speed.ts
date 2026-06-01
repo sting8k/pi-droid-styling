@@ -7,6 +7,7 @@ export interface AssistantSpeedTracker {
 }
 
 const SPEED_UPDATE_INTERVAL_MS = 5000;
+const MIN_SPEED_SAMPLE_MS = 150;
 
 function countWords(text: string): number {
 	return text.match(/[\p{L}\p{N}_]+/gu)?.length ?? 0;
@@ -21,9 +22,10 @@ function countTextWords(message: any): number {
 	}, 0);
 }
 
-function computeSpeed(words: number, startMs: number, endMs = Date.now()): number {
-	const elapsedSeconds = Math.max(0.001, (endMs - startMs) / 1000);
-	return words / elapsedSeconds;
+function computeSpeed(words: number, startMs: number, endMs = Date.now()): number | null {
+	const elapsedMs = endMs - startMs;
+	if (elapsedMs < MIN_SPEED_SAMPLE_MS) return null;
+	return words / (elapsedMs / 1000);
 }
 
 function normalizeSpeed(wordsPerSecond: number): number {
@@ -55,6 +57,7 @@ export function createAssistantSpeedTracker(): AssistantSpeedTracker {
 			assistantTextStartMs = null;
 			assistantLastTextMs = null;
 			currentAssistantWordsPerSecond = null;
+			lastAssistantWordsPerSecond = null;
 			lastAssistantWordCount = 0;
 			lastSpeedUpdateMs = 0;
 		},
@@ -73,17 +76,13 @@ export function createAssistantSpeedTracker(): AssistantSpeedTracker {
 				return;
 			}
 			if (words <= lastAssistantWordCount) return;
-			const delta = words - lastAssistantWordCount;
-			if (delta > 500) {
-				console.error(`[assistant-speed] Suspicious word spike: +${delta} words (${lastAssistantWordCount} -> ${words})`);
-				console.error(`[assistant-speed] message.content blocks:`, JSON.stringify(message.content?.map((b: any) => ({ type: b?.type, textLen: b?.text?.length })), null, 2));
-			}
 			assistantLastTextMs = now;
 			lastAssistantWordCount = words;
+			const nextSpeed = computeSpeed(words, assistantTextStartMs, assistantLastTextMs);
+			if (nextSpeed === null) return;
+			const normalizedSpeed = normalizeSpeed(nextSpeed);
 			if (now - lastSpeedUpdateMs < SPEED_UPDATE_INTERVAL_MS) return;
 			lastSpeedUpdateMs = now;
-			const nextSpeed = computeSpeed(words, assistantTextStartMs, assistantLastTextMs);
-			const normalizedSpeed = normalizeSpeed(nextSpeed);
 			if (currentAssistantWordsPerSecond !== normalizedSpeed) {
 				currentAssistantWordsPerSecond = normalizedSpeed;
 			}
@@ -97,7 +96,12 @@ export function createAssistantSpeedTracker(): AssistantSpeedTracker {
 			if (!startedAt) return;
 			const words = countTextWords(message);
 			if (words <= 0) return;
-			lastAssistantWordsPerSecond = computeSpeed(words, startedAt, endedAt);
+			const finalSpeed = computeSpeed(words, startedAt, endedAt);
+			if (finalSpeed === null) {
+				lastAssistantWordsPerSecond = null;
+				return;
+			}
+			lastAssistantWordsPerSecond = finalSpeed;
 		},
 
 		resetSession(): void {
