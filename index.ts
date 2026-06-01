@@ -152,8 +152,6 @@ export default function (pi: ExtensionAPI) {
 		setDefaultBadgeTheme(sessionUi.theme);
 		setToolSpacingTheme(sessionUi.theme);
 
-		const fetchBranch = createGitBranchFetcher(sessionCwd);
-
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
@@ -162,6 +160,7 @@ export default function (pi: ExtensionAPI) {
 				enabled: config.fixedUserZone,
 				mouseScroll: config.fixedUserZoneMouseScroll,
 			});
+			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {

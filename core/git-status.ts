@@ -39,10 +39,22 @@ function runGit(cwd: string, args: string[]): Promise<string> {
 	});
 }
 
-export function createGitBranchFetcher(cwd: string): GitBranchFetcher {
+export function createGitBranchFetcher(cwd: string, onUpdate?: () => void): GitBranchFetcher {
 	let cachedBranch: GitBranchStatus | null = null;
 	let branchLastFetch = 0;
 	let branchFetchInFlight = false;
+
+	function setCachedBranch(next: GitBranchStatus | null): void {
+		const previous = cachedBranch;
+		cachedBranch = next;
+		if (
+			previous?.branch !== next?.branch ||
+			previous?.insertions !== next?.insertions ||
+			previous?.deletions !== next?.deletions
+		) {
+			onUpdate?.();
+		}
+	}
 
 	async function refreshBranch(): Promise<void> {
 		try {
@@ -51,14 +63,14 @@ export function createGitBranchFetcher(cwd: string): GitBranchFetcher {
 				runGit(cwd, ["diff", "--shortstat"]),
 			]);
 			if (!branch) {
-				cachedBranch = null;
+				setCachedBranch(null);
 				return;
 			}
 			const insMatch = stat.match(/(\d+) insertion/);
 			const delMatch = stat.match(/(\d+) deletion/);
 			const insertions = insMatch ? parseInt(insMatch[1], 10) : 0;
 			const deletions = delMatch ? parseInt(delMatch[1], 10) : 0;
-			cachedBranch = { branch, insertions: insertions || undefined, deletions: deletions || undefined };
+			setCachedBranch({ branch, insertions: insertions || undefined, deletions: deletions || undefined });
 		} finally {
 			branchFetchInFlight = false;
 		}
