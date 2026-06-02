@@ -80,7 +80,7 @@ const { renderFixedZoneSidebar } = sidebar;
 const { TerminalSplitCompositor } = split;
 const { createGitBranchFetcher } = gitStatus;
 const { installRenderThrottle } = renderThrottle;
-const { installAssistantUpdateDebounce } = assistantDebounce;
+const { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } = assistantDebounce;
 const { installToolExecutionUpdateDebounce } = toolDebounce;
 const { installAssistantStreamingMarkdownCache } = streamingMarkdownCache;
 const { AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
@@ -200,6 +200,7 @@ class FakeAssistantMessage {
 	}
 }
 installAssistantUpdateDebounce(FakeAssistantMessage);
+setAssistantUpdateRenderRequester(() => profileCount("bench.assistant.requestRender"));
 const assistantComponent = new FakeAssistantMessage();
 for (let i = 0; i < 40; i++) assistantComponent.updateContent({ text: `delta ${i}` });
 await sleep(80);
@@ -224,7 +225,17 @@ cadenceAssistantComponent.updateContent({
 profileSample("bench.assistantCadenceInputUpdates", cadenceDelays.length + 1);
 profileSample("bench.assistantCadenceActualUpdates", cadenceAssistantComponent.updates);
 
+const largeChunkAssistantComponent = new FakeAssistantMessage();
+const largeChunkText = `${"large chunk paragraph. ".repeat(80)}\n\n${"second paragraph keeps flowing. ".repeat(60)}`;
+largeChunkAssistantComponent.updateContent({ content: [{ type: "text", text: "Intro." }] });
+await sleep(45);
+largeChunkAssistantComponent.updateContent({ content: [{ type: "text", text: `Intro.\n\n${largeChunkText}` }] });
+await sleep(420);
+largeChunkAssistantComponent.updateContent({ content: [{ type: "text", text: `Intro.\n\n${largeChunkText}` }], stopReason: "end" });
+profileSample("bench.assistantLargeChunkActualUpdates", largeChunkAssistantComponent.updates);
+
 installAssistantStreamingMarkdownCache(AssistantMessageComponent);
+installAssistantUpdateDebounce(AssistantMessageComponent);
 const benchMarkdownTheme = {
 	heading: (text) => text,
 	link: (text) => text,
@@ -257,6 +268,7 @@ const markdownStreamingTexts = [
 ];
 for (const text of markdownStreamingTexts) {
 	markdownStreamingComponent.updateContent({ content: [{ type: "text", text }] });
+	await sleep(40);
 	markdownStreamingComponent.render(88);
 }
 markdownStreamingComponent.updateContent({

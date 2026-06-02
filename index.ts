@@ -7,7 +7,7 @@ import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
 import { getPiVersion } from "./core/pi-version.js";
 import { readSessionMetadata } from "./core/session-metadata.js";
-import { installAssistantUpdateDebounce } from "./performance/debounce-update.js";
+import { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } from "./performance/debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
@@ -69,6 +69,7 @@ export default function (pi: ExtensionAPI) {
 		syncTerminalThemeForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
+		setAssistantUpdateRenderRequester(undefined);
 		try {
 			ctx.ui.setEditorComponent(undefined);
 		} catch {
@@ -80,6 +81,7 @@ export default function (pi: ExtensionAPI) {
 		profileCount("session.start");
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
+		setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantSpeedTracker.resetSession();
 		try {
@@ -162,6 +164,7 @@ export default function (pi: ExtensionAPI) {
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
+			setAssistantUpdateRenderRequester(() => tui.requestRender());
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
 			const piVersion = getPiVersion();
