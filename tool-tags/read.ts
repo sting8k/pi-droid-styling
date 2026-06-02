@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool, getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { safeWrapTextWithAnsi } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
@@ -150,7 +150,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 					const renderPlain = (text: string): string[] => {
 						const out: string[] = [];
 						for (const line of text.split("\n")) {
-							out.push(...wrapTextWithAnsi(theme.fg("toolOutput", line), renderWidth));
+							out.push(...safeWrapTextWithAnsi(theme.fg("toolOutput", line), renderWidth));
 						}
 						return out;
 					};
@@ -181,7 +181,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 						const contentWidth = Math.max(1, renderWidth - gutterWidth);
 						for (let i = 0; i < parsed.numberedLines.length; i++) {
 							const numberedLine = parsed.numberedLines[i]!;
-							const wrapped = wrapTextWithAnsi(bodyLines[i] ?? "", contentWidth);
+							const wrapped = safeWrapTextWithAnsi(bodyLines[i] ?? "", contentWidth);
 							const gutter = theme.fg("dim", `${numberedLine.lineNumber.padStart(numberWidth)} │ `);
 							const continuation = theme.fg("dim", `${"".padStart(numberWidth)} │ `);
 							out.push(`${gutter}${wrapped[0] ?? ""}`);

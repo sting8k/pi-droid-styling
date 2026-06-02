@@ -1,7 +1,8 @@
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir, hostname, userInfo } from "node:os";
 
+import { safeWrapTextWithAnsi } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
@@ -433,7 +434,7 @@ export class BoxEditor extends CustomEditor {
 				line = `${before}${marker}\x1b[7m${atCursor}\x1b[27m${rest}`;
 			}
 
-			const wrapped = wrapTextWithAnsi(line, width);
+			const wrapped = safeWrapTextWithAnsi(line, width);
 			rendered.push(...(wrapped.length > 0 ? wrapped : [""]));
 		}
 

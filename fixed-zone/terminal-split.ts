@@ -1,5 +1,6 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
+import { MAX_FIXED_ROOT_LINES } from "../render-budget.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -457,9 +458,19 @@ export class TerminalSplitCompositor {
 			this.refreshCluster(layout.contentWidth, rawRows);
 			const scrollableRows = this.getScrollableRows();
 			const rootRenderStart = profileNow();
-			const lines = this.originalTuiRender(layout.contentWidth);
+			const renderedLines = this.originalTuiRender(layout.contentWidth);
 			profileDuration("fixed.root.originalRender.ms", rootRenderStart);
-			profileSample("fixed.root.lines.count", lines.length);
+			profileSample("fixed.root.lines.count", renderedLines.length);
+			const retainedLines = Math.max(1, MAX_FIXED_ROOT_LINES - 1);
+			const omittedLines = Math.max(0, renderedLines.length - retainedLines);
+			const lines = omittedLines > 0
+				? [
+					truncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
+					...renderedLines.slice(-retainedLines),
+				]
+				: renderedLines;
+			profileSample("fixed.root.retainedLines.count", lines.length);
+			profileSample("fixed.root.omittedLines.count", omittedLines);
 			this.rootLines = lines;
 			this.lastRootLineCount = lines.length;
 			const maxOffset = Math.max(0, lines.length - scrollableRows);

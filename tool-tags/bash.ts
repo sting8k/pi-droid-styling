@@ -1,8 +1,9 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { createBashTool, highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
+import { safeWrapTextWithAnsi } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
@@ -261,8 +262,7 @@ function createBashResultPreview(
 				return cacheLines;
 			}
 
-			const clamped = logicalLines.join("\n");
-			const wrapped = wrapTextWithAnsi(clamped, bodyWidth);
+			const wrapped = logicalLines.flatMap((line) => safeWrapTextWithAnsi(line, bodyWidth));
 			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
 			const applyColor = (l: string) => color === "error" ? formatToolOutputLine(theme, l, "error") : cfg.dimToolOutput ? formatToolOutputLine(theme, l) : formatToolOutputLine(theme, l, "text");
 			if (cfg.maxExpandedLines > 0 && expandedLines.length > cfg.maxExpandedLines) {

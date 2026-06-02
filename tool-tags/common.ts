@@ -1,9 +1,10 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
+import { BOXED_RESULT_RENDERED_HEAD_LINES, BOXED_RESULT_RENDERED_TAIL_LINES, clampRenderLine, clampRenderedLines, safeWrapTextWithAnsi } from "../render-budget.js";
 import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
@@ -326,7 +327,7 @@ function boxInsetDivider(theme: any, width: number): string {
 }
 
 export function boxedWrappedLines(theme: any, content: string, width: number): string[] {
-	return wrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
+	return safeWrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
 }
 export function renderBoxedToolCall(
 	theme: any,
@@ -427,9 +428,16 @@ export function renderBoxedToolResult(
 			const renderedFooterLines = footerLines.length > 0
 				? [boxInsetDivider(theme, renderedWidth), ...footerLines.map((line) => boxLine(theme, line, renderedWidth))]
 				: [];
+			const wrappedOutputLines = outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth));
+			const boundedOutputLines = clampRenderedLines(
+				wrappedOutputLines,
+				BOXED_RESULT_RENDERED_HEAD_LINES,
+				BOXED_RESULT_RENDERED_TAIL_LINES,
+				(remaining) => boxLine(theme, theme.fg("muted", `… ${remaining} more rendered lines omitted`), renderedWidth),
+			);
 			const rendered = boxBgLines(theme, [
 				boxInsetDivider(theme, renderedWidth),
-				...outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth)),
+				...boundedOutputLines,
 				...renderedFooterLines,
 				boxBorder(theme, "└", "┘", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
@@ -502,7 +510,7 @@ export function renderToolCallHeaderLines(theme: any, label: string, detailLines
 			const bodyWidth = Math.max(1, width - visibleWidth(prefix) - TOOL_RIGHT_MARGIN);
 			const output: string[] = [];
 			for (let i = 0; i < detailLines.length; i++) {
-				const wrapped = wrapTextWithAnsi(detailLines[i] ?? "", bodyWidth);
+				const wrapped = safeWrapTextWithAnsi(detailLines[i] ?? "", bodyWidth);
 				if (i === 0) {
 					output.push(`${prefix}${wrapped[0] ?? ""}`);
 					output.push(...wrapped.slice(1).map((line) => `${indent}${line}`));
@@ -528,11 +536,8 @@ export function indentToolBodyLines(lines: string[], spaces = TOOL_BODY_INDENT):
 	return lines.map((line) => (line.length === 0 ? line : `${indent}${line}`));
 }
 
-const MAX_RENDER_LINE_CHARS = 2000;
-
 function clampLine(line: string): string {
-	if (line.length <= MAX_RENDER_LINE_CHARS) return line;
-	return line.slice(0, MAX_RENDER_LINE_CHARS) + "… (truncated)";
+	return clampRenderLine(line);
 }
 
 export function formatToolOutputLine(theme: any, line: string, color: "toolOutput" | "error" | "text" = "toolOutput"): string {
