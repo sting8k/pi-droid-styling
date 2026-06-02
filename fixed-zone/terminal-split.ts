@@ -77,10 +77,18 @@ function fitLine(line: string, width: number): string {
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
+const TRAILING_SGR_MOUSE_EVENT_PREFIX_PATTERN = /\x1b\[<\d*(?:;\d*(?:;\d*)?)?$/;
 
-function parseMouseInput(data: string): { packets: SgrMousePacket[]; filtered: string } {
+function splitTrailingSgrMousePrefix(data: string): { body: string; pending: string } {
+	const match = data.match(TRAILING_SGR_MOUSE_EVENT_PREFIX_PATTERN);
+	if (!match || match.index === undefined) return { body: data, pending: "" };
+	return { body: data.slice(0, match.index), pending: match[0] };
+}
+
+function parseMouseInput(data: string): { packets: SgrMousePacket[]; filtered: string; pending: string } {
+	const { body, pending } = splitTrailingSgrMousePrefix(data);
 	const packets: SgrMousePacket[] = [];
-	const filtered = data.replace(SGR_MOUSE_EVENT_PATTERN, (_event, buttonText: string, colText: string, rowText: string, finalText: string) => {
+	const filtered = body.replace(SGR_MOUSE_EVENT_PATTERN, (_event, buttonText: string, colText: string, rowText: string, finalText: string) => {
 		const button = Number(buttonText);
 		const col = Number(colText);
 		const row = Number(rowText);
@@ -89,7 +97,7 @@ function parseMouseInput(data: string): { packets: SgrMousePacket[]; filtered: s
 		}
 		return "";
 	});
-	return { packets, filtered };
+	return { packets, filtered, pending };
 }
 
 function mouseBaseButton(button: number): number {
@@ -165,6 +173,7 @@ export class TerminalSplitCompositor {
 	private selectionAnchor: SelectionPoint | null = null;
 	private selectionFocus: SelectionPoint | null = null;
 	private selectionDragging = false;
+	private pendingMouseInput = "";
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -203,12 +212,11 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return undefined;
 		let current = data;
 		if (this.options.mouseScroll) {
-			const mouseInput = parseMouseInput(current);
-			if (mouseInput.packets.length > 0) {
-				for (const packet of mouseInput.packets) this.handleMousePacket(packet);
-				if (mouseInput.filtered.length === 0) return { consume: true };
-				current = mouseInput.filtered;
-			}
+			const mouseInput = parseMouseInput(this.pendingMouseInput + current);
+			this.pendingMouseInput = mouseInput.pending;
+			for (const packet of mouseInput.packets) this.handleMousePacket(packet);
+			current = mouseInput.filtered;
+			if (current.length === 0 && (mouseInput.packets.length > 0 || mouseInput.pending.length > 0)) return { consume: true };
 		}
 		if (isJumpBottomInput(current)) {
 			this.jumpToBottom();
@@ -224,6 +232,7 @@ export class TerminalSplitCompositor {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.pendingMouseInput = "";
 		this.tui.terminal.write = this.originalTerminalWrite;
 		this.tui.render = this.originalTuiRender;
 		if (this.originalTuiDoRender) {
