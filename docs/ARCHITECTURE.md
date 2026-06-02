@@ -41,6 +41,7 @@ fixed-zone/
   - install/dispose lifecycle
   - terminal split/scroll-region patching
   - fixed cluster rendering
+  - optional right sidebar rendering for fixed user zone metadata
 
 startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
   Focused UI patches/components that are still small enough to stay at root

@@ -1,6 +1,7 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
+import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
 
 interface TerminalLike {
 	write(data: string): void;
@@ -18,8 +19,13 @@ interface TuiLike {
 export interface TerminalSplitOptions {
 	mouseScroll: boolean;
 	onCopySelection?: (text: string) => void;
+	sidebar?: {
+		enabled: boolean;
+		getInfo?: FixedZoneSidebarInfoProvider;
+		theme?: FixedZoneSidebarTheme;
+		onActiveChange?: (active: boolean) => void;
+	};
 }
-
 interface SgrMousePacket {
 	button: number;
 	col: number;
@@ -28,6 +34,7 @@ interface SgrMousePacket {
 }
 
 interface SelectionPoint {
+	region: "root" | "sidebar";
 	line: number;
 	col: number;
 }
@@ -74,6 +81,11 @@ function findPropertyDescriptor(target: object, key: PropertyKey): PropertyDescr
 function fitLine(line: string, width: number): string {
 	if (visibleWidth(line) <= width) return line;
 	return truncateToWidth(line, width, "");
+}
+
+function padLine(line: string, width: number): string {
+	const fitted = fitLine(line, width);
+	return `${fitted}${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}`;
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -174,6 +186,8 @@ export class TerminalSplitCompositor {
 	private selectionFocus: SelectionPoint | null = null;
 	private selectionDragging = false;
 	private pendingMouseInput = "";
+	private sidebarActive = false;
+	private sidebarRows: string[] = [];
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -192,7 +206,8 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		const terminal = this.tui.terminal;
 		const rawRows = this.getRawRows();
-		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
@@ -233,6 +248,7 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.pendingMouseInput = "";
+		this.setSidebarActive(false);
 		this.tui.terminal.write = this.originalTerminalWrite;
 		this.tui.render = this.originalTuiRender;
 		if (this.originalTuiDoRender) {
@@ -270,11 +286,40 @@ export class TerminalSplitCompositor {
 		return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
 	}
 
+	private setSidebarActive(active: boolean): void {
+		if (this.sidebarActive === active) return;
+		this.sidebarActive = active;
+		if (!active && this.selectionAnchor?.region === "sidebar") this.clearSelection();
+		this.clusterCache = undefined;
+		this.options.sidebar?.onActiveChange?.(active);
+	}
+
+	private getSidebarLayout(rawWidth = this.getRawColumns()): FixedZoneSidebarLayout {
+		const layout = computeFixedZoneSidebarLayout(rawWidth, this.options.sidebar?.enabled === true);
+		this.setSidebarActive(layout.active);
+		return layout;
+	}
+
+	private renderSidebarRows(layout: FixedZoneSidebarLayout, rawRows: number): string[] {
+		if (!layout.active) {
+			this.sidebarRows = [];
+			return [];
+		}
+		const rows = renderFixedZoneSidebar(this.options.sidebar?.getInfo?.(), layout.sidebarWidth, rawRows, this.options.sidebar?.theme);
+		this.sidebarRows = rows;
+		return rows.map((line, index) => this.renderSidebarSelectionHighlight(line, index));
+	}
+
+	private composeWithSidebar(content: string, layout: FixedZoneSidebarLayout, sidebarRows: string[], rowIndex: number): string {
+		if (!layout.active) return fitLine(content, layout.contentWidth);
+		return `${padLine(content, layout.contentWidth)}${sidebarRows[rowIndex] ?? ""}`;
+	}
+
 	private getMaxClusterRows(rawRows = this.getRawRows()): number {
 		return Math.max(0, rawRows - MIN_SCROLLABLE_ROWS);
 	}
 
-	private renderCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
+	private renderCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
 		this.renderingCluster = true;
 		try {
 			return renderFixedUserZoneCluster(this.hiddenRenderables, width, this.getMaxClusterRows(rawRows), this.getClusterOptions());
@@ -293,7 +338,7 @@ export class TerminalSplitCompositor {
 		return this.scrollOffset > 0 ? "scrolled" : "bottom";
 	}
 
-	private refreshCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
+	private refreshCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
 		const stateKey = this.getClusterStateKey();
 		const cached = this.clusterCache;
 		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) return cached.cluster;
@@ -306,7 +351,8 @@ export class TerminalSplitCompositor {
 	private getScrollableRows(): number {
 		if (this.disposed || this.painting || this.renderingCluster) return this.getRawRows();
 		const rawRows = this.getRawRows();
-		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		return Math.max(1, rawRows - cluster.lines.length);
 	}
 
@@ -335,12 +381,13 @@ export class TerminalSplitCompositor {
 		this.writeRaw(moveCursor(this.getTuiCursorScreenRow(scrollableRows), 1));
 	}
 
-	private renderScrollableRoot(width: number): string[] {
+	private renderScrollableRoot(_width: number): string[] {
 		const rawRows = this.getRawRows();
+		const layout = this.getSidebarLayout(this.getRawColumns());
 		if (!this.renderPassActive) this.clusterCache = undefined;
-		this.refreshCluster(width, rawRows);
+		this.refreshCluster(layout.contentWidth, rawRows);
 		const scrollableRows = this.getScrollableRows();
-		const lines = this.originalTuiRender(width);
+		const lines = this.originalTuiRender(layout.contentWidth);
 		this.rootLines = lines;
 		this.lastRootLineCount = lines.length;
 		const maxOffset = Math.max(0, lines.length - scrollableRows);
@@ -348,7 +395,11 @@ export class TerminalSplitCompositor {
 		const start = Math.max(0, maxOffset - this.scrollOffset);
 		this.visibleRootStart = start;
 		this.visibleScrollableRows = scrollableRows;
-		return lines.slice(start, start + scrollableRows).map((line, index) => this.renderSelectionHighlight(line, start + index));
+		const visibleLines = lines.slice(start, start + scrollableRows)
+			.map((line, index) => this.renderSelectionHighlight(line, start + index));
+		if (!layout.active) return visibleLines;
+		const sidebarRows = this.renderSidebarRows(layout, rawRows);
+		return visibleLines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
 	}
 
 	private getMaxScrollOffset(): number {
@@ -400,15 +451,25 @@ export class TerminalSplitCompositor {
 			return;
 		}
 
-		if (this.selectionDragging && isLeftDrag(packet)) {
+		if (this.selectionDragging && isLeftDrag(packet) && this.selectionAnchor?.region === point.region) {
 			this.selectionFocus = point;
 			this.tui.requestRender();
 		}
 	}
 
 	private selectionPointForPacket(packet: SgrMousePacket): SelectionPoint | null {
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		if (layout.active && packet.col > layout.contentWidth) {
+			if (packet.row < 1 || packet.row > this.getRawRows()) return null;
+			return {
+				region: "sidebar",
+				line: packet.row - 1,
+				col: Math.max(0, packet.col - layout.contentWidth - 1),
+			};
+		}
 		if (packet.row < 1 || packet.row > this.visibleScrollableRows) return null;
 		return {
+			region: "root",
 			line: this.visibleRootStart + packet.row - 1,
 			col: Math.max(0, packet.col - 1),
 		};
@@ -416,7 +477,7 @@ export class TerminalSplitCompositor {
 
 	private finishSelection(point: SelectionPoint | null): void {
 		if (!this.selectionDragging) return;
-		if (point) this.selectionFocus = point;
+		if (point && this.selectionAnchor?.region === point.region) this.selectionFocus = point;
 		this.selectionDragging = false;
 		const selectedText = this.getSelectedText();
 		if (selectedText) {
@@ -435,18 +496,30 @@ export class TerminalSplitCompositor {
 
 	private getSelectedText(): string {
 		if (!this.selectionAnchor || !this.selectionFocus) return "";
+		if (this.selectionAnchor.region !== this.selectionFocus.region) return "";
 		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
 		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
 		if (start.line === end.line && start.col === end.col) return "";
+		const sourceLines = start.region === "sidebar" ? this.sidebarRows : this.rootLines;
 		const selected: string[] = [];
 		for (let lineIndex = start.line; lineIndex <= end.line; lineIndex++) {
-			const line = stripAnsi(this.rootLines[lineIndex] ?? "");
+			const line = stripAnsi(sourceLines[lineIndex] ?? "");
 			selected.push(sliceColumns(line, lineIndex === start.line ? start.col : 0, lineIndex === end.line ? end.col : Number.POSITIVE_INFINITY));
 		}
 		return selected.join("\n").replace(/[ \t]+$/gm, "").trimEnd();
 	}
 
 	private renderSelectionHighlight(line: string, lineIndex: number): string {
+		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "root" || this.selectionFocus.region !== "root") return line;
+		return this.renderLineSelectionHighlight(line, lineIndex);
+	}
+
+	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
+		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "sidebar" || this.selectionFocus.region !== "sidebar") return line;
+		return this.renderLineSelectionHighlight(line, lineIndex);
+	}
+
+	private renderLineSelectionHighlight(line: string, lineIndex: number): string {
 		if (!this.selectionAnchor || !this.selectionFocus) return line;
 		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
 		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
@@ -475,13 +548,13 @@ export class TerminalSplitCompositor {
 	private requestRepaint(): void {
 		if (this.disposed || this.painting) return;
 		const rawRows = this.getRawRows();
-		const width = this.getRawColumns();
-		const cluster = this.refreshCluster(width, rawRows);
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-		if (cluster.lines.length === 0) return;
+		if (cluster.lines.length === 0 && !layout.active) return;
 		this.painting = true;
 		try {
-			this.writeRaw(this.buildFixedClusterPaint(cluster, rawRows, width));
+			this.writeRaw(this.buildSidebarPaint(rawRows, layout) + this.buildFixedClusterPaint(cluster, rawRows, layout));
 		} finally {
 			this.painting = false;
 		}
@@ -495,33 +568,45 @@ export class TerminalSplitCompositor {
 		this.painting = true;
 		try {
 			const rawRows = this.getRawRows();
-			const width = this.getRawColumns();
-			const cluster = this.refreshCluster(width, rawRows);
+			const layout = this.getSidebarLayout(this.getRawColumns());
+			const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 			const clusterHeight = cluster.lines.length;
 			if (clusterHeight === 0) {
 				this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
-				this.writeRaw(data);
+				this.writeRaw(data + this.buildSidebarPaint(rawRows, layout));
 				return;
 			}
 			const scrollBottom = this.getScrollBottom(rawRows, clusterHeight);
 			this.syncScrollRegion(scrollBottom);
 			if (this.renderPassActive) this.moveToTuiCursor(scrollBottom);
-			this.writeRaw(this.renderPassActive ? data : data + this.buildFixedClusterPaint(cluster, rawRows, width));
+			this.writeRaw(this.renderPassActive ? data : data + this.buildSidebarPaint(rawRows, layout) + this.buildFixedClusterPaint(cluster, rawRows, layout));
 		} finally {
 			this.painting = false;
 		}
 	}
 
-	private buildFixedClusterPaint(cluster: FixedZoneCluster, rawRows: number, width: number): string {
+	private buildSidebarPaint(rawRows: number, layout: FixedZoneSidebarLayout): string {
+		if (!layout.active) return "";
+		const sidebarRows = this.renderSidebarRows(layout, rawRows);
+		let output = saveCursor();
+		for (let row = 1; row <= rawRows; row++) {
+			output += moveCursor(row, layout.contentWidth + 1) + (sidebarRows[row - 1] ?? " ".repeat(layout.sidebarWidth));
+		}
+		return output + restoreCursor();
+	}
+
+	private buildFixedClusterPaint(cluster: FixedZoneCluster, rawRows: number, layout: FixedZoneSidebarLayout): string {
+		if (cluster.lines.length === 0) return "";
 		const startRow = rawRows - cluster.lines.length + 1;
+		const sidebarRows = this.renderSidebarRows(layout, rawRows);
 		let output = saveCursor();
 		cluster.lines.forEach((line, index) => {
 			const row = startRow + index;
-			output += moveCursor(row, 1) + clearLine() + fitLine(line, width);
+			output += moveCursor(row, 1) + clearLine() + this.composeWithSidebar(line, layout, sidebarRows, row - 1);
 		});
 		if (cluster.cursor) {
 			const cursorRow = startRow + cluster.cursor.row - 1;
-			const cursorCol = Math.max(1, Math.min(width, cluster.cursor.col));
+			const cursorCol = Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col));
 			return output + moveCursor(cursorRow, cursorCol);
 		}
 		return output + restoreCursor();

@@ -5,6 +5,8 @@ import { BoxEditor } from "./editor/box-editor.js";
 import { installFixedUserZone } from "./fixed-zone/install.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
+import { getPiVersion } from "./core/pi-version.js";
+import { readSessionMetadata } from "./core/session-metadata.js";
 import { installAssistantUpdateDebounce } from "./performance/debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
@@ -156,12 +158,41 @@ export default function (pi: ExtensionAPI) {
 			installRenderThrottle(tui as any);
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
+			const piVersion = getPiVersion();
+			let fixedZoneSidebarActive = false;
+			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				mouseScroll: config.fixedUserZoneMouseScroll,
 				onCopySelection: copyToClipboard,
+				sidebar: {
+					enabled: config.fixedUserZoneSidebar,
+					theme: {
+						fg: (color: string, text: string) => {
+							try {
+								return typeof sessionUi.theme?.fg === "function" ? sessionUi.theme.fg(color as any, text) : text;
+							} catch {
+								return text;
+							}
+						},
+					},
+					onActiveChange: (active) => { fixedZoneSidebarActive = active; },
+					getInfo: () => {
+						const git = fetchBranch();
+						const sessionMetadata = readSessionMetadata(ctx);
+						return {
+							sessionId: sessionMetadata.id,
+							sessionName: sessionMetadata.name,
+							cwd: sessionCwd,
+							branch: git?.branch,
+							insertions: git?.insertions,
+							deletions: git?.deletions,
+							modifiedFiles: git?.modifiedFiles,
+							piVersion,
+						};
+					},
+				},
 			});
-			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {
@@ -191,6 +222,7 @@ export default function (pi: ExtensionAPI) {
 				fetchBranch,
 				() => assistantSpeedTracker.getWordsPerSecond(),
 				getFooterStatusLine,
+				() => fixedZoneSidebarActive ? "sidebar" : "footer",
 			);
 		});
 	});

@@ -42,6 +42,7 @@ type BranchInfo = {
 type BranchProvider = () => BranchInfo | null;
 type ResponseSpeedProvider = () => number | null;
 type FooterStatusProvider = () => string | null;
+type MetadataPlacementProvider = () => "footer" | "sidebar";
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -95,12 +96,17 @@ export class BoxEditor extends CustomEditor {
 		private readonly getBranch?: BranchProvider,
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
 		private readonly getFooterStatus?: FooterStatusProvider,
+		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 	) {
 		super(tui, theme, kb);
 	}
 
 	private color(hex: string, text: string): string {
 		return this.fullTheme ? fgHex(this.fullTheme, hex, text) : text;
+	}
+
+	private metadataInSidebar(): boolean {
+		return this.getMetadataPlacement?.() === "sidebar";
 	}
 
 	private getSlashAutocompleteModel(): SlashAutocompleteModel | null {
@@ -392,10 +398,11 @@ export class BoxEditor extends CustomEditor {
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
-		const path = `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}`;
+		const showFooterMetadata = !this.metadataInSidebar();
+		const path = showFooterMetadata ? `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}` : null;
 		const leftParts = [path, model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
-		const branch = this.formatBranchBadge();
+		const branch = showFooterMetadata ? this.formatBranchBadge() : null;
 		const right = branch ? `${sep} ${branch.rendered}` : "";
 		const rightPlainWidth = branch ? visibleWidth(`│ ${branch.plain}`) : 0;
 		const available = Math.max(1, width - rightPlainWidth - (right ? 1 : 0));
@@ -442,7 +449,7 @@ export class BoxEditor extends CustomEditor {
 			speedBadge ? `${bullet} ${this.tone("muted", speedBadge)}` : null,
 		].filter(Boolean);
 		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
-		const footerStatus = this.getFooterStatus?.() ?? "";
+		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
 		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
 		if (!rightPlain) return this.pad(left, width);
 

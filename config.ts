@@ -9,6 +9,7 @@ export interface DroidStylingConfig {
 	customWorkingMessage: boolean;
 	fixedUserZone: boolean;
 	fixedUserZoneMouseScroll: boolean;
+	fixedUserZoneSidebar: boolean;
 }
 
 const DEFAULTS: DroidStylingConfig = {
@@ -18,6 +19,7 @@ const DEFAULTS: DroidStylingConfig = {
 	customWorkingMessage: false,
 	fixedUserZone: false,
 	fixedUserZoneMouseScroll: true,
+	fixedUserZoneSidebar: false,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
@@ -49,6 +51,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		fixedUserZoneMouseScroll: booleanOrDefault(config.fixedUserZoneMouseScroll, DEFAULTS.fixedUserZoneMouseScroll),
+		fixedUserZoneSidebar: booleanOrDefault(config.fixedUserZoneSidebar, DEFAULTS.fixedUserZoneSidebar),
 	};
 }
 
