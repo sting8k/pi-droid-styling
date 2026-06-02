@@ -208,6 +208,7 @@ export class TerminalSplitCompositor {
 	private readonly originalRowsDescriptor?: PropertyDescriptor;
 	private readonly hadOwnRowsDescriptor: boolean;
 	private scrollOffset = 0;
+	private lastRenderedScrollOffset = 0;
 	private disposed = false;
 	private painting = false;
 	private lastRootLineCount = 0;
@@ -575,9 +576,72 @@ export class TerminalSplitCompositor {
 		return safeTruncateToWidth(`… earlier root content omitted before render${skippedText}${truncatedText}`, width, "…");
 	}
 
+	private findVisibleAnchor(lines: string[], start: number, rowCount: number): { line: string; relativeRow: number } | null {
+		const end = Math.min(lines.length, start + Math.max(1, rowCount));
+		for (let index = start; index < end; index++) {
+			const line = lines[index];
+			if (line !== undefined && stripAnsi(line).trim().length > 0) {
+				return { line, relativeRow: index - start };
+			}
+		}
+		return lines[start] !== undefined ? { line: lines[start], relativeRow: 0 } : null;
+	}
+
+	private updateScrollAnchor(
+		lines: string[],
+		scrollableRows: number,
+		previousLines: string[],
+		previousStart: number,
+		previousRows: number,
+		previousOffset: number,
+	): number {
+		const maxOffset = Math.max(0, lines.length - scrollableRows);
+		const offsetChangedSinceRender = previousOffset !== this.lastRenderedScrollOffset;
+		if (offsetChangedSinceRender || previousLines.length === 0) {
+			this.scrollOffset = Math.max(0, Math.min(previousOffset, maxOffset));
+			this.lastRenderedScrollOffset = this.scrollOffset;
+			profileCount(this.scrollOffset > 0 ? "fixed.scrollAnchor.manualOffset" : "fixed.scrollAnchor.followBottom");
+			return Math.max(0, maxOffset - this.scrollOffset);
+		}
+
+		if (previousOffset <= 0) {
+			this.scrollOffset = 0;
+			this.lastRenderedScrollOffset = this.scrollOffset;
+			profileCount("fixed.scrollAnchor.followBottom");
+			return maxOffset;
+		}
+
+		let start = previousStart;
+		const anchor = this.findVisibleAnchor(previousLines, previousStart, previousRows || scrollableRows);
+		if (anchor) {
+			const searchFrom = Math.max(0, Math.min(previousStart, Math.max(0, lines.length - 1)));
+			let anchorIndex = lines.indexOf(anchor.line, searchFrom);
+			if (anchorIndex < 0) anchorIndex = lines.indexOf(anchor.line);
+			if (anchorIndex >= 0) {
+				start = anchorIndex - anchor.relativeRow;
+				profileCount("fixed.scrollAnchor.anchorHit");
+			} else {
+				profileCount("fixed.scrollAnchor.anchorMiss");
+			}
+		} else {
+			profileCount("fixed.scrollAnchor.anchorUnavailable");
+		}
+
+		start = Math.max(0, Math.min(start, maxOffset));
+		this.scrollOffset = maxOffset - start;
+		this.lastRenderedScrollOffset = this.scrollOffset;
+		profileCount("fixed.scrollAnchor.preserved");
+		profileSample("fixed.scrollAnchor.offset", this.scrollOffset);
+		return start;
+	}
+
 	private renderScrollableRoot(_width: number): string[] {
 		const totalStart = profileNow();
 		try {
+			const previousRootLines = this.rootLines;
+			const previousVisibleRootStart = this.visibleRootStart;
+			const previousVisibleScrollableRows = this.visibleScrollableRows;
+			const previousScrollOffset = this.scrollOffset;
 			const rawRows = this.getRawRows();
 			const layout = this.getSidebarLayout(this.getRawColumns());
 			if (!this.renderPassActive) {
@@ -635,9 +699,14 @@ export class TerminalSplitCompositor {
 			profileSample("fixed.root.omittedLines.count", omittedLines);
 			this.rootLines = lines;
 			this.lastRootLineCount = lines.length;
-			const maxOffset = Math.max(0, lines.length - scrollableRows);
-			this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxOffset));
-			const start = Math.max(0, maxOffset - this.scrollOffset);
+			const start = this.updateScrollAnchor(
+				lines,
+				scrollableRows,
+				previousRootLines,
+				previousVisibleRootStart,
+				previousVisibleScrollableRows,
+				previousScrollOffset,
+			);
 			this.visibleRootStart = start;
 			this.visibleScrollableRows = scrollableRows;
 			const visibleStart = profileNow();
