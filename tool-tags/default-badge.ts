@@ -3,10 +3,12 @@ import type { Component } from "@earendil-works/pi-tui";
 
 import { loadConfig } from "../config.js";
 import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult, renderLines } from "./common.js";
+import { annotateToolResultMetrics } from "./elapsed.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
 const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
 const BOXED_FALLBACK_FLAG = Symbol("__defaultBadge_boxedFallback__");
+const EXECUTION_STARTED_AT_FLAG = Symbol("__defaultBadge_executionStartedAt__");
 
 const CUSTOM_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "find", "grep", "quick_edit", "substitute_edit", "target_edit"]);
 const MAX_FALLBACK_PREVIEW_LINES = 10;
@@ -154,6 +156,26 @@ export function installDefaultBadge(): void {
 		proto.getRenderContext = function patchedBoxedRenderContext(this: any, ...args: any[]) {
 			const context = baseGetRenderContext.apply(this, args);
 			return { ...context, hasResult: Boolean(this.result) };
+		};
+	}
+
+	const baseMarkExecutionStarted = proto.markExecutionStarted;
+	if (typeof baseMarkExecutionStarted === "function") {
+		proto.markExecutionStarted = function patchedDefaultBadgeMarkExecutionStarted(this: any, ...args: any[]) {
+			this[EXECUTION_STARTED_AT_FLAG] = performance.now();
+			return baseMarkExecutionStarted.apply(this, args);
+		};
+	}
+
+	const baseUpdateResult = proto.updateResult;
+	if (typeof baseUpdateResult === "function") {
+		proto.updateResult = function patchedDefaultBadgeUpdateResult(this: any, result: any, isPartial: boolean = false, ...rest: any[]) {
+			if (!isPartial && result && typeof result === "object") {
+				const startedAt = typeof this[EXECUTION_STARTED_AT_FLAG] === "number" ? this[EXECUTION_STARTED_AT_FLAG] : undefined;
+				const elapsedMs = startedAt === undefined ? undefined : Math.max(0, performance.now() - startedAt);
+				annotateToolResultMetrics(result, elapsedMs);
+			}
+			return baseUpdateResult.call(this, result, isPartial, ...rest);
 		};
 	}
 
