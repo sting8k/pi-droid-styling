@@ -71,7 +71,7 @@ type SidebarRowsCache = {
 };
 
 const MIN_SCROLLABLE_ROWS = 3;
-const WHEEL_SCROLL_LINES = 3;
+const WHEEL_SCROLL_LINES = 2;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
 const TOP_HINT = "^Shift T TOP";
