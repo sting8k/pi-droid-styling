@@ -367,6 +367,17 @@ export class TerminalSplitCompositor {
 		}
 	}
 
+	private markClusterPaintDirty(data: string): void {
+		// A forced TUI render clears the full terminal (`2J`/`3J`) before drawing
+		// the scrollable root. The fixed cluster is painted out-of-band after that;
+		// if its rows are unchanged, the paint cache would otherwise skip repainting
+		// and `/new` can leave the user zone/footer blank until the next input.
+		if (data.length > 0 && (data.includes("\x1b[2J") || data.includes("\x1b[3J") || data.includes("\x1bc"))) {
+			profileCount("fixed.cluster.paint.dirty.coreClear");
+			this.resetClusterPaintCache();
+		}
+	}
+
 	private renderSidebarRows(layout: FixedZoneSidebarLayout, rawRows: number): string[] {
 		if (!layout.active) {
 			this.sidebarRows = [];
@@ -863,6 +874,7 @@ export class TerminalSplitCompositor {
 				const layout = this.getSidebarLayout(this.getRawColumns());
 				const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 				this.markSidebarPaintDirty(layout, data);
+				this.markClusterPaintDirty(data);
 				const clusterHeight = cluster.lines.length;
 				if (clusterHeight === 0) {
 					const sidebarRows = this.renderSidebarRows(layout, rawRows);
