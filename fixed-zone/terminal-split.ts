@@ -1,5 +1,6 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
+import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
@@ -227,6 +228,8 @@ export class TerminalSplitCompositor {
 	private sidebarRowsCache: SidebarRowsCache | undefined;
 	private lastPaintedSidebarKey = "";
 	private lastPaintedSidebarRows: string[] = [];
+	private lastPaintedClusterKey = "";
+	private lastPaintedClusterRows: string[] = [];
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -330,6 +333,7 @@ export class TerminalSplitCompositor {
 		this.clusterCache = undefined;
 		this.sidebarRowsCache = undefined;
 		this.resetSidebarPaintCache();
+		this.resetClusterPaintCache();
 		this.options.sidebar?.onActiveChange?.(active);
 	}
 
@@ -347,6 +351,11 @@ export class TerminalSplitCompositor {
 	private resetSidebarPaintCache(): void {
 		this.lastPaintedSidebarKey = "";
 		this.lastPaintedSidebarRows = [];
+	}
+
+	private resetClusterPaintCache(): void {
+		this.lastPaintedClusterKey = "";
+		this.lastPaintedClusterRows = [];
 	}
 
 	private markSidebarPaintDirty(layout: FixedZoneSidebarLayout, data: string): void {
@@ -472,6 +481,10 @@ export class TerminalSplitCompositor {
 	private getWindowableChildren(component: RenderableLike, isRoot = false): RenderableLike[] | null {
 		if (!Array.isArray(component.children)) return null;
 		if (isRoot) return component.children.filter(isRenderable);
+		if (isVirtualizedChatContainer(component)) {
+			profileCount("fixed.root.windowRender.virtualizedChatLeaf");
+			return null;
+		}
 		const constructorName = component.constructor?.name ?? "";
 		return WINDOWABLE_CONTAINER_NAMES.has(constructorName) ? component.children.filter(isRenderable) : null;
 	}
@@ -819,6 +832,10 @@ export class TerminalSplitCompositor {
 			this.painting = true;
 			try {
 				const output = this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows);
+				if (output.length === 0) {
+					profileCount("fixed.repaint.skip.unchanged");
+					return;
+				}
 				profileTextBytes("fixed.repaint.output.bytes", output);
 				this.writeRaw(output);
 			} finally {
@@ -909,16 +926,31 @@ export class TerminalSplitCompositor {
 	private buildFixedClusterPaint(cluster: FixedZoneCluster, rawRows: number, layout: FixedZoneSidebarLayout, sidebarRows = this.renderSidebarRows(layout, rawRows)): string {
 		const start = profileNow();
 		try {
-			if (cluster.lines.length === 0) return "";
+			if (cluster.lines.length === 0) {
+				this.resetClusterPaintCache();
+				return "";
+			}
 			const startRow = rawRows - cluster.lines.length + 1;
+			const paintRows = cluster.lines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1));
+			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
+			const cursorPaint = cluster.cursor
+				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
+				: "";
+			if (this.lastPaintedClusterKey === paintKey && sameStringList(this.lastPaintedClusterRows, paintRows)) {
+				profileCount("fixed.cluster.paint.skipUnchanged");
+				if (cursorPaint) {
+					profileCount("fixed.cluster.paint.cursorOnly");
+					profileTextBytes("fixed.cluster.paint.cursorBytes", cursorPaint);
+				}
+				return cursorPaint;
+			}
+			this.lastPaintedClusterKey = paintKey;
+			this.lastPaintedClusterRows = paintRows;
 			let output = saveCursor();
-			cluster.lines.forEach((line, index) => {
-				const row = startRow + index;
-				output += moveCursor(row, 1) + clearLine() + this.composeWithSidebar(line, layout, sidebarRows, row - 1);
+			paintRows.forEach((line, index) => {
+				output += moveCursor(startRow + index, 1) + clearLine() + line;
 			});
-			const painted = cluster.cursor
-				? output + moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
-				: output + restoreCursor();
+			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
 			profileCount("fixed.cluster.paint.full");
 			profileSample("fixed.cluster.paint.rows.count", cluster.lines.length);
 			profileTextBytes("fixed.cluster.paint.bytes", painted);

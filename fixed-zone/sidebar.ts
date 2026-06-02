@@ -43,7 +43,7 @@ const MAX_FILE_DIFF_COLUMN_WIDTH = 11;
 const MAX_MODIFIED_FILES = 10;
 const FILE_BULLET_GAP = " ";
 const CWD_ICON = "";
-const BRANCH_ICON = "⎇";
+const BRANCH_ICON = "";
 
 function inactiveLayout(rawWidth: number): FixedZoneSidebarLayout {
 	return { active: false, rawWidth, contentWidth: rawWidth, sidebarWidth: 0 };
