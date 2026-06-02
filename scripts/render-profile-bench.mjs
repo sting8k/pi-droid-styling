@@ -64,7 +64,7 @@ async function importBuilt(relativePath) {
 
 compileSources();
 
-const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, toolDebounce] = await Promise.all([
+const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, toolDebounce, streamingMarkdownCache] = await Promise.all([
 	importBuilt("performance/profiler.js"),
 	importBuilt("fixed-zone/sidebar.js"),
 	importBuilt("fixed-zone/terminal-split.js"),
@@ -72,6 +72,7 @@ const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, t
 	importBuilt("performance/render-throttle.js"),
 	importBuilt("performance/debounce-update.js"),
 	importBuilt("performance/debounce-tool-updates.js"),
+	importBuilt("messages/streaming-markdown-cache.js"),
 ]);
 
 const { flushProfile, profileCount, profileSample } = profiler;
@@ -81,6 +82,8 @@ const { createGitBranchFetcher } = gitStatus;
 const { installRenderThrottle } = renderThrottle;
 const { installAssistantUpdateDebounce } = assistantDebounce;
 const { installToolExecutionUpdateDebounce } = toolDebounce;
+const { installAssistantStreamingMarkdownCache } = streamingMarkdownCache;
+const { AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
 
 function makeFiles(count) {
 	return Array.from({ length: count }, (_value, index) => ({
@@ -202,6 +205,66 @@ for (let i = 0; i < 40; i++) assistantComponent.updateContent({ text: `delta ${i
 await sleep(80);
 assistantComponent.updateContent({ text: "done", stopReason: "end" });
 profileSample("bench.assistantActualUpdates", assistantComponent.updates);
+
+const cadenceAssistantComponent = new FakeAssistantMessage();
+const cadenceDelays = [35, 35, 37, 38, 45, 45, 12, 12, 50, 50, 8, 8, 35, 37, 70, 45];
+let cadenceText = "";
+for (let i = 0; i < cadenceDelays.length; i++) {
+	cadenceText += `word${i} `;
+	cadenceAssistantComponent.updateContent({
+		content: [{ type: "text", text: cadenceText }],
+	});
+	await sleep(cadenceDelays[i]);
+}
+await sleep(120);
+cadenceAssistantComponent.updateContent({
+	content: [{ type: "text", text: cadenceText }],
+	stopReason: "end",
+});
+profileSample("bench.assistantCadenceInputUpdates", cadenceDelays.length + 1);
+profileSample("bench.assistantCadenceActualUpdates", cadenceAssistantComponent.updates);
+
+installAssistantStreamingMarkdownCache(AssistantMessageComponent);
+const benchMarkdownTheme = {
+	heading: (text) => text,
+	link: (text) => text,
+	linkUrl: (text) => text,
+	code: (text) => text,
+	codeBlock: (text) => text,
+	codeBlockBorder: (text) => text,
+	quote: (text) => text,
+	quoteBorder: (text) => text,
+	hr: (text) => text,
+	listBullet: (text) => text,
+	bold: (text) => text,
+	italic: (text) => text,
+	strikethrough: (text) => text,
+	underline: (text) => text,
+};
+const markdownStreamingComponent = new AssistantMessageComponent(
+	{ content: [{ type: "text", text: "Intro paragraph." }] },
+	false,
+	benchMarkdownTheme,
+);
+const markdownStreamingTexts = [
+	"Intro paragraph.",
+	"Intro paragraph.\n\nSecond paragraph starts",
+	"Intro paragraph.\n\nSecond paragraph starts and grows",
+	"Intro paragraph.\n\nSecond paragraph starts and grows.\n\nThird paragraph starts",
+	"Intro paragraph.\n\nSecond paragraph starts and grows.\n\nThird paragraph starts with `inline code`",
+	"Intro paragraph.\n\nSecond paragraph starts and grows.\n\n```ts\nconst value = 1;",
+	"Intro paragraph.\n\nSecond paragraph starts and grows.\n\n```ts\nconst value = 1;\n```\n\nAfter code fence",
+];
+for (const text of markdownStreamingTexts) {
+	markdownStreamingComponent.updateContent({ content: [{ type: "text", text }] });
+	markdownStreamingComponent.render(88);
+}
+markdownStreamingComponent.updateContent({
+	content: [{ type: "text", text: markdownStreamingTexts.at(-1) }],
+	stopReason: "end",
+});
+markdownStreamingComponent.render(88);
+profileSample("bench.markdownStreamingInputUpdates", markdownStreamingTexts.length + 2);
 
 class FakeToolExecution {
 	updates = 0;

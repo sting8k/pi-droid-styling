@@ -11,6 +11,7 @@ import { installAssistantUpdateDebounce } from "./performance/debounce-update.js
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
+import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderThrottle } from "./performance/render-throttle.js";
 import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
@@ -110,6 +111,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// No setTheme() call — use whatever theme is selected in settings
+		installAssistantStreamingMarkdownCache(AssistantMessageComponent);
 		installAssistantMessagePrefix(sessionUi.theme);
 		installUserMessagePrefix(sessionUi.theme);
 		installAssistantUpdateDebounce(AssistantMessageComponent);

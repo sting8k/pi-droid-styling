@@ -9,7 +9,7 @@
  *
  * Strategy:
  * - When the message is mid-stream (`stopReason === undefined`), coalesce
- *   updates into a single setTimeout flush (~60ms ≈ 16 fps for parsing work).
+ *   updates into a single setTimeout flush (~33ms ≈ 30 fps Crush-style presentation cadence).
  * - When the message is finalized (`stopReason` present: end/aborted/error),
  *   flush immediately. This keeps `message_end` correctness intact.
  * - Toggle paths (`invalidate`, `setHideThinkingBlock`, `setHiddenThinkingLabel`)
@@ -21,15 +21,59 @@
  * outermost wrapper and prevents the inner chain from running on every delta.
  */
 
-import { profileCount, profileDuration, profileNow } from "./profiler.js";
+import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.debounce-update-content.patched");
 
 /** Coalesce window for streaming deltas (ms). */
-const STREAM_FLUSH_MS = 60;
+const STREAM_FLUSH_MS = 33;
 
 const TIMER_KEY = Symbol("debounce-timer");
 const PENDING_KEY = Symbol("debounce-pending");
+const LAST_PRESENTATION_AT_KEY = Symbol("debounce-last-presentation-at");
+const LAST_PRESENTATION_CHARS_KEY = Symbol("debounce-last-presentation-chars");
+
+function countAssistantMessageChars(message: any): number {
+	const content = message?.content;
+	if (Array.isArray(content)) {
+		let chars = 0;
+		for (const block of content) {
+			if (typeof block?.text === "string") chars += block.text.length;
+			if (typeof block?.thinking === "string") chars += block.thinking.length;
+		}
+		return chars;
+	}
+	return typeof message?.text === "string" ? message.text.length : 0;
+}
+
+function recordPresentationMetrics(component: any, message: any, mode: "flush" | "immediate"): void {
+	const now = profileNow();
+	if (now <= 0) return;
+
+	profileCount(`assistant.updateContent.presentation.${mode}`);
+
+	const previousAt = component[LAST_PRESENTATION_AT_KEY];
+	if (typeof previousAt === "number" && previousAt > 0) {
+		profileSample("assistant.updateContent.presentation.interval.ms", now - previousAt);
+	}
+	component[LAST_PRESENTATION_AT_KEY] = now;
+
+	const chars = countAssistantMessageChars(message);
+	profileSample("assistant.updateContent.presentation.chars.count", chars);
+
+	const previousChars = component[LAST_PRESENTATION_CHARS_KEY];
+	if (typeof previousChars === "number") {
+		if (chars >= previousChars) {
+			profileSample("assistant.updateContent.presentation.deltaChars.count", chars - previousChars);
+		} else {
+			profileCount("assistant.updateContent.presentation.charResets");
+			profileSample("assistant.updateContent.presentation.deltaChars.count", chars);
+		}
+	} else {
+		profileSample("assistant.updateContent.presentation.deltaChars.count", chars);
+	}
+	component[LAST_PRESENTATION_CHARS_KEY] = chars;
+}
 
 export function installAssistantUpdateDebounce(AssistantMessageClass: any): void {
 	const proto = AssistantMessageClass?.prototype;
@@ -53,6 +97,7 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 				profileCount("assistant.updateContent.cancelPending");
 			}
 			(this as any)[PENDING_KEY] = null;
+			recordPresentationMetrics(this, message, "immediate");
 			const start = profileNow();
 			try {
 				return orig.call(this, message);
@@ -76,6 +121,7 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 			(this as any)[PENDING_KEY] = null;
 			if (!pending) return;
 			profileCount("assistant.updateContent.flush");
+			recordPresentationMetrics(this, pending, "flush");
 			const start = profileNow();
 			try {
 				orig.call(this, pending);
