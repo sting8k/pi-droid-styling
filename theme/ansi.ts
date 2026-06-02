@@ -1,6 +1,7 @@
+import { safeVisibleWidth } from "../render-budget.js";
+
 // Shared ANSI helpers for the pi-neapple extension
 
-import { visibleWidth } from "@earendil-works/pi-tui";
 
 // Strip ANSI escape codes (pre-compiled regexes for performance)
 const RE_CSI = /\x1b\[[0-9;]*[a-zA-Z]/g;
@@ -158,7 +159,7 @@ export function dropLeadingColumns(line: string, columns: number): string {
 		const charLen = codePoint > 0xffff ? 2 : 1;
 		const char = line.slice(i, i + charLen);
 		i += charLen;
-		dropped += Math.max(1, visibleWidth(char));
+		dropped += Math.max(1, safeVisibleWidth(char));
 	}
 
 	return `${leadingAnsi}${line.slice(i)}`;

@@ -1,10 +1,10 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
-import { BOXED_RESULT_RENDERED_HEAD_LINES, BOXED_RESULT_RENDERED_TAIL_LINES, clampRenderLine, clampRenderedLines, safeWrapTextWithAnsi } from "../render-budget.js";
+import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { profileCount } from "../performance/profiler.js";
 import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
@@ -77,8 +77,16 @@ export function countLines(text: string): number {
 }
 
 export function countWords(text: string): number {
-	// Include hyphen and apostrophe for natural language, underscore for code
-	return text.match(/[\p{L}\p{N}_'-]+/gu)?.length ?? 0;
+	// Include hyphen and apostrophe for natural language, underscore for code.
+	// Avoid String.match() here: it allocates one entry per word on large tool outputs.
+	let count = 0;
+	let inWord = false;
+	for (const char of text) {
+		const isWord = /[\p{L}\p{N}_'-]/u.test(char);
+		if (isWord && !inWord) count++;
+		inWord = isWord;
+	}
+	return count;
 }
 
 function formatCompactCount(value: number): string {
@@ -121,10 +129,10 @@ const BOX_VERTICAL = "│";
 const BOX_SIDE_PADDING = 2;
 const BOX_MIN_WIDTH = 12;
 const BOX_WIDTH_CACHE = new Map<string, number>();
-const COMPACT_TOOL_NAME_WIDTH = visibleWidth("Search");
+const COMPACT_TOOL_NAME_WIDTH = safeVisibleWidth("Search");
 const COMPACT_FOOTER_ELAPSED_WIDTH = 8;
 const COMPACT_FOOTER_EXTRA_WIDTH = 8;
-const COMPACT_FOOTER_WORDS_WIDTH = visibleWidth("✎ ~1.2k words");
+const COMPACT_FOOTER_WORDS_WIDTH = safeVisibleWidth("✎ ~1.2k words");
 
 export function boxWidth(width: number): number {
 	return Math.max(BOX_MIN_WIDTH, width);
@@ -135,7 +143,7 @@ export function boxInnerWidth(width: number): number {
 }
 
 function tightBoxWidth(availableWidth: number, contentLines: string[], labelWidths: number[] = [], widthKey?: string): number {
-	const contentWidth = contentLines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+	const contentWidth = contentLines.reduce((max, line) => Math.max(max, safeVisibleWidth(line)), 0);
 	const labelWidth = labelWidths.reduce((max, width) => Math.max(max, width), 0);
 	const neededWidth = Math.max(BOX_MIN_WIDTH, contentWidth + 2 + BOX_SIDE_PADDING * 2, labelWidth + 2 + BOX_SIDE_PADDING * 2);
 	const measuredWidth = Math.min(boxWidth(availableWidth), neededWidth);
@@ -289,15 +297,15 @@ export function boxBorder(theme: any, left: string, right: string, width: number
 }
 
 function padVisibleRight(text: string, width: number): string {
-	return `${text}${" ".repeat(Math.max(0, width - visibleWidth(text)))}`;
+	return `${text}${" ".repeat(Math.max(0, width - safeVisibleWidth(text)))}`;
 }
 
 function boxLineWithRight(theme: any, left: string, right: string, width: number): string {
 	const renderedWidth = boxWidth(width);
 	const contentWidth = boxInnerWidth(renderedWidth);
 	const divider = ` ${boxText(theme, "|")} `;
-	const dividerWidth = visibleWidth(divider);
-	const rightWidth = visibleWidth(right);
+	const dividerWidth = safeVisibleWidth(divider);
+	const rightWidth = safeVisibleWidth(right);
 	const sidePad = " ".repeat(BOX_SIDE_PADDING);
 
 	if (!right || rightWidth + dividerWidth >= contentWidth) {
@@ -305,17 +313,32 @@ function boxLineWithRight(theme: any, left: string, right: string, width: number
 	}
 
 	const maxLeftWidth = Math.max(1, contentWidth - dividerWidth - rightWidth - 1);
-	const truncatedLeft = truncateToWidth(left, maxLeftWidth, "…");
-	const gap = " ".repeat(Math.max(1, contentWidth - visibleWidth(truncatedLeft) - dividerWidth - rightWidth));
+	const truncatedLeft = safeTruncateToWidth(left, maxLeftWidth, "…");
+	const gap = " ".repeat(Math.max(1, contentWidth - safeVisibleWidth(truncatedLeft) - dividerWidth - rightWidth));
 	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${truncatedLeft}${gap}${divider}${right}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
 }
 
 export function boxLine(theme: any, content: string, width: number): string {
 	const renderedWidth = boxWidth(width);
 	const contentWidth = boxInnerWidth(renderedWidth);
-	const truncated = truncateToWidth(content, contentWidth, "…");
-	const fill = " ".repeat(Math.max(0, contentWidth - visibleWidth(truncated)));
+	const fastContent = fastBoxLineContent(content, contentWidth);
 	const sidePad = " ".repeat(BOX_SIDE_PADDING);
+	if (fastContent) {
+		const counter = fastContent.kind === "ascii"
+			? "boxLine.fastAscii"
+			: fastContent.kind === "sgrAscii"
+				? "boxLine.fastSgrAscii"
+				: fastContent.kind === "simple"
+					? "boxLine.fastSimple"
+					: "boxLine.fastSgrSimple";
+		profileCount(counter);
+		const fill = " ".repeat(Math.max(0, contentWidth - fastContent.visibleWidth));
+		return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${fastContent.text}${fill}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
+	}
+
+	profileCount("boxLine.fallback");
+	const truncated = safeTruncateToWidth(content, contentWidth, "…");
+	const fill = " ".repeat(Math.max(0, contentWidth - safeVisibleWidth(truncated)));
 	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${truncated}${fill}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
 }
 
@@ -329,15 +352,67 @@ function boxInsetDivider(theme: any, width: number): string {
 export function boxedWrappedLines(theme: any, content: string, width: number): string[] {
 	return safeWrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
 }
+
+type RenderLinesCache = {
+	width: number;
+	lines: string[];
+};
+
+function pushBoundedLines(target: string[], lines: string[], maxLines: number): boolean {
+	const slots = maxLines - target.length;
+	if (slots <= 0) return false;
+	if (lines.length > slots) {
+		target.push(...lines.slice(0, slots));
+		return false;
+	}
+	target.push(...lines);
+	return true;
+}
+
+function renderBoxedOutputLines(theme: any, outputLines: string[], width: number, rawLineBudget = DEFAULT_COLLAPSED_RENDER_LINES): string[] {
+	const budget = boxedResultRenderBudget(rawLineBudget);
+	const headLimit = Math.max(0, Math.min(budget.headLines, budget.maxRenderedLines));
+	const tailLimit = Math.max(0, Math.min(budget.tailLines, Math.max(0, budget.maxRenderedLines - headLimit - 1)));
+	const head: string[] = [];
+	let nextInputIndex = 0;
+	let truncated = false;
+
+	for (; nextInputIndex < outputLines.length; nextInputIndex++) {
+		const wrapped = boxedWrappedLines(theme, outputLines[nextInputIndex] ?? "", width);
+		if (!pushBoundedLines(head, wrapped, headLimit)) {
+			truncated = true;
+			nextInputIndex++;
+			break;
+		}
+	}
+
+	if (!truncated && nextInputIndex >= outputLines.length) return head;
+
+	const tail: string[] = [];
+	const tailStart = Math.max(nextInputIndex, outputLines.length - tailLimit);
+	for (let i = tailStart; i < outputLines.length; i++) {
+		const wrapped = boxedWrappedLines(theme, outputLines[i] ?? "", width);
+		tail.push(...wrapped);
+		if (tail.length > tailLimit) tail.splice(0, tail.length - tailLimit);
+	}
+
+	const skippedInputLines = Math.max(0, tailStart - nextInputIndex);
+	const skippedText = skippedInputLines > 0
+		? `… rendered output truncated; ${skippedInputLines} input lines skipped before tail`
+		: "… rendered output truncated";
+	return [...head, boxLine(theme, theme.fg("muted", skippedText), width), ...tail];
+}
 export function renderBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLines: string[],
 	options: { widthKey?: string; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
+	let cache: RenderLinesCache | null = null;
 	return {
-		invalidate() {},
+		invalidate() { cache = null; },
 		render(width: number): string[] {
+			if (cache?.width === width) return cache.lines;
 			const title = formatBoxedToolTitle(theme, toolName, options.isError);
 			const renderedWidth = boxWidth(width);
 			const lines = [
@@ -355,6 +430,7 @@ export function renderBoxedToolCall(
 				);
 			}
 			const rendered = boxBgLines(theme, lines, boxedToolBgName(options.isError, options.isPartial));
+			cache = { width, lines: rendered };
 			return rendered;
 		}
 	};
@@ -412,13 +488,16 @@ type BoxedResultBody = Component | ((contentWidth: number) => string[]);
 export function renderBoxedToolResult(
 	theme: any,
 	body: BoxedResultBody,
-	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; isError?: boolean; isPartial?: boolean } = {},
+	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
 ): Component {
+	let cache: RenderLinesCache | null = null;
 	return {
 		invalidate() {
+			cache = null;
 			if (typeof body !== "function") body.invalidate();
 		},
 		render(width: number): string[] {
+			if (cache?.width === width) return cache.lines;
 			const renderedWidth = boxWidth(width);
 			const maxContentWidth = boxInnerWidth(renderedWidth);
 			const bodyLines = typeof body === "function" ? body(maxContentWidth) : body.render(maxContentWidth);
@@ -428,19 +507,13 @@ export function renderBoxedToolResult(
 			const renderedFooterLines = footerLines.length > 0
 				? [boxInsetDivider(theme, renderedWidth), ...footerLines.map((line) => boxLine(theme, line, renderedWidth))]
 				: [];
-			const wrappedOutputLines = outputLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth));
-			const boundedOutputLines = clampRenderedLines(
-				wrappedOutputLines,
-				BOXED_RESULT_RENDERED_HEAD_LINES,
-				BOXED_RESULT_RENDERED_TAIL_LINES,
-				(remaining) => boxLine(theme, theme.fg("muted", `… ${remaining} more rendered lines omitted`), renderedWidth),
-			);
 			const rendered = boxBgLines(theme, [
 				boxInsetDivider(theme, renderedWidth),
-				...boundedOutputLines,
+				...renderBoxedOutputLines(theme, outputLines, renderedWidth, options.renderLineBudget ?? outputLines.length),
 				...renderedFooterLines,
 				boxBorder(theme, "└", "┘", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
+			cache = { width, lines: rendered };
 			return rendered;
 		},
 	};
@@ -503,11 +576,11 @@ export function getToolBodyWidth(width: number, spaces = TOOL_BODY_INDENT): numb
 
 export function renderToolCallHeaderLines(theme: any, label: string, detailLines: string[]): Component {
 	const prefix = `${badge(theme, label)} `;
-	const indent = " ".repeat(visibleWidth(prefix));
+	const indent = " ".repeat(safeVisibleWidth(prefix));
 	return {
 		invalidate() {},
 		render(width: number): string[] {
-			const bodyWidth = Math.max(1, width - visibleWidth(prefix) - TOOL_RIGHT_MARGIN);
+			const bodyWidth = Math.max(1, width - safeVisibleWidth(prefix) - TOOL_RIGHT_MARGIN);
 			const output: string[] = [];
 			for (let i = 0; i < detailLines.length; i++) {
 				const wrapped = safeWrapTextWithAnsi(detailLines[i] ?? "", bodyWidth);
@@ -550,6 +623,34 @@ export function formatToolOutputLine(theme: any, line: string, color: "toolOutpu
 	return theme.fg(color, line);
 }
 
+function selectRenderLines(text: string, maxLines: number, tail = false): { lines: string[]; omitted: number } {
+	const source = text ?? "";
+	if (!source) return { lines: [], omitted: 0 };
+	const limit = Math.max(0, maxLines);
+	const selected: string[] = [];
+	let lineCount = 0;
+	let lineStart = 0;
+
+	for (let i = 0; i <= source.length; i++) {
+		if (i < source.length && source[i] !== "\n") continue;
+		const rawLine = source.slice(lineStart, i).replace(/\r/g, "");
+		lineCount++;
+		if (limit > 0) {
+			const line = clampLine(rawLine);
+			if (tail) {
+				selected.push(line);
+				if (selected.length > limit) selected.shift();
+			} else if (selected.length < limit) {
+				selected.push(line);
+			}
+		}
+		lineStart = i + 1;
+	}
+
+	if (selected.length === 1 && selected[0] === "") return { lines: [], omitted: 0 };
+	return { lines: selected, omitted: Math.max(0, lineCount - selected.length) };
+}
+
 export function renderLines(
 	theme: any,
 	text: string,
@@ -557,29 +658,24 @@ export function renderLines(
 	cfg: { maxLines: number; tail?: boolean; color?: "toolOutput" | "error"; width?: number } = { maxLines: 10 },
 ): string {
 	const color = cfg.color ?? "toolOutput";
-	const rawLines = (text ?? "").split("\n").map(clampLine);
-	const lines = rawLines.length === 1 && rawLines[0] === "" ? [] : rawLines;
+	const { lines, omitted } = selectRenderLines(text, cfg.maxLines, cfg.tail);
 	const renderWidth = cfg.width ? getToolBodyWidth(cfg.width) : undefined;
 	const renderLine = (line: string) => {
-		const rendered = renderWidth ? truncateToWidth(line, renderWidth, "…") : line;
+		const rendered = renderWidth ? safeTruncateToWidth(line, renderWidth, "…") : line;
 		return formatToolOutputLine(theme, rendered, color);
 	};
 
-	if (lines.length === 0) {
-		return "";
-	}
+	if (lines.length === 0) return "";
 
-	if (isExpanded(options) || lines.length <= cfg.maxLines) {
-		return lines.map(renderLine).join("\n");
-	}
+	let output = lines.map(renderLine).join("\n");
+	if (omitted <= 0) return output;
 
-	const shown = cfg.tail ? lines.slice(-cfg.maxLines) : lines.slice(0, cfg.maxLines);
-	const remaining = lines.length - shown.length;
-
-	let output = shown.map(renderLine).join("\n");
+	const hintText = isExpanded(options)
+		? `... ${omitted} more lines omitted by render budget`
+		: `... ${omitted} more lines, press Ctrl+o to expand`;
 	const hint = cfg.width
-		? truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, Math.max(1, cfg.width - 1), "…")
-		: `... ${remaining} more lines, press Ctrl+o to expand`;
+		? safeTruncateToWidth(hintText, Math.max(1, cfg.width - 1), "…")
+		: hintText;
 	output += theme.fg("muted", `\n\n${hint}`);
 
 	return output;

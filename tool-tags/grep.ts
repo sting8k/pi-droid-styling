@@ -88,7 +88,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					color: "toolOutput",
 					width,
 				});
-				return body ? [summary, ...body.split("\n")] : [summary];
+				return [summary, ...(body ? body.split("\n") : [])];
 			}, {
 				widthKey,
 				referenceLines,

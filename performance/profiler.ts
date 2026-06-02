@@ -7,7 +7,9 @@ const DEFAULT_INTERVAL_MS = 5000;
 const MIN_INTERVAL_MS = 250;
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
+type CpuSnapshot = ReturnType<typeof process.cpuUsage>;
 type EventLoopMonitor = ReturnType<typeof monitorEventLoopDelay>;
+type EventLoopUsage = ReturnType<typeof performance.eventLoopUtilization>;
 
 type SampleSummary = {
 	count: number;
@@ -27,6 +29,8 @@ type ProfileState = {
 	intervalMs: number;
 	out: string;
 	lastFlushAt: number;
+	lastCpuUsage?: CpuSnapshot;
+	lastEventLoopUsage?: EventLoopUsage;
 	counters: Map<string, number>;
 	samples: Map<string, number[]>;
 	reporter?: ReturnType<typeof setInterval>;
@@ -46,10 +50,21 @@ type ProfileRecord = {
 		heapTotalMb: number;
 		externalMb: number;
 	};
+	cpu: {
+		userMs: number;
+		systemMs: number;
+		totalMs: number;
+		percentOneCore: number;
+	};
 	eventLoop?: {
 		meanMs: number;
 		p95Ms: number;
 		maxMs: number;
+	};
+	eventLoopUtilization?: {
+		idleMs: number;
+		activeMs: number;
+		utilization: number;
 	};
 	counters: Record<string, CounterSummary>;
 	samples: Record<string, SampleSummary>;
@@ -101,6 +116,16 @@ const state = getState();
 
 function ensureReporter(): void {
 	if (!state.enabled) return;
+	if (!state.lastCpuUsage) {
+		state.lastCpuUsage = process.cpuUsage();
+	}
+	if (!state.lastEventLoopUsage) {
+		try {
+			state.lastEventLoopUsage = performance.eventLoopUtilization();
+		} catch {
+			state.lastEventLoopUsage = undefined;
+		}
+	}
 	if (!state.loopDelay) {
 		try {
 			state.loopDelay = monitorEventLoopDelay({ resolution: 20 });
@@ -211,6 +236,22 @@ export function flushProfile(reason = "manual"): void {
 	state.samples.clear();
 
 	const memoryUsage = process.memoryUsage();
+	const currentCpuUsage = process.cpuUsage();
+	const previousCpuUsage = state.lastCpuUsage;
+	state.lastCpuUsage = currentCpuUsage;
+	const cpuUserMs = previousCpuUsage ? Math.max(0, (currentCpuUsage.user - previousCpuUsage.user) / 1000) : 0;
+	const cpuSystemMs = previousCpuUsage ? Math.max(0, (currentCpuUsage.system - previousCpuUsage.system) / 1000) : 0;
+	const cpuTotalMs = cpuUserMs + cpuSystemMs;
+	let loopUsageDelta: EventLoopUsage | undefined;
+	try {
+		const currentLoopUsage = performance.eventLoopUtilization();
+		if (state.lastEventLoopUsage) {
+			loopUsageDelta = performance.eventLoopUtilization(currentLoopUsage, state.lastEventLoopUsage);
+		}
+		state.lastEventLoopUsage = currentLoopUsage;
+	} catch {
+		state.lastEventLoopUsage = undefined;
+	}
 	const loopDelay = state.loopDelay;
 	const record: ProfileRecord = {
 		type: "pi-droid-profile",
@@ -224,6 +265,12 @@ export function flushProfile(reason = "manual"): void {
 			heapTotalMb: mb(memoryUsage.heapTotal),
 			externalMb: mb(memoryUsage.external),
 		},
+		cpu: {
+			userMs: round(cpuUserMs),
+			systemMs: round(cpuSystemMs),
+			totalMs: round(cpuTotalMs),
+			percentOneCore: round((cpuTotalMs * 100) / intervalMs),
+		},
 		counters,
 		samples,
 	};
@@ -234,6 +281,13 @@ export function flushProfile(reason = "manual"): void {
 			maxMs: round(loopDelay.max / 1_000_000),
 		};
 		loopDelay.reset();
+	}
+	if (loopUsageDelta) {
+		record.eventLoopUtilization = {
+			idleMs: round(loopUsageDelta.idle),
+			activeMs: round(loopUsageDelta.active),
+			utilization: round(loopUsageDelta.utilization),
+		};
 	}
 	writeRecord(record);
 }

@@ -119,14 +119,26 @@ const terminal = {
 	},
 };
 
+class BenchRootLineComponent {
+	constructor(index) {
+		this.index = index;
+	}
+	render(width) {
+		profileCount("bench.root.component.render.calls");
+		const safeWidth = Math.max(20, width);
+		const prefix = `root ${String(this.index).padStart(4, "0")} `;
+		return [`${prefix}${"x".repeat(Math.max(0, safeWidth - prefix.length - 1))}`];
+	}
+	invalidate() {}
+}
+
 const tui = {
 	terminal,
+	children: Array.from({ length: rootLineCount }, (_value, index) => new BenchRootLineComponent(index)),
 	render(width) {
-		const safeWidth = Math.max(20, width);
-		return Array.from({ length: rootLineCount }, (_value, index) => {
-			const prefix = `root ${String(index).padStart(3, "0")} `;
-			return `${prefix}${"x".repeat(Math.max(0, safeWidth - prefix.length - 1))}`;
-		});
+		const lines = [];
+		for (const child of this.children) lines.push(...child.render(width));
+		return lines;
 	},
 	requestRender() {
 		profileCount("bench.tui.requestRender");

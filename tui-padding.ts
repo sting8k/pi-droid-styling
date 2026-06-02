@@ -1,9 +1,10 @@
+import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
+
 /**
  * Add horizontal padding to the entire TUI output.
  * Wraps TUI.render to reduce width and prepend spaces to every line.
  */
 
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 interface AnyComponent {
 	render(width: number): string[];
@@ -34,8 +35,8 @@ export function installTuiPadding(tui: AnyComponent): void {
 		return lines.map((line: string) => {
 			const padded = `${PADDING_PREFIX}${line}`;
 			if (isTerminalImageLine(line)) return padded;
-			if (visibleWidth(padded) > width) {
-				return truncateToWidth(padded, width, "");
+			if (safeVisibleWidth(padded) > width) {
+				return safeTruncateToWidth(padded, width, "");
 			}
 			return padded;
 		});

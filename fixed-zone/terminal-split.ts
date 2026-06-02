@@ -1,6 +1,6 @@
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
 import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
-import { MAX_FIXED_ROOT_LINES } from "../render-budget.js";
+import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -16,6 +16,27 @@ interface TuiLike {
 	render(width: number): string[];
 	requestRender(force?: boolean): void;
 	doRender?(): void;
+}
+
+interface RenderableLike {
+	render(width: number): string[];
+	children?: RenderableLike[];
+	constructor?: { name?: string };
+}
+
+type WindowedRootRender = {
+	lines: string[];
+	omitted: boolean;
+	renderedComponents: number;
+	skippedComponents: number;
+	truncatedLines: number;
+	visitedComponents: number;
+};
+
+const WINDOWABLE_CONTAINER_NAMES = new Set(["Container", "TUI"]);
+
+function isRenderable(value: unknown): value is RenderableLike {
+	return typeof value === "object" && value !== null && typeof (value as RenderableLike).render === "function";
 }
 
 export interface TerminalSplitOptions {
@@ -88,13 +109,13 @@ function findPropertyDescriptor(target: object, key: PropertyKey): PropertyDescr
 }
 
 function fitLine(line: string, width: number): string {
-	if (visibleWidth(line) <= width) return line;
-	return truncateToWidth(line, width, "");
+	if (safeVisibleWidth(line) <= width) return line;
+	return safeTruncateToWidth(line, width, "");
 }
 
 function padLine(line: string, width: number): string {
 	const fitted = fitLine(line, width);
-	return `${fitted}${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}`;
+	return `${fitted}${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}`;
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -153,7 +174,7 @@ function sliceColumns(text: string, startCol: number, endCol: number): string {
 	let col = 0;
 	let result = "";
 	for (const char of Array.from(text)) {
-		const width = Math.max(0, visibleWidth(char));
+		const width = Math.max(0, safeVisibleWidth(char));
 		if (col >= startCol && col < endCol) result += char;
 		col += width;
 	}
@@ -181,6 +202,7 @@ export class TerminalSplitCompositor {
 	private readonly originalTerminalWrite: TerminalLike["write"];
 	private readonly originalTuiRender: TuiLike["render"];
 	private readonly originalTuiDoRender?: () => void;
+	private readonly hiddenRenderableTargets: WeakSet<object>;
 	private readonly originalRowsOwnDescriptor?: PropertyDescriptor;
 	private readonly originalRowsDescriptor?: PropertyDescriptor;
 	private readonly hadOwnRowsDescriptor: boolean;
@@ -214,6 +236,7 @@ export class TerminalSplitCompositor {
 		this.originalTerminalWrite = tui.terminal.write;
 		this.originalTuiRender = tui.render.bind(tui);
 		this.originalTuiDoRender = typeof tui.doRender === "function" ? tui.doRender.bind(tui) : undefined;
+		this.hiddenRenderableTargets = new WeakSet(hiddenRenderables.map((renderable) => renderable.target as object));
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
@@ -446,6 +469,88 @@ export class TerminalSplitCompositor {
 		this.writeRaw(moveCursor(this.getTuiCursorScreenRow(scrollableRows), 1));
 	}
 
+	private getWindowableChildren(component: RenderableLike, isRoot = false): RenderableLike[] | null {
+		if (!Array.isArray(component.children)) return null;
+		if (isRoot) return component.children.filter(isRenderable);
+		const constructorName = component.constructor?.name ?? "";
+		return WINDOWABLE_CONTAINER_NAMES.has(constructorName) ? component.children.filter(isRenderable) : null;
+	}
+
+	private renderTailComponent(component: RenderableLike, width: number, maxLines: number, isRoot = false): WindowedRootRender {
+		if (maxLines <= 0) {
+			return { lines: [], omitted: true, renderedComponents: 0, skippedComponents: 1, truncatedLines: 0, visitedComponents: 0 };
+		}
+
+		if (this.hiddenRenderableTargets.has(component as object)) {
+			profileCount("fixed.root.windowRender.skipHiddenTarget");
+			return { lines: [], omitted: false, renderedComponents: 0, skippedComponents: 0, truncatedLines: 0, visitedComponents: 1 };
+		}
+
+		const children = this.getWindowableChildren(component, isRoot);
+		if (!children) {
+			const rendered = component.render(width);
+			const truncatedLines = Math.max(0, rendered.length - maxLines);
+			return {
+				lines: truncatedLines > 0 ? rendered.slice(-maxLines) : rendered,
+				omitted: truncatedLines > 0,
+				renderedComponents: 1,
+				skippedComponents: 0,
+				truncatedLines,
+				visitedComponents: 1,
+			};
+		}
+
+		const chunks: string[][] = [];
+		let lineCount = 0;
+		let omitted = false;
+		let renderedComponents = 0;
+		let skippedComponents = 0;
+		let truncatedLines = 0;
+		let visitedComponents = 1;
+
+		for (let index = children.length - 1; index >= 0; index--) {
+			if (lineCount >= maxLines) {
+				omitted = true;
+				skippedComponents += index + 1;
+				break;
+			}
+
+			const child = children[index];
+			const childResult = this.renderTailComponent(child, width, maxLines - lineCount);
+			if (childResult.lines.length > 0) {
+				chunks.push(childResult.lines);
+				lineCount += childResult.lines.length;
+			}
+			omitted = omitted || childResult.omitted;
+			renderedComponents += childResult.renderedComponents;
+			skippedComponents += childResult.skippedComponents;
+			truncatedLines += childResult.truncatedLines;
+			visitedComponents += childResult.visitedComponents;
+		}
+
+		chunks.reverse();
+		return {
+			lines: chunks.flat(),
+			omitted,
+			renderedComponents,
+			skippedComponents,
+			truncatedLines,
+			visitedComponents,
+		};
+	}
+
+	private renderWindowedRoot(width: number, maxLines: number): WindowedRootRender | null {
+		const root = this.tui as unknown as RenderableLike;
+		if (!Array.isArray(root.children)) return null;
+		return this.renderTailComponent(root, width, maxLines, true);
+	}
+
+	private rootOmittedMarker(windowed: WindowedRootRender, width: number): string {
+		const skippedText = windowed.skippedComponents > 0 ? `; ${windowed.skippedComponents} earlier components skipped` : "";
+		const truncatedText = windowed.truncatedLines > 0 ? `; ${windowed.truncatedLines} lines trimmed inside render window` : "";
+		return safeTruncateToWidth(`… earlier root content omitted before render${skippedText}${truncatedText}`, width, "…");
+	}
+
 	private renderScrollableRoot(_width: number): string[] {
 		const totalStart = profileNow();
 		try {
@@ -457,18 +562,51 @@ export class TerminalSplitCompositor {
 			}
 			this.refreshCluster(layout.contentWidth, rawRows);
 			const scrollableRows = this.getScrollableRows();
-			const rootRenderStart = profileNow();
-			const renderedLines = this.originalTuiRender(layout.contentWidth);
-			profileDuration("fixed.root.originalRender.ms", rootRenderStart);
-			profileSample("fixed.root.lines.count", renderedLines.length);
 			const retainedLines = Math.max(1, MAX_FIXED_ROOT_LINES - 1);
-			const omittedLines = Math.max(0, renderedLines.length - retainedLines);
-			const lines = omittedLines > 0
-				? [
-					truncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
-					...renderedLines.slice(-retainedLines),
-				]
-				: renderedLines;
+			const rootRenderStart = profileNow();
+			let lines: string[];
+			let omittedLines = 0;
+			try {
+				const windowed = this.renderWindowedRoot(layout.contentWidth, retainedLines);
+				if (windowed) {
+					profileCount("fixed.root.windowRender.used");
+					profileDuration("fixed.root.windowRender.ms", rootRenderStart);
+					profileSample("fixed.root.windowRender.renderedComponents.count", windowed.renderedComponents);
+					profileSample("fixed.root.windowRender.skippedComponents.count", windowed.skippedComponents);
+					profileSample("fixed.root.windowRender.visitedComponents.count", windowed.visitedComponents);
+					profileSample("fixed.root.windowRender.truncatedLines.count", windowed.truncatedLines);
+					profileSample("fixed.root.windowRender.omitted.count", windowed.omitted ? 1 : 0);
+					profileSample("fixed.root.windowRender.omittedUnits.count", windowed.omitted ? windowed.skippedComponents + windowed.truncatedLines : 0);
+					omittedLines = windowed.omitted ? windowed.truncatedLines : 0;
+					lines = windowed.omitted ? [this.rootOmittedMarker(windowed, layout.contentWidth), ...windowed.lines] : windowed.lines;
+				} else {
+					profileCount("fixed.root.windowRender.fallback.noChildren");
+					const renderedLines = this.originalTuiRender(layout.contentWidth);
+					profileDuration("fixed.root.originalRender.ms", rootRenderStart);
+					profileSample("fixed.root.originalLines.count", renderedLines.length);
+					omittedLines = Math.max(0, renderedLines.length - retainedLines);
+					lines = omittedLines > 0
+						? [
+							safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
+							...renderedLines.slice(-retainedLines),
+						]
+						: renderedLines;
+				}
+			} catch {
+				profileCount("fixed.root.windowRender.fallback.error");
+				const fallbackStart = profileNow();
+				const renderedLines = this.originalTuiRender(layout.contentWidth);
+				profileDuration("fixed.root.originalRender.ms", fallbackStart);
+				profileSample("fixed.root.originalLines.count", renderedLines.length);
+				omittedLines = Math.max(0, renderedLines.length - retainedLines);
+				lines = omittedLines > 0
+					? [
+						safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
+						...renderedLines.slice(-retainedLines),
+					]
+					: renderedLines;
+			}
+			profileSample("fixed.root.lines.count", lines.length);
 			profileSample("fixed.root.retainedLines.count", lines.length);
 			profileSample("fixed.root.omittedLines.count", omittedLines);
 			this.rootLines = lines;
@@ -631,7 +769,7 @@ export class TerminalSplitCompositor {
 		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
 		if (lineIndex < start.line || lineIndex > end.line) return line;
 		const plain = stripAnsi(line);
-		const lineWidth = visibleWidth(plain);
+		const lineWidth = safeVisibleWidth(plain);
 		const startCol = lineIndex === start.line ? Math.max(0, Math.min(start.col, lineWidth)) : 0;
 		const endCol = lineIndex === end.line ? Math.max(startCol, Math.min(end.col, lineWidth)) : lineWidth;
 		if (startCol === endCol) return line;

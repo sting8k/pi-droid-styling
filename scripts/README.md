@@ -28,7 +28,19 @@ Run the synthetic render profiling bench with:
 npm run profile:render
 ```
 
-It enables `PI_DROID_PROFILE=1`, writes JSONL to `/tmp` unless `PI_DROID_PROFILE_OUT` is set, and exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. It is CPU/string/layout evidence only; terminal emulator paint cost still needs a real Pi TUI capture.
+It enables `PI_DROID_PROFILE=1`, writes JSONL to `/tmp` unless `PI_DROID_PROFILE_OUT` is set, and exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. It reports memory, CPU delta, event-loop utilization, and CPU/string/layout evidence; terminal emulator paint cost still needs a real Pi TUI capture.
+
+## Pi Runtime Trace
+
+Use the Pi runtime trace helper when a live `pi` process shows high RAM or CPU:
+
+```bash
+npm run trace:pi -- --cwd pi-droid-styling
+npm run trace:pi -- --pid 12345
+npm run trace:pi -- --top 15 --sample-sec 3
+```
+
+The helper prints process/RSS samples, parent chain, cwd, vmmap summary, native stack symbol counts, and session JSONL metadata by role/tool/bytes. It writes full `vmmap` and `sample` reports to `/tmp` and does not print message or tool-result content.
 
 ## Durable Layer
 

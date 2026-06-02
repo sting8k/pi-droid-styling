@@ -50,7 +50,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 
 ## Profiling
 
-Render profiling is disabled by default. To capture render/update/git/sidebar metrics:
+Render profiling is disabled by default. To capture render/update/git/sidebar metrics plus memory, CPU delta, and event-loop utilization:
 
 ```sh
 PI_DROID_PROFILE=1 PI_DROID_PROFILE_OUT=/tmp/pi-droid-profile.jsonl pi

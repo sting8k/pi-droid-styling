@@ -1,6 +1,6 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { profileDuration, profileNow, profileSample } from "../performance/profiler.js";
 import { homedir } from "node:os";
+import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 export interface FixedZoneSidebarTheme {
 	fg(color: string, text: string): string;
@@ -74,12 +74,12 @@ function sanitize(text: unknown): string {
 
 function fit(text: string, width: number): string {
 	const safeWidth = Math.max(1, width);
-	return visibleWidth(text) > safeWidth ? truncateToWidth(text, safeWidth, "…") : text;
+	return safeVisibleWidth(text) > safeWidth ? safeTruncateToWidth(text, safeWidth, "…") : text;
 }
 
 function pad(text: string, width: number): string {
 	const fitted = fit(text, width);
-	return `${fitted}${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}`;
+	return `${fitted}${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}`;
 }
 
 function takeWidth(text: string, width: number): { head: string; tail: string } {
@@ -87,7 +87,7 @@ function takeWidth(text: string, width: number): { head: string; tail: string } 
 	let used = 0;
 	let end = 0;
 	for (const char of Array.from(text)) {
-		const charWidth = Math.max(0, visibleWidth(char));
+		const charWidth = Math.max(0, safeVisibleWidth(char));
 		if (end > 0 && used + charWidth > safeWidth) break;
 		if (end === 0 && charWidth > safeWidth) {
 			end += char.length;
@@ -134,10 +134,10 @@ function icon(symbol: string, theme?: FixedZoneSidebarTheme): string {
 
 function section(text: string, innerWidth: number, theme?: FixedZoneSidebarTheme): string {
 	const title = color(theme, "accent", text);
-	const titleWidth = visibleWidth(text);
+	const titleWidth = safeVisibleWidth(text);
 	if (titleWidth >= innerWidth) return title;
 	const gap = " ";
-	const rule = color(theme, "borderMuted", "─".repeat(Math.max(0, innerWidth - titleWidth - visibleWidth(gap))));
+	const rule = color(theme, "borderMuted", "─".repeat(Math.max(0, innerWidth - titleWidth - safeVisibleWidth(gap))));
 	return `${title}${gap}${rule}`;
 }
 
@@ -153,15 +153,15 @@ function compactFilePath(path: string, width: number): string {
 	const safeWidth = Math.max(1, width);
 	const normalized = sanitize(path).replace(/\\/g, "/");
 	if (!normalized) return "—";
-	if (visibleWidth(normalized) <= safeWidth) return normalized;
+	if (safeVisibleWidth(normalized) <= safeWidth) return normalized;
 
 	const parts = normalized.split("/").filter(Boolean);
 	const basename = parts.at(-1) ?? normalized;
-	if (visibleWidth(basename) <= safeWidth) return basename;
+	if (safeVisibleWidth(basename) <= safeWidth) return basename;
 
 	const parent = parts.length > 1 ? parts.at(-2) : undefined;
 	const withParent = parent ? `${parent}/${basename}` : basename;
-	if (visibleWidth(withParent) <= safeWidth) return withParent;
+	if (safeVisibleWidth(withParent) <= safeWidth) return withParent;
 
 	return fit(basename, safeWidth);
 }
@@ -174,7 +174,7 @@ interface FileDiffColumns {
 }
 
 function metricWidth(text: string): number {
-	return visibleWidth(sanitize(text));
+	return safeVisibleWidth(sanitize(text));
 }
 
 function createFileDiffColumns(files: readonly ModifiedFileEntry[]): FileDiffColumns {
@@ -204,7 +204,7 @@ function fileDiffText(file: ModifiedFileEntry, columns: FileDiffColumns, theme?:
 		columns.gap > 0 ? " ".repeat(columns.gap) : "",
 		metricColumn(deletionText, columns.deletions, "error", theme),
 	].join("");
-	return visibleWidth(rendered) > columns.width ? fit(rendered, columns.width) : rendered;
+	return safeVisibleWidth(rendered) > columns.width ? fit(rendered, columns.width) : rendered;
 }
 
 function dim(text: string, theme?: FixedZoneSidebarTheme): string {
@@ -238,11 +238,11 @@ function contentLine(left: string, innerWidth: number): string {
 
 function padLeft(text: string, width: number): string {
 	const fitted = fit(text, width);
-	return `${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}${fitted}`;
+	return `${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}${fitted}`;
 }
 
 function wrappedValueLines(prefix: string, value: string, innerWidth: number, colorName: string, theme?: FixedZoneSidebarTheme): string[] {
-	const prefixWidth = visibleWidth(prefix);
+	const prefixWidth = safeVisibleWidth(prefix);
 	const valueWidth = Math.max(1, innerWidth - prefixWidth);
 	return wrapText(value, valueWidth).map((line, index) => {
 		const rendered = color(theme, colorName, line);
@@ -253,14 +253,14 @@ function wrappedValueLines(prefix: string, value: string, innerWidth: number, co
 function fileLine(file: ModifiedFileEntry, innerWidth: number, columns: FileDiffColumns, theme?: FixedZoneSidebarTheme): string {
 	const diff = fileDiffText(file, columns, theme);
 	const prefix = `${bullet(theme)}${FILE_BULLET_GAP}`;
-	const prefixWidth = visibleWidth(prefix);
-	const diffColumnWidth = visibleWidth(diff);
+	const prefixWidth = safeVisibleWidth(prefix);
+	const diffColumnWidth = safeVisibleWidth(diff);
 	const diffGap = diffColumnWidth > 0 ? 1 : 0;
 	const pathWidth = Math.max(1, innerWidth - prefixWidth - diffColumnWidth - diffGap);
 	const path = color(theme, "muted", compactFilePath(file.path, pathWidth));
 
 	if (diffColumnWidth > 0) {
-		return `${prefix}${path}${" ".repeat(Math.max(1, innerWidth - prefixWidth - visibleWidth(path) - diffColumnWidth))}${diff}`;
+		return `${prefix}${path}${" ".repeat(Math.max(1, innerWidth - prefixWidth - safeVisibleWidth(path) - diffColumnWidth))}${diff}`;
 	}
 	return contentLine(`${prefix}${path}`, innerWidth);
 }

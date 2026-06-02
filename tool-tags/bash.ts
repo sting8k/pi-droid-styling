@@ -1,9 +1,8 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { createBashTool, highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { truncateToWidth } from "@earendil-works/pi-tui";
 
-import { safeWrapTextWithAnsi } from "../render-budget.js";
+import { safeWrapTextWithAnsi, safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
@@ -231,7 +230,7 @@ function createBashResultPreview(
 				}
 
 				const truncatedShown = shownLines.map((line) => {
-					const truncated = truncateToWidth(line, bodyWidth, "…");
+					const truncated = safeTruncateToWidth(line, bodyWidth, "…");
 					if (color === "error") return formatToolOutputLine(theme, truncated, "error");
 					return cfg.dimToolOutput ? formatToolOutputLine(theme, truncated) : formatToolOutputLine(theme, truncated, "text");
 				});
@@ -245,7 +244,7 @@ function createBashResultPreview(
 					return cacheLines;
 				}
 
-				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, bodyWidth, "…");
+				const hint = safeTruncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, bodyWidth, "…");
 				cacheKey = cacheId;
 				cacheLines = [...truncatedShown, "", theme.fg("muted", hint)];
 				return cacheLines;

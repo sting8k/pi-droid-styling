@@ -1,6 +1,7 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
+import { loadConfig } from "../config.js";
 import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult, renderLines } from "./common.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
@@ -37,36 +38,72 @@ function getTextOutput(owner: any): string {
 		.trimEnd();
 }
 
+type FallbackRenderCache = {
+	width: number;
+	theme: any;
+	result: any;
+	expanded: boolean;
+	maxLines: number;
+	isError: boolean;
+	isPartial: boolean;
+	hasResult: boolean;
+	lines: string[];
+};
+
 function createBoxedFallbackComponent(owner: any): Component {
+	let cache: FallbackRenderCache | null = null;
 	return {
-		invalidate() {},
+		invalidate() { cache = null; },
 		render(width: number): string[] {
 			const theme = getRenderTheme();
 			const isError = Boolean(owner.result?.isError);
 			const isPartial = Boolean(owner.isPartial);
 			const hasResult = Boolean(owner.result);
+			const expanded = Boolean(owner.expanded);
+			const maxLines = hasResult && expanded ? loadConfig().maxExpandedLines : MAX_FALLBACK_PREVIEW_LINES;
+			if (
+				cache &&
+				cache.width === width &&
+				cache.theme === theme &&
+				cache.result === owner.result &&
+				cache.expanded === expanded &&
+				cache.maxLines === maxLines &&
+				cache.isError === isError &&
+				cache.isPartial === isPartial &&
+				cache.hasResult === hasResult
+			) {
+				return cache.lines;
+			}
+
 			const call = renderBoxedToolCall(theme, formatToolName(String(owner.toolName ?? "Tool")), formatToolParamLines(owner.args, theme), {
 				isError,
 				isPartial,
 				isPending: isPartial && !hasResult,
 			});
-			if (!hasResult) return call.render(width);
+			if (!hasResult) {
+				const lines = call.render(width);
+				cache = { width, theme, result: owner.result, expanded, maxLines, isError, isPartial, hasResult, lines };
+				return lines;
+			}
 
 			const output = getTextOutput(owner);
-			const renderOptions = { expanded: Boolean(owner.expanded), isPartial };
+			const renderOptions = { expanded, isPartial };
 			const result = renderBoxedToolResult(theme, (contentWidth) => {
 				const body = renderLines(theme, output, renderOptions, {
-					maxLines: MAX_FALLBACK_PREVIEW_LINES,
+					maxLines,
 					color: isError ? "error" : "toolOutput",
 					width: contentWidth,
 				});
 				return body ? body.split("\n") : [];
 			}, {
 				footerLines: [formatBoxedFooter(theme, owner.result)],
+				renderLineBudget: maxLines,
 				isError,
 				isPartial,
 			});
-			return [...call.render(width), ...result.render(width)];
+			const lines = [...call.render(width), ...result.render(width)];
+			cache = { width, theme, result: owner.result, expanded, maxLines, isError, isPartial, hasResult, lines };
+			return lines;
 		},
 	};
 }
