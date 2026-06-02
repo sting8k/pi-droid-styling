@@ -20,11 +20,21 @@ interface ModifiedFileEntryWithMtime extends ModifiedFileEntry {
 	order: number;
 }
 
+interface StatusFileEntry extends ModifiedFileEntryWithMtime {
+	xy: string;
+}
+
+type DiffStats = {
+	insertions: number;
+	deletions: number;
+};
+
 export type GitBranchFetcher = () => GitBranchStatus | null;
 
 const BRANCH_FETCH_INTERVAL_MS = 5000;
 const GIT_COMMAND_TIMEOUT_MS = 1000;
 const MAX_UNTRACKED_STAT_BYTES = 1024 * 1024;
+const MAX_UNTRACKED_INSERTION_STATS = 10;
 
 function sameFileList(a: readonly ModifiedFileEntry[] | undefined, b: readonly ModifiedFileEntry[] | undefined): boolean {
 	const left = a ?? [];
@@ -73,18 +83,34 @@ function parseShortstat(statText: string): { insertions: number; deletions: numb
 	};
 }
 
-function parseNumstat(output: string): { insertions: number; deletions: number } | undefined {
-	let insertions = 0;
-	let deletions = 0;
-	let matched = false;
+function addDiffStats(map: Map<string, DiffStats>, path: string, stats: DiffStats): void {
+	const previous = map.get(path);
+	map.set(path, {
+		insertions: (previous?.insertions ?? 0) + stats.insertions,
+		deletions: (previous?.deletions ?? 0) + stats.deletions,
+	});
+}
+
+function parseNumstatPath(pathText: string): string {
+	const raw = pathText.trim();
+	const arrowIndex = raw.lastIndexOf(" -> ");
+	if (arrowIndex !== -1) return unquoteGitPath(raw.slice(arrowIndex + 4));
+	return unquoteGitPath(raw);
+}
+
+function parseNumstatMap(output: string): Map<string, DiffStats> {
+	const statsByPath = new Map<string, DiffStats>();
 	for (const line of output.split("\n")) {
-		const match = line.match(/^(\d+|-)\s+(\d+|-)/);
+		const match = line.match(/^(\d+|-)\s+(\d+|-)\s+(.+)$/);
 		if (!match || match[1] === "-" || match[2] === "-") continue;
-		insertions += parseInt(match[1], 10) || 0;
-		deletions += parseInt(match[2], 10) || 0;
-		matched = true;
+		const path = parseNumstatPath(match[3] ?? "");
+		if (!path) continue;
+		addDiffStats(statsByPath, path, {
+			insertions: parseInt(match[1], 10) || 0,
+			deletions: parseInt(match[2], 10) || 0,
+		});
 	}
-	return matched ? { insertions, deletions } : undefined;
+	return statsByPath;
 }
 
 function unquoteGitPath(path: string): string {
@@ -126,57 +152,67 @@ async function countUntrackedInsertions(cwd: string, path: string): Promise<{ in
 	}
 }
 
-async function fileDiffStats(cwd: string, path: string, xy: string): Promise<{ insertions: number; deletions: number } | undefined> {
-	if (xy === "??") return countUntrackedInsertions(cwd, path);
+function diffStatsForEntry(entry: StatusFileEntry, unstagedStatsByPath: Map<string, DiffStats>, stagedStatsByPath: Map<string, DiffStats>): DiffStats | undefined {
+	if (entry.xy === "??") return undefined;
 
-	const staged = xy[0] !== " " && xy[0] !== "?";
-	const unstaged = xy[1] !== " " && xy[1] !== "?";
+	const staged = entry.xy[0] !== " " && entry.xy[0] !== "?";
+	const unstaged = entry.xy[1] !== " " && entry.xy[1] !== "?";
 	let insertions = 0;
 	let deletions = 0;
 	let matched = false;
 
-	if (staged) {
-		const stats = parseNumstat(await runGit(cwd, ["diff", "--cached", "--numstat", "--", path]));
-		if (stats) {
-			insertions += stats.insertions;
-			deletions += stats.deletions;
-			matched = true;
-		}
-	}
-	if (unstaged || !staged) {
-		const stats = parseNumstat(await runGit(cwd, ["diff", "--numstat", "--", path]));
-		if (stats) {
-			insertions += stats.insertions;
-			deletions += stats.deletions;
-			matched = true;
-		}
-	}
+	const add = (stats: DiffStats | undefined) => {
+		if (!stats) return;
+		insertions += stats.insertions;
+		deletions += stats.deletions;
+		matched = true;
+	};
+
+	if (staged) add(stagedStatsByPath.get(entry.path));
+	if (unstaged || !staged) add(unstagedStatsByPath.get(entry.path));
 
 	return matched ? { insertions, deletions } : undefined;
 }
 
-async function parseModifiedFilesWithStats(cwd: string, status: string): Promise<ModifiedFileEntry[]> {
+async function parseStatusEntries(cwd: string, status: string): Promise<StatusFileEntry[]> {
 	const lines = status.split("\n").map((line) => line.trimEnd()).filter(Boolean);
-	const entries: ModifiedFileEntryWithMtime[] = [];
-	for (const [order, line] of lines.entries()) {
+	const entries = await Promise.all(lines.map(async (line, order): Promise<StatusFileEntry | null> => {
 		const xy = line.slice(0, 2);
 		const path = parseStatusPath(line);
-		if (!path) continue;
-		const [stats, modifiedAt] = await Promise.all([
-			fileDiffStats(cwd, path, xy),
-			fileModifiedAt(cwd, path),
-		]);
-		entries.push({
+		if (!path) return null;
+		return {
+			xy,
 			path,
+			modifiedAt: await fileModifiedAt(cwd, path),
+			order,
+		};
+	}));
+	return entries
+		.filter((entry): entry is StatusFileEntry => entry !== null)
+		.sort((a, b) => b.modifiedAt - a.modifiedAt || a.order - b.order);
+}
+
+async function parseModifiedFilesWithStats(cwd: string, status: string, unstagedNumstat: string, stagedNumstat: string): Promise<ModifiedFileEntry[]> {
+	const entries = await parseStatusEntries(cwd, status);
+	const unstagedStatsByPath = parseNumstatMap(unstagedNumstat);
+	const stagedStatsByPath = parseNumstatMap(stagedNumstat);
+	const modifiedFiles: ModifiedFileEntry[] = [];
+	let untrackedStatsRemaining = MAX_UNTRACKED_INSERTION_STATS;
+
+	for (const entry of entries) {
+		let stats = diffStatsForEntry(entry, unstagedStatsByPath, stagedStatsByPath);
+		if (entry.xy === "??" && untrackedStatsRemaining > 0) {
+			untrackedStatsRemaining--;
+			stats = await countUntrackedInsertions(cwd, entry.path);
+		}
+		modifiedFiles.push({
+			path: entry.path,
 			insertions: stats?.insertions || undefined,
 			deletions: stats?.deletions || undefined,
-			modifiedAt,
-			order,
 		});
 	}
-	return entries
-		.sort((a, b) => b.modifiedAt - a.modifiedAt || a.order - b.order)
-		.map(({ modifiedAt: _modifiedAt, order: _order, ...entry }) => entry);
+
+	return modifiedFiles;
 }
 
 export function createGitBranchFetcher(cwd: string, onUpdate?: () => void): GitBranchFetcher {
@@ -212,7 +248,14 @@ export function createGitBranchFetcher(cwd: string, onUpdate?: () => void): GitB
 			}
 			const unstaged = parseShortstat(unstagedStat);
 			const staged = parseShortstat(stagedStat);
-			const modifiedFiles = await parseModifiedFilesWithStats(cwd, status);
+			const hasModifiedFiles = status.trim().length > 0;
+			const [unstagedNumstat, stagedNumstat] = hasModifiedFiles
+				? await Promise.all([
+					runGit(cwd, ["diff", "--numstat"]),
+					runGit(cwd, ["diff", "--cached", "--numstat"]),
+				])
+				: ["", ""];
+			const modifiedFiles = hasModifiedFiles ? await parseModifiedFilesWithStats(cwd, status, unstagedNumstat, stagedNumstat) : [];
 			const insertions = unstaged.insertions + staged.insertions;
 			const deletions = unstaged.deletions + staged.deletions;
 			setCachedBranch({

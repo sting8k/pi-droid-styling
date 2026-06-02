@@ -8,7 +8,6 @@ export interface DroidStylingConfig {
 	dimToolOutput: boolean;
 	customWorkingMessage: boolean;
 	fixedUserZone: boolean;
-	fixedUserZoneMouseScroll: boolean;
 	fixedUserZoneSidebar: boolean;
 }
 
@@ -18,12 +17,12 @@ const DEFAULTS: DroidStylingConfig = {
 	dimToolOutput: false,
 	customWorkingMessage: false,
 	fixedUserZone: false,
-	fixedUserZoneMouseScroll: true,
 	fixedUserZoneSidebar: false,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
 const MAX_EXPANDED_LINES_LIMIT = 1000;
+const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll"] as const;
 
 let cached: DroidStylingConfig = { ...DEFAULTS };
 let cachedMtimeMs = -1;
@@ -50,7 +49,6 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
-		fixedUserZoneMouseScroll: booleanOrDefault(config.fixedUserZoneMouseScroll, DEFAULTS.fixedUserZoneMouseScroll),
 		fixedUserZoneSidebar: booleanOrDefault(config.fixedUserZoneSidebar, DEFAULTS.fixedUserZoneSidebar),
 	};
 }
@@ -69,6 +67,11 @@ function backfillMissingDefaults(raw: unknown): void {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
 	const config = raw as Record<string, unknown>;
 	let changed = false;
+	for (const key of DEPRECATED_CONFIG_KEYS) {
+		if (!(key in config)) continue;
+		delete config[key];
+		changed = true;
+	}
 	for (const [key, value] of Object.entries(DEFAULTS) as Array<[keyof DroidStylingConfig, boolean | number]>) {
 		if (key in config) continue;
 		config[key] = value;

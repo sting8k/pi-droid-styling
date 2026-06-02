@@ -40,7 +40,6 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "dimToolOutput": false,
   "customWorkingMessage": false,
   "fixedUserZone": false,
-  "fixedUserZoneMouseScroll": true,
   "fixedUserZoneSidebar": false
 }
 ```

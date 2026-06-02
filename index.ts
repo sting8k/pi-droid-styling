@@ -163,7 +163,6 @@ export default function (pi: ExtensionAPI) {
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
-				mouseScroll: config.fixedUserZoneMouseScroll,
 				onCopySelection: copyToClipboard,
 				sidebar: {
 					enabled: config.fixedUserZoneSidebar,

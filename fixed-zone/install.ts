@@ -81,7 +81,6 @@ export function installFixedUserZone(
 	}
 
 	const compositor = new TerminalSplitCompositor(tui, hidden, {
-		mouseScroll: options.mouseScroll,
 		onCopySelection: options.onCopySelection,
 		sidebar: options.sidebar,
 	});

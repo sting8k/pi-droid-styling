@@ -30,7 +30,6 @@ Current options:
   "dimToolOutput": false,
   "customWorkingMessage": false,
   "fixedUserZone": false,
-  "fixedUserZoneMouseScroll": true,
   "fixedUserZoneSidebar": false
 }
 ```

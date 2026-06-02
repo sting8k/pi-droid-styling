@@ -223,6 +223,14 @@ function addLines(lines: string[], maxRows: number, values: string[]): boolean {
 	return true;
 }
 
+function sectionGapRows(bodyRows: number): number {
+	return bodyRows >= 18 ? 2 : 1;
+}
+
+function addSectionGap(lines: string[], maxRows: number, gapRows: number): void {
+	for (let i = 0; i < gapRows; i++) addLine(lines, maxRows, "");
+}
+
 function contentLine(left: string, innerWidth: number): string {
 	return pad(left, innerWidth);
 }
@@ -265,18 +273,19 @@ export function renderFixedZoneSidebar(info: FixedZoneSidebarInfo | null | undef
 	const innerWidth = Math.max(1, safeWidth - 2 - CONTENT_PADDING * 2);
 	const bodyRows = Math.max(0, safeRows - 1);
 	const body: string[] = [];
+	const sectionGap = sectionGapRows(bodyRows);
 
 	addLine(body, bodyRows, section("Session", innerWidth, theme));
 	addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionId) || "—", innerWidth, "text", theme));
 	addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionName) || "—", innerWidth, "text", theme));
-	addLine(body, bodyRows, "");
+	addSectionGap(body, bodyRows, sectionGap);
 	addLine(body, bodyRows, section("Project", innerWidth, theme));
 	addLines(body, bodyRows, wrappedValueLines(`${icon(CWD_ICON, theme)} `, displayCwd(data.cwd), innerWidth, "accent", theme));
 
 	const branch = sanitize(data.branch) || "—";
 	addLines(body, bodyRows, wrappedValueLines(`${icon(BRANCH_ICON, theme)} `, branch, innerWidth, "mdLinkUrl", theme));
 
-	addLine(body, bodyRows, "");
+	addSectionGap(body, bodyRows, sectionGap);
 	addLine(body, bodyRows, section("Modified Files", innerWidth, theme));
 
 	const allFiles = data.modifiedFiles ?? [];
