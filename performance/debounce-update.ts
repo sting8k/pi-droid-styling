@@ -21,6 +21,8 @@
  * outermost wrapper and prevents the inner chain from running on every delta.
  */
 
+import { profileCount, profileDuration, profileNow } from "./profiler.js";
+
 const PATCHED = Symbol.for("pi-droid-styling.debounce-update-content.patched");
 
 /** Coalesce window for streaming deltas (ms). */
@@ -38,29 +40,48 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 	if (typeof orig !== "function") return;
 
 	proto.updateContent = function patchedUpdateContent(message: any) {
+		profileCount("assistant.updateContent.calls");
 		const stopReason = message?.stopReason;
 
 		// Final/non-streaming message — flush immediately, cancel any pending.
 		if (stopReason !== undefined && stopReason !== null) {
+			profileCount("assistant.updateContent.final");
 			const t = (this as any)[TIMER_KEY];
 			if (t) {
 				clearTimeout(t);
 				(this as any)[TIMER_KEY] = null;
+				profileCount("assistant.updateContent.cancelPending");
 			}
 			(this as any)[PENDING_KEY] = null;
-			orig.call(this, message);
-			return;
+			const start = profileNow();
+			try {
+				return orig.call(this, message);
+			} finally {
+				profileDuration("assistant.updateContent.ms", start);
+			}
 		}
 
 		// Streaming — coalesce.
+		profileCount("assistant.updateContent.streaming");
 		(this as any)[PENDING_KEY] = message;
-		if ((this as any)[TIMER_KEY]) return;
+		if ((this as any)[TIMER_KEY]) {
+			profileCount("assistant.updateContent.coalesced");
+			return;
+		}
 
+		profileCount("assistant.updateContent.scheduled");
 		(this as any)[TIMER_KEY] = setTimeout(() => {
 			(this as any)[TIMER_KEY] = null;
 			const pending = (this as any)[PENDING_KEY];
 			(this as any)[PENDING_KEY] = null;
-			if (pending) orig.call(this, pending);
+			if (!pending) return;
+			profileCount("assistant.updateContent.flush");
+			const start = profileNow();
+			try {
+				orig.call(this, pending);
+			} finally {
+				profileDuration("assistant.updateContent.ms", start);
+			}
 		}, STREAM_FLUSH_MS);
 	};
 }

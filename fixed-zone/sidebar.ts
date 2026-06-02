@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { profileDuration, profileNow, profileSample } from "../performance/profiler.js";
 import { homedir } from "node:os";
 
 export interface FixedZoneSidebarTheme {
@@ -265,61 +266,69 @@ function fileLine(file: ModifiedFileEntry, innerWidth: number, columns: FileDiff
 }
 
 export function renderFixedZoneSidebar(info: FixedZoneSidebarInfo | null | undefined, width: number, rows: number, theme?: FixedZoneSidebarTheme): string[] {
-	const safeRows = Math.max(0, Math.floor(rows));
-	const safeWidth = Math.max(1, Math.floor(width));
-	if (safeRows === 0) return [];
+	const start = profileNow();
+	try {
+		const safeRows = Math.max(0, Math.floor(rows));
+		const safeWidth = Math.max(1, Math.floor(width));
+		if (safeRows === 0) return [];
 
-	const data = info ?? {};
-	const innerWidth = Math.max(1, safeWidth - 2 - CONTENT_PADDING * 2);
-	const bodyRows = Math.max(0, safeRows - 1);
-	const body: string[] = [];
-	const sectionGap = sectionGapRows(bodyRows);
+		const data = info ?? {};
+		const innerWidth = Math.max(1, safeWidth - 2 - CONTENT_PADDING * 2);
+		const bodyRows = Math.max(0, safeRows - 1);
+		const body: string[] = [];
+		const sectionGap = sectionGapRows(bodyRows);
 
-	addLine(body, bodyRows, section("Session", innerWidth, theme));
-	addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionId) || "—", innerWidth, "text", theme));
-	addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionName) || "—", innerWidth, "text", theme));
-	addSectionGap(body, bodyRows, sectionGap);
-	addLine(body, bodyRows, section("Project", innerWidth, theme));
-	addLines(body, bodyRows, wrappedValueLines(`${icon(CWD_ICON, theme)} `, displayCwd(data.cwd), innerWidth, "accent", theme));
+		addLine(body, bodyRows, section("Session", innerWidth, theme));
+		addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionId) || "—", innerWidth, "text", theme));
+		addLines(body, bodyRows, wrappedValueLines(`${bullet(theme)} `, sanitize(data.sessionName) || "—", innerWidth, "text", theme));
+		addSectionGap(body, bodyRows, sectionGap);
+		addLine(body, bodyRows, section("Project", innerWidth, theme));
+		addLines(body, bodyRows, wrappedValueLines(`${icon(CWD_ICON, theme)} `, displayCwd(data.cwd), innerWidth, "accent", theme));
 
-	const branch = sanitize(data.branch) || "—";
-	addLines(body, bodyRows, wrappedValueLines(`${icon(BRANCH_ICON, theme)} `, branch, innerWidth, "mdLinkUrl", theme));
+		const branch = sanitize(data.branch) || "—";
+		addLines(body, bodyRows, wrappedValueLines(`${icon(BRANCH_ICON, theme)} `, branch, innerWidth, "mdLinkUrl", theme));
 
-	addSectionGap(body, bodyRows, sectionGap);
-	addLine(body, bodyRows, section("Modified Files", innerWidth, theme));
+		addSectionGap(body, bodyRows, sectionGap);
+		addLine(body, bodyRows, section("Modified Files", innerWidth, theme));
 
-	const allFiles = data.modifiedFiles ?? [];
-	const files = allFiles.slice(0, MAX_MODIFIED_FILES);
-	const diffColumns = createFileDiffColumns(files);
-	let usedFiles = 0;
+		const allFiles = data.modifiedFiles ?? [];
+		const files = allFiles.slice(0, MAX_MODIFIED_FILES);
+		const diffColumns = createFileDiffColumns(files);
+		let usedFiles = 0;
 
-	for (let index = 0; index < files.length; index++) {
-		const file = files[index];
-		if (!file || !sanitize(file.path)) continue;
-		const remainingRows = bodyRows - body.length;
-		const reserveMoreRow = index < files.length - 1 || allFiles.length > files.length ? 1 : 0;
-		if (remainingRows <= reserveMoreRow) break;
-		body.push(fileLine(file, innerWidth, diffColumns, theme));
-		usedFiles++;
+		for (let index = 0; index < files.length; index++) {
+			const file = files[index];
+			if (!file || !sanitize(file.path)) continue;
+			const remainingRows = bodyRows - body.length;
+			const reserveMoreRow = index < files.length - 1 || allFiles.length > files.length ? 1 : 0;
+			if (remainingRows <= reserveMoreRow) break;
+			body.push(fileLine(file, innerWidth, diffColumns, theme));
+			usedFiles++;
+		}
+
+		const hiddenCount = allFiles.length - usedFiles;
+		if (hiddenCount > 0) addLine(body, bodyRows, `${bullet(theme)} ${dim(`${hiddenCount} more`, theme)}`);
+		if (allFiles.length === 0) addLine(body, bodyRows, dim("clean", theme));
+
+		while (body.length < bodyRows) body.push("");
+
+		const version = sanitize(data.piVersion);
+		const footerLine = version
+			? `${color(theme, "bashMode", "π")} ${bright(version, theme)}`
+			: color(theme, "bashMode", "π");
+
+		const sidePad = " ".repeat(CONTENT_PADDING);
+		const borderV = borderChar(theme, BOX_VERTICAL);
+		const wrap = (line: string) => `${borderV}${sidePad}${pad(line, innerWidth)}${sidePad}${borderV}`;
+		const rendered = [
+			...body.map(wrap),
+			wrap(padLeft(footerLine, innerWidth)),
+		];
+		profileSample("fixed.sidebar.render.rows.count", rendered.length);
+		profileSample("fixed.sidebar.render.files.count", allFiles.length);
+		profileSample("fixed.sidebar.render.usedFiles.count", usedFiles);
+		return rendered;
+	} finally {
+		profileDuration("fixed.sidebar.render.ms", start);
 	}
-
-	const hiddenCount = allFiles.length - usedFiles;
-	if (hiddenCount > 0) addLine(body, bodyRows, `${bullet(theme)} ${dim(`${hiddenCount} more`, theme)}`);
-	if (allFiles.length === 0) addLine(body, bodyRows, dim("clean", theme));
-
-	while (body.length < bodyRows) body.push("");
-
-	const version = sanitize(data.piVersion);
-	const footerLine = version
-		? `${color(theme, "bashMode", "π")} ${bright(version, theme)}`
-		: color(theme, "bashMode", "π");
-
-	const sidePad = " ".repeat(CONTENT_PADDING);
-	const borderV = borderChar(theme, BOX_VERTICAL);
-	const wrap = (line: string) => `${borderV}${sidePad}${pad(line, innerWidth)}${sidePad}${borderV}`;
-
-	return [
-		...body.map(wrap),
-		wrap(padLeft(footerLine, innerWidth)),
-	];
 }

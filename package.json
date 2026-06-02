@@ -16,7 +16,8 @@
   "license": "MIT",
   "scripts": {
     "dev:link": "npm install",
-    "dev:clean": "rm -rf node_modules"
+    "dev:clean": "rm -rf node_modules",
+    "profile:render": "node scripts/render-profile-bench.mjs"
   },
   "pi": {
     "extensions": [

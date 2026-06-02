@@ -14,6 +14,7 @@ The extension provides:
 - Active-theme integration without forcing a specific theme.
 - Terminal background synchronization with the active theme when supported.
 - Render hot-path patches for streaming assistant output and noisy tool output.
+- Opt-in render profiling for request/render/repaint/update/git metrics without changing UI behavior when disabled.
 - Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it.
 - Optional fixed user zone right sidebar for session id/name, cwd, current branch, modified files, and Pi version metadata on wide terminals.
 
@@ -43,6 +44,7 @@ Current options:
 - The extension should use the active Pi theme rather than overriding it.
 - Patch installers should be reload/session safe and avoid stacked patches.
 - Performance patches should preserve final message/tool correctness while coalescing partial updates.
+- Profiling should be opt-in and should emit aggregate JSONL summaries rather than per-render logs.
 - Git status and assistant speed are best-effort UI hints, not correctness-critical product state.
 
 ## Validation Expectations

@@ -20,6 +20,16 @@ scripts/bin/harness-cli query ...     # Query matrix, backlog, decisions, intake
 
 Run `scripts/bin/harness-cli --help` or `scripts/bin/harness-cli <command> --help` for command details.
 
+## Render Profiling Bench
+
+Run the synthetic render profiling bench with:
+
+```bash
+npm run profile:render
+```
+
+It enables `PI_DROID_PROFILE=1`, writes JSONL to `/tmp` unless `PI_DROID_PROFILE_OUT` is set, and exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. It is CPU/string/layout evidence only; terminal emulator paint cost still needs a real Pi TUI capture.
+
 ## Durable Layer
 
 - Schema files live in `scripts/schema/`.

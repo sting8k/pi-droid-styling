@@ -23,6 +23,7 @@ import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
+import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
 let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
@@ -62,6 +63,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		profileCount("session.shutdown");
+		flushProfile("session_shutdown");
 		syncTerminalThemeForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
@@ -73,6 +76,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		profileCount("session.start");
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
 		setCompactStartupHeader(sessionUi, sessionCwd);
