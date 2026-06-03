@@ -9,6 +9,7 @@ import { getPiVersion } from "./core/pi-version.js";
 import { readSessionMetadata } from "./core/session-metadata.js";
 import { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } from "./performance/debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
+import { installFinishedRenderCache } from "./performance/finished-render-cache.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
@@ -118,6 +119,7 @@ export default function (pi: ExtensionAPI) {
 		installUserMessagePrefix(sessionUi.theme);
 		installAssistantUpdateDebounce(AssistantMessageComponent);
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
+		installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 
 		let lastTerminalBg = "";
 		let lastTerminalFg = "";

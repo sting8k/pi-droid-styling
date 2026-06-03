@@ -64,7 +64,7 @@ async function importBuilt(relativePath) {
 
 compileSources();
 
-const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, toolDebounce, streamingMarkdownCache] = await Promise.all([
+const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, toolDebounce, streamingMarkdownCache, finishedRenderCache] = await Promise.all([
 	importBuilt("performance/profiler.js"),
 	importBuilt("fixed-zone/sidebar.js"),
 	importBuilt("fixed-zone/terminal-split.js"),
@@ -73,6 +73,7 @@ const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, t
 	importBuilt("performance/debounce-update.js"),
 	importBuilt("performance/debounce-tool-updates.js"),
 	importBuilt("messages/streaming-markdown-cache.js"),
+	importBuilt("performance/finished-render-cache.js"),
 ]);
 
 const { flushProfile, profileCount, profileSample } = profiler;
@@ -83,7 +84,8 @@ const { installRenderThrottle } = renderThrottle;
 const { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } = assistantDebounce;
 const { installToolExecutionUpdateDebounce } = toolDebounce;
 const { installAssistantStreamingMarkdownCache } = streamingMarkdownCache;
-const { AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
+const { installFinishedRenderCache } = finishedRenderCache;
+const { AssistantMessageComponent, ToolExecutionComponent } = await import("@earendil-works/pi-coding-agent");
 
 function makeFiles(count) {
 	return Array.from({ length: count }, (_value, index) => ({
@@ -236,6 +238,7 @@ profileSample("bench.assistantLargeChunkActualUpdates", largeChunkAssistantCompo
 
 installAssistantStreamingMarkdownCache(AssistantMessageComponent);
 installAssistantUpdateDebounce(AssistantMessageComponent);
+installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 const benchMarkdownTheme = {
 	heading: (text) => text,
 	link: (text) => text,
@@ -275,6 +278,8 @@ markdownStreamingComponent.updateContent({
 	content: [{ type: "text", text: markdownStreamingTexts.at(-1) }],
 	stopReason: "end",
 });
+markdownStreamingComponent.render(88);
+markdownStreamingComponent.render(88);
 markdownStreamingComponent.render(88);
 profileSample("bench.markdownStreamingInputUpdates", markdownStreamingTexts.length + 2);
 
