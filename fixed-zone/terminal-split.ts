@@ -70,8 +70,18 @@ type SidebarRowsCache = {
 	renderedRows: string[];
 };
 
+type ScrollbarGeometry = {
+	col: number;
+	trackRows: number;
+	maxStart: number;
+	thumbTop: number;
+	thumbRows: number;
+};
+
 const MIN_SCROLLABLE_ROWS = 3;
 const WHEEL_SCROLL_LINES = 2;
+const SCROLLBAR_THUMB = "\x1b[2m▕\x1b[22m";
+const SCROLLBAR_VISIBLE_MS = 1000;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
 const TOP_HINT = "^Shift T TOP";
@@ -117,6 +127,12 @@ function fitLine(line: string, width: number): string {
 function padLine(line: string, width: number): string {
 	const fitted = fitLine(line, width);
 	return `${fitted}${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}`;
+}
+
+function overlayRightColumn(line: string, width: number, glyph: string): string {
+	if (width <= 0) return line;
+	if (width === 1) return glyph;
+	return `${padLine(line, width - 1)}${glyph}`;
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -220,6 +236,10 @@ export class TerminalSplitCompositor {
 	private rootLines: string[] = [];
 	private visibleRootStart = 0;
 	private visibleScrollableRows = 0;
+	private scrollbarDragging = false;
+	private scrollbarDragOffset = 0;
+	private scrollbarVisibleUntil = 0;
+	private scrollbarHideTimer: ReturnType<typeof setTimeout> | undefined;
 	private selectionAnchor: SelectionPoint | null = null;
 	private selectionFocus: SelectionPoint | null = null;
 	private selectionDragging = false;
@@ -288,6 +308,13 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.pendingMouseInput = "";
+		this.scrollbarDragging = false;
+		this.scrollbarDragOffset = 0;
+		this.scrollbarVisibleUntil = 0;
+		if (this.scrollbarHideTimer) {
+			clearTimeout(this.scrollbarHideTimer);
+			this.scrollbarHideTimer = undefined;
+		}
 		this.setSidebarActive(false);
 		this.tui.terminal.write = this.originalTerminalWrite;
 		this.tui.render = this.originalTuiRender;
@@ -635,6 +662,45 @@ export class TerminalSplitCompositor {
 		return start;
 	}
 
+	private markScrollbarInteraction(): void {
+		this.scrollbarVisibleUntil = Date.now() + SCROLLBAR_VISIBLE_MS;
+		if (this.scrollbarHideTimer) clearTimeout(this.scrollbarHideTimer);
+		this.scrollbarHideTimer = setTimeout(() => {
+			this.scrollbarHideTimer = undefined;
+			this.scrollbarVisibleUntil = 0;
+			if (!this.disposed && !this.scrollbarDragging && this.scrollOffset <= 0) this.tui.requestRender();
+		}, SCROLLBAR_VISIBLE_MS);
+	}
+
+	private shouldShowScrollbar(): boolean {
+		return this.scrollbarDragging || this.scrollOffset > 0 || Date.now() <= this.scrollbarVisibleUntil;
+	}
+
+	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const trackRows = Math.max(0, scrollableRows);
+		if (totalRows <= trackRows || trackRows <= 1 || layout.contentWidth <= 0) return null;
+
+		const maxStart = Math.max(1, totalRows - trackRows);
+		const thumbRows = Math.max(1, Math.min(trackRows, Math.round((trackRows / totalRows) * trackRows)));
+		const thumbTop = Math.max(0, Math.min(trackRows - thumbRows, Math.round((start / maxStart) * (trackRows - thumbRows))));
+		return { col: layout.contentWidth, trackRows, maxStart, thumbTop, thumbRows };
+	}
+
+	private renderScrollbarIndicator(visibleLines: string[], totalRows: number, scrollableRows: number, start: number, _width: number): string[] {
+		const geometry = this.computeScrollbarGeometry(totalRows, Math.max(1, visibleLines.length || scrollableRows), start);
+		if (!geometry || !this.shouldShowScrollbar()) return visibleLines;
+
+		profileCount("fixed.scrollbar.render");
+		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
+		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
+
+		return visibleLines.map((line, index) => {
+			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
+			return isThumb ? overlayRightColumn(line, geometry.col, SCROLLBAR_THUMB) : line;
+		});
+	}
+
 	private renderScrollableRoot(_width: number): string[] {
 		const totalStart = profileNow();
 		try {
@@ -712,12 +778,13 @@ export class TerminalSplitCompositor {
 			const visibleStart = profileNow();
 			const visibleLines = lines.slice(start, start + scrollableRows)
 				.map((line, index) => this.renderSelectionHighlight(line, start + index));
+			const rootLinesWithScrollbar = this.renderScrollbarIndicator(visibleLines, lines.length, scrollableRows, start, layout.contentWidth);
 			profileDuration("fixed.root.visibleLines.ms", visibleStart);
-			profileSample("fixed.root.visibleRows.count", visibleLines.length);
-			if (!layout.active) return visibleLines;
+			profileSample("fixed.root.visibleRows.count", rootLinesWithScrollbar.length);
+			if (!layout.active) return rootLinesWithScrollbar;
 			const sidebarRows = this.renderSidebarRows(layout, rawRows);
 			const composeStart = profileNow();
-			const composed = visibleLines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
+			const composed = rootLinesWithScrollbar.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
 			profileDuration("fixed.root.composeSidebar.ms", composeStart);
 			return composed;
 		} finally {
@@ -729,30 +796,91 @@ export class TerminalSplitCompositor {
 		return Math.max(0, this.lastRootLineCount - this.getScrollableRows());
 	}
 
+	private setScrollOffset(nextOffset: number, reason: string): boolean {
+		const maxOffset = this.getMaxScrollOffset();
+		const next = Math.max(0, Math.min(maxOffset, nextOffset));
+		if (next === this.scrollOffset) {
+			profileCount(`fixed.input.${reason}.noop`);
+			return false;
+		}
+
+		this.clearSelection();
+		this.markScrollbarInteraction();
+		this.scrollOffset = next;
+		this.tui.requestRender();
+		return true;
+	}
+
 	private scrollBy(delta: number): void {
 		profileCount("fixed.input.scrollBy.calls");
 		profileSample("fixed.input.scrollBy.delta", delta);
-		const maxOffset = this.getMaxScrollOffset();
-		this.clearSelection();
-		this.scrollOffset = Math.max(0, Math.min(maxOffset, this.scrollOffset + delta));
-		this.tui.requestRender();
+		this.setScrollOffset(this.scrollOffset + delta, "scrollBy");
 	}
 
 	private jumpToTop(): void {
 		profileCount("fixed.input.jumpTop.calls");
-		this.clearSelection();
-		this.scrollOffset = this.getMaxScrollOffset();
-		this.tui.requestRender();
+		this.setScrollOffset(this.getMaxScrollOffset(), "jumpTop");
 	}
 
 	private jumpToBottom(): void {
 		profileCount("fixed.input.jumpBottom.calls");
-		this.clearSelection();
-		this.scrollOffset = 0;
-		this.tui.requestRender();
+		this.setScrollOffset(0, "jumpBottom");
+	}
+
+	private scrollbarGeometryForPacket(packet: SgrMousePacket): ScrollbarGeometry | null {
+		const geometry = this.computeScrollbarGeometry();
+		if (!geometry || !this.shouldShowScrollbar() || packet.col !== geometry.col || packet.row < 1 || packet.row > geometry.trackRows) return null;
+		return geometry;
+	}
+
+	private setScrollFromScrollbarRow(row: number, geometry: ScrollbarGeometry, dragOffset: number, reason: string): void {
+		const maxThumbTop = Math.max(0, geometry.trackRows - geometry.thumbRows);
+		const thumbTop = Math.max(0, Math.min(maxThumbTop, row - 1 - dragOffset));
+		const start = maxThumbTop <= 0 ? 0 : Math.round((thumbTop / maxThumbTop) * geometry.maxStart);
+		profileSample(`fixed.scrollbar.${reason}.start`, start);
+		this.setScrollOffset(this.getMaxScrollOffset() - start, `scrollbar.${reason}`);
+	}
+
+	private handleScrollbarPacket(packet: SgrMousePacket): boolean {
+		if (this.scrollbarDragging) {
+			if (isMouseRelease(packet)) {
+				profileCount("fixed.scrollbar.drag.finish");
+				this.scrollbarDragging = false;
+				this.scrollbarDragOffset = 0;
+				this.markScrollbarInteraction();
+				return true;
+			}
+
+			if (isLeftDrag(packet)) {
+				const geometry = this.computeScrollbarGeometry();
+				if (!geometry) return true;
+				profileCount("fixed.scrollbar.drag.move");
+				this.setScrollFromScrollbarRow(packet.row, geometry, this.scrollbarDragOffset, "drag");
+				return true;
+			}
+		}
+
+		const geometry = this.scrollbarGeometryForPacket(packet);
+		if (!geometry || !isLeftPress(packet)) return false;
+
+		const rowIndex = packet.row - 1;
+		if (rowIndex >= geometry.thumbTop && rowIndex < geometry.thumbTop + geometry.thumbRows) {
+			profileCount("fixed.scrollbar.drag.start");
+			this.clearSelection();
+			this.tui.requestRender();
+			this.scrollbarDragging = true;
+			this.markScrollbarInteraction();
+			this.scrollbarDragOffset = rowIndex - geometry.thumbTop;
+			return true;
+		}
+
+		profileCount("fixed.scrollbar.track.click");
+		this.scrollBy(rowIndex < geometry.thumbTop ? geometry.trackRows : -geometry.trackRows);
+		return true;
 	}
 
 	private handleMousePacket(packet: SgrMousePacket): void {
+		if (this.handleScrollbarPacket(packet)) return;
 		const delta = mouseScrollDelta(packet);
 		if (delta !== 0) {
 			profileCount("fixed.input.mouseScroll.calls");
