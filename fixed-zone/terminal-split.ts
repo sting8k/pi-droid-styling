@@ -80,7 +80,10 @@ type ScrollbarGeometry = {
 };
 
 const MIN_SCROLLABLE_ROWS = 3;
-const WHEEL_SCROLL_LINES = 2;
+const WHEEL_SCROLL_BASE_LINES = 1;
+const WHEEL_SCROLL_MAX_LINES = 4;
+const WHEEL_SCROLL_BURST_MS = 90;
+const WHEEL_SCROLL_RESET_MS = 160;
 const SCROLLBAR_GLYPH = "█";
 const SCROLLBAR_TRACK_COLOR = "borderMuted";
 const SCROLLBAR_THUMB_COLOR = "dim";
@@ -89,12 +92,15 @@ const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 2500;
 const SCROLLBAR_HIT_COLUMNS = 3;
+// Leave the physical last column blank; exact-width glyph writes can leave terminals in a pending-wrap state.
+const SCROLLBAR_WRAP_GUARD_COLUMNS = 1;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
 const TOP_HINT = "^Shift T TOP";
 const BOTTOM_HINT = "^Shift G BOT";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
+const RESET_TERMINAL_SEGMENT = "\x1b[0m\x1b]8;;\x07";
 
 function setScrollRegion(top: number, bottom: number): string {
 	return `\x1b[${top};${bottom}r`;
@@ -106,6 +112,10 @@ function moveCursor(row: number, col: number): string {
 
 function clearLine(): string {
 	return "\x1b[2K";
+}
+
+function clearLineRight(): string {
+	return "\x1b[K";
 }
 
 function saveCursor(): string {
@@ -134,12 +144,6 @@ function fitLine(line: string, width: number): string {
 function padLine(line: string, width: number): string {
 	const fitted = fitLine(line, width);
 	return `${fitted}${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}`;
-}
-
-function overlayRightColumn(line: string, width: number, glyph: string): string {
-	if (width <= 0) return line;
-	if (width === 1) return glyph;
-	return `${padLine(line, width - 1)}${glyph}`;
 }
 
 function applyContentInset(lines: readonly string[], width: number): string[] {
@@ -185,11 +189,11 @@ function mouseBaseButton(button: number): number {
 	return button & ~(4 | 8 | 16 | 32);
 }
 
-function mouseScrollDelta(packet: SgrMousePacket): number {
+function mouseScrollDirection(packet: SgrMousePacket): number {
 	if (packet.final !== "M") return 0;
 	const baseButton = mouseBaseButton(packet.button);
-	if (baseButton === 64) return WHEEL_SCROLL_LINES;
-	if (baseButton === 65) return -WHEEL_SCROLL_LINES;
+	if (baseButton === 64) return 1;
+	if (baseButton === 65) return -1;
 	return 0;
 }
 
@@ -266,6 +270,9 @@ export class TerminalSplitCompositor {
 	private selectionFocus: SelectionPoint | null = null;
 	private selectionDragging = false;
 	private pendingMouseInput = "";
+	private lastWheelAt = 0;
+	private lastWheelDirection = 0;
+	private wheelBurst = 0;
 	private sidebarActive = false;
 	private sidebarRows: string[] = [];
 	private sidebarRowsCache: SidebarRowsCache | undefined;
@@ -330,6 +337,9 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.pendingMouseInput = "";
+		this.lastWheelAt = 0;
+		this.lastWheelDirection = 0;
+		this.wheelBurst = 0;
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -358,6 +368,10 @@ export class TerminalSplitCompositor {
 		profileCount("terminal.write.raw.calls");
 		profileTextBytes("terminal.write.raw.bytes", data);
 		this.originalTerminalWrite.call(this.tui.terminal, data);
+	}
+
+	private writeGrid(data: string): void {
+		this.writeRaw(data);
 	}
 
 	private getRawRows(): number {
@@ -691,7 +705,7 @@ export class TerminalSplitCompositor {
 		this.scrollbarHideTimer = setTimeout(() => {
 			this.scrollbarHideTimer = undefined;
 			this.scrollbarVisibleUntil = 0;
-			if (!this.disposed && !this.scrollbarDragging && this.scrollOffset <= 0) this.tui.requestRender();
+			if (!this.disposed && !this.scrollbarDragging && this.scrollOffset <= 0) this.tui.requestRender(true);
 		}, SCROLLBAR_VISIBLE_MS);
 	}
 
@@ -716,28 +730,13 @@ export class TerminalSplitCompositor {
 	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const trackRows = Math.max(0, scrollableRows);
-		if (totalRows <= trackRows || trackRows <= 1 || layout.contentWidth <= 0) return null;
+		const scrollbarCol = Math.max(1, layout.contentWidth - SCROLLBAR_WRAP_GUARD_COLUMNS);
+		if (totalRows <= trackRows || trackRows <= 1 || scrollbarCol <= 0) return null;
 
 		const maxStart = Math.max(1, totalRows - trackRows);
 		const thumbRows = Math.max(1, Math.min(trackRows, Math.round((trackRows / totalRows) * trackRows)));
 		const thumbTop = Math.max(0, Math.min(trackRows - thumbRows, Math.round((start / maxStart) * (trackRows - thumbRows))));
-		return { col: layout.contentWidth, trackRows, maxStart, thumbTop, thumbRows };
-	}
-
-	private renderScrollbarIndicator(visibleLines: string[], totalRows: number, scrollableRows: number, start: number, _width: number): string[] {
-		const geometry = this.computeScrollbarGeometry(totalRows, Math.max(1, visibleLines.length || scrollableRows), start);
-		if (!geometry || !this.shouldShowScrollbar()) return visibleLines;
-
-		profileCount("fixed.scrollbar.render");
-		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
-		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
-
-		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
-		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
-		return visibleLines.map((line, index) => {
-			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			return overlayRightColumn(line, geometry.col, isThumb ? thumbGlyph : trackGlyph);
-		});
+		return { col: scrollbarCol, trackRows, maxStart, thumbTop, thumbRows };
 	}
 
 	private renderScrollableRoot(_width: number): string[] {
@@ -822,13 +821,12 @@ export class TerminalSplitCompositor {
 			const visibleStart = profileNow();
 			const visibleLines = lines.slice(start, start + scrollableRows)
 				.map((line, index) => this.renderSelectionHighlight(line, start + index));
-			const rootLinesWithScrollbar = this.renderScrollbarIndicator(visibleLines, lines.length, scrollableRows, start, layout.contentWidth);
 			profileDuration("fixed.root.visibleLines.ms", visibleStart);
-			profileSample("fixed.root.visibleRows.count", rootLinesWithScrollbar.length);
-			if (!layout.active) return rootLinesWithScrollbar;
+			profileSample("fixed.root.visibleRows.count", visibleLines.length);
+			if (!layout.active) return visibleLines;
 			const sidebarRows = this.renderSidebarRows(layout, rawRows);
 			const composeStart = profileNow();
-			const composed = rootLinesWithScrollbar.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
+			const composed = visibleLines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
 			profileDuration("fixed.root.composeSidebar.ms", composeStart);
 			return composed;
 		} finally {
@@ -861,6 +859,25 @@ export class TerminalSplitCompositor {
 		this.setScrollOffset(this.scrollOffset + delta, "scrollBy");
 	}
 
+	private getAcceleratedWheelScrollDelta(direction: number, now = Date.now()): number {
+		const elapsed = this.lastWheelAt > 0 ? now - this.lastWheelAt : Number.POSITIVE_INFINITY;
+		const sameDirection = direction === this.lastWheelDirection;
+
+		if (!sameDirection || elapsed > WHEEL_SCROLL_RESET_MS) {
+			this.wheelBurst = 0;
+		} else if (elapsed <= WHEEL_SCROLL_BURST_MS) {
+			this.wheelBurst = Math.min(WHEEL_SCROLL_MAX_LINES - WHEEL_SCROLL_BASE_LINES, this.wheelBurst + 1);
+		} else {
+			this.wheelBurst = Math.max(0, this.wheelBurst - 1);
+		}
+
+		this.lastWheelAt = now;
+		this.lastWheelDirection = direction;
+		const lines = Math.min(WHEEL_SCROLL_MAX_LINES, WHEEL_SCROLL_BASE_LINES + this.wheelBurst);
+		profileSample("fixed.input.mouseScroll.lines", lines);
+		return direction * lines;
+	}
+
 	private jumpToTop(): void {
 		profileCount("fixed.input.jumpTop.calls");
 		this.setScrollOffset(this.getMaxScrollOffset(), "jumpTop");
@@ -874,8 +891,9 @@ export class TerminalSplitCompositor {
 	private scrollbarGeometryForPacket(packet: SgrMousePacket): ScrollbarGeometry | null {
 		const geometry = this.computeScrollbarGeometry();
 		if (!geometry || packet.row < 1 || packet.row > geometry.trackRows) return null;
-		const hitStartCol = Math.max(1, geometry.col - SCROLLBAR_HIT_COLUMNS + 1);
-		if (packet.col < hitStartCol || packet.col > geometry.col) return null;
+		const hitEndCol = Math.min(this.getSidebarLayout().contentWidth, geometry.col + SCROLLBAR_WRAP_GUARD_COLUMNS);
+		const hitStartCol = Math.max(1, hitEndCol - SCROLLBAR_HIT_COLUMNS + 1);
+		if (packet.col < hitStartCol || packet.col > hitEndCol) return null;
 
 		const rowIndex = packet.row - 1;
 		const hitsThumb = rowIndex >= geometry.thumbTop && rowIndex < geometry.thumbTop + geometry.thumbRows;
@@ -931,10 +949,10 @@ export class TerminalSplitCompositor {
 
 	private handleMousePacket(packet: SgrMousePacket): void {
 		if (this.handleScrollbarPacket(packet)) return;
-		const delta = mouseScrollDelta(packet);
-		if (delta !== 0) {
+		const wheelDirection = mouseScrollDirection(packet);
+		if (wheelDirection !== 0) {
 			profileCount("fixed.input.mouseScroll.calls");
-			this.scrollBy(delta);
+			this.scrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
 			return;
 		}
 
@@ -1083,19 +1101,20 @@ export class TerminalSplitCompositor {
 			const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 			const sidebarRows = this.renderSidebarRows(layout, rawRows);
 			this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-			if (cluster.lines.length === 0 && !layout.active) {
+			const scrollbarPaint = this.buildScrollbarPaint();
+			if (cluster.lines.length === 0 && !layout.active && scrollbarPaint.length === 0) {
 				profileCount("fixed.repaint.skip.empty");
 				return;
 			}
 			this.painting = true;
 			try {
-				const output = this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows);
+				const output = this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows) + scrollbarPaint;
 				if (output.length === 0) {
 					profileCount("fixed.repaint.skip.unchanged");
 					return;
 				}
 				profileTextBytes("fixed.repaint.output.bytes", output);
-				this.writeRaw(output);
+				this.writeGrid(output);
 			} finally {
 				this.painting = false;
 			}
@@ -1126,9 +1145,9 @@ export class TerminalSplitCompositor {
 				if (clusterHeight === 0) {
 					const sidebarRows = this.renderSidebarRows(layout, rawRows);
 					this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
-					const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows);
+					const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildScrollbarPaint();
 					profileTextBytes("fixed.write.output.bytes", output);
-					this.writeRaw(output);
+					this.writeGrid(output);
 					return;
 				}
 				const scrollBottom = this.getScrollBottom(rawRows, clusterHeight);
@@ -1136,13 +1155,13 @@ export class TerminalSplitCompositor {
 				if (this.renderPassActive) {
 					profileCount("fixed.write.core.renderPassOnly");
 					this.moveToTuiCursor(scrollBottom);
-					this.writeRaw(data);
+					this.writeGrid(data);
 					return;
 				}
 				const sidebarRows = this.renderSidebarRows(layout, rawRows);
-				const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows);
+				const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows) + this.buildScrollbarPaint();
 				profileTextBytes("fixed.write.output.bytes", output);
-				this.writeRaw(output);
+				this.writeGrid(output);
 			} finally {
 				this.painting = false;
 				if (!this.renderPassActive) this.sidebarRowsCache = undefined;
@@ -1150,6 +1169,26 @@ export class TerminalSplitCompositor {
 		} finally {
 			profileDuration("fixed.write.core.ms", totalStart);
 		}
+	}
+
+	private buildScrollbarPaint(): string {
+		const geometry = this.computeScrollbarGeometry();
+		if (!geometry || !this.shouldShowScrollbar()) return "";
+
+		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
+		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
+		let output = saveCursor();
+		for (let index = 0; index < geometry.trackRows; index++) {
+			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
+			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearLineRight();
+		}
+		const painted = output + restoreCursor();
+		profileCount("fixed.scrollbar.paint");
+		profileSample("fixed.scrollbar.paint.rows.count", geometry.trackRows);
+		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
+		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
+		profileTextBytes("fixed.scrollbar.paint.bytes", painted);
+		return painted;
 	}
 
 	private buildSidebarPaint(rawRows: number, layout: FixedZoneSidebarLayout, sidebarRows = this.renderSidebarRows(layout, rawRows)): string {

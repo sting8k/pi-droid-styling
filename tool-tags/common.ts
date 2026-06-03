@@ -353,6 +353,10 @@ export function boxedWrappedLines(theme: any, content: string, width: number): s
 	return safeWrapTextWithAnsi(content, boxInnerWidth(width)).map((line) => boxLine(theme, line, width));
 }
 
+function boxedTruncatedLine(theme: any, content: string, width: number): string {
+	return boxLine(theme, safeTruncateToWidth(content, boxInnerWidth(width), "…"), width);
+}
+
 type RenderLinesCache = {
 	width: number;
 	lines: string[];
@@ -378,8 +382,8 @@ function renderBoxedOutputLines(theme: any, outputLines: string[], width: number
 	let truncated = false;
 
 	for (; nextInputIndex < outputLines.length; nextInputIndex++) {
-		const wrapped = boxedWrappedLines(theme, outputLines[nextInputIndex] ?? "", width);
-		if (!pushBoundedLines(head, wrapped, headLimit)) {
+		const line = boxedTruncatedLine(theme, outputLines[nextInputIndex] ?? "", width);
+		if (!pushBoundedLines(head, [line], headLimit)) {
 			truncated = true;
 			nextInputIndex++;
 			break;
@@ -391,8 +395,8 @@ function renderBoxedOutputLines(theme: any, outputLines: string[], width: number
 	const tail: string[] = [];
 	const tailStart = Math.max(nextInputIndex, outputLines.length - tailLimit);
 	for (let i = tailStart; i < outputLines.length; i++) {
-		const wrapped = boxedWrappedLines(theme, outputLines[i] ?? "", width);
-		tail.push(...wrapped);
+		const line = boxedTruncatedLine(theme, outputLines[i] ?? "", width);
+		tail.push(line);
 		if (tail.length > tailLimit) tail.splice(0, tail.length - tailLimit);
 	}
 
