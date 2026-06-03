@@ -81,7 +81,9 @@ type ScrollbarGeometry = {
 const MIN_SCROLLABLE_ROWS = 3;
 const WHEEL_SCROLL_LINES = 2;
 const SCROLLBAR_THUMB = "\x1b[2m▕\x1b[22m";
+const SCROLLBAR_THUMB_ACTIVE = "\x1b[2m▐\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 1000;
+const SCROLLBAR_HIT_COLUMNS = 3;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
 const TOP_HINT = "^Shift T TOP";
@@ -676,6 +678,10 @@ export class TerminalSplitCompositor {
 		return this.scrollbarDragging || this.scrollOffset > 0 || Date.now() <= this.scrollbarVisibleUntil;
 	}
 
+	private isScrollbarActive(): boolean {
+		return this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
+	}
+
 	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const trackRows = Math.max(0, scrollableRows);
@@ -695,9 +701,10 @@ export class TerminalSplitCompositor {
 		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
 		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
 
+		const thumbGlyph = this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE : SCROLLBAR_THUMB;
 		return visibleLines.map((line, index) => {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			return isThumb ? overlayRightColumn(line, geometry.col, SCROLLBAR_THUMB) : line;
+			return isThumb ? overlayRightColumn(line, geometry.col, thumbGlyph) : line;
 		});
 	}
 
@@ -829,7 +836,13 @@ export class TerminalSplitCompositor {
 
 	private scrollbarGeometryForPacket(packet: SgrMousePacket): ScrollbarGeometry | null {
 		const geometry = this.computeScrollbarGeometry();
-		if (!geometry || !this.shouldShowScrollbar() || packet.col !== geometry.col || packet.row < 1 || packet.row > geometry.trackRows) return null;
+		if (!geometry || packet.row < 1 || packet.row > geometry.trackRows) return null;
+		const hitStartCol = Math.max(1, geometry.col - SCROLLBAR_HIT_COLUMNS + 1);
+		if (packet.col < hitStartCol || packet.col > geometry.col) return null;
+
+		const rowIndex = packet.row - 1;
+		const hitsThumb = rowIndex >= geometry.thumbTop && rowIndex < geometry.thumbTop + geometry.thumbRows;
+		if (!this.shouldShowScrollbar() && !hitsThumb) return null;
 		return geometry;
 	}
 
