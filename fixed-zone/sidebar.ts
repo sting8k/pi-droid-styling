@@ -273,7 +273,7 @@ export function renderFixedZoneSidebar(info: FixedZoneSidebarInfo | null | undef
 		if (safeRows === 0) return [];
 
 		const data = info ?? {};
-		const innerWidth = Math.max(1, safeWidth - 2 - CONTENT_PADDING * 2);
+		const innerWidth = Math.max(1, safeWidth - 1 - CONTENT_PADDING * 2);
 		const bodyRows = Math.max(0, safeRows - 1);
 		const body: string[] = [];
 		const sectionGap = sectionGapRows(bodyRows);
@@ -319,7 +319,7 @@ export function renderFixedZoneSidebar(info: FixedZoneSidebarInfo | null | undef
 
 		const sidePad = " ".repeat(CONTENT_PADDING);
 		const borderV = borderChar(theme, BOX_VERTICAL);
-		const wrap = (line: string) => `${borderV}${sidePad}${pad(line, innerWidth)}${sidePad}${borderV}`;
+		const wrap = (line: string) => `${sidePad}${pad(line, innerWidth)}${sidePad}${borderV}`;
 		const rendered = [
 			...body.map(wrap),
 			wrap(padLeft(footerLine, innerWidth)),

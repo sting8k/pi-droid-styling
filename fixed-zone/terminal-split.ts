@@ -81,13 +81,13 @@ type ScrollbarGeometry = {
 
 const MIN_SCROLLABLE_ROWS = 3;
 const WHEEL_SCROLL_LINES = 2;
-const SCROLLBAR_GLYPH = "▐";
+const SCROLLBAR_GLYPH = "█";
 const SCROLLBAR_TRACK_COLOR = "borderMuted";
 const SCROLLBAR_THUMB_COLOR = "dim";
 const SCROLLBAR_THUMB_ACTIVE_COLOR = "muted";
 const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
-const SCROLLBAR_VISIBLE_MS = 1000;
+const SCROLLBAR_VISIBLE_MS = 2500;
 const SCROLLBAR_HIT_COLUMNS = 3;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
@@ -696,7 +696,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private shouldShowScrollbar(): boolean {
-		return this.scrollOffset > 0 || this.scrollbarDragging;
+		return this.scrollOffset > 0 || this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
 	}
 
 	private isScrollbarActive(): boolean {
