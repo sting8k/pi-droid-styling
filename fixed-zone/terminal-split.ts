@@ -80,8 +80,12 @@ type ScrollbarGeometry = {
 
 const MIN_SCROLLABLE_ROWS = 3;
 const WHEEL_SCROLL_LINES = 2;
-const SCROLLBAR_THUMB = "\x1b[2m▕\x1b[22m";
-const SCROLLBAR_THUMB_ACTIVE = "\x1b[2m▐\x1b[22m";
+const SCROLLBAR_GLYPH = "▐";
+const SCROLLBAR_TRACK_COLOR = "borderMuted";
+const SCROLLBAR_THUMB_COLOR = "dim";
+const SCROLLBAR_THUMB_ACTIVE_COLOR = "muted";
+const SCROLLBAR_DIM = "\x1b[2m";
+const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 1000;
 const SCROLLBAR_HIT_COLUMNS = 3;
 const JUMP_BOTTOM_INPUT = "\x07";
@@ -675,11 +679,21 @@ export class TerminalSplitCompositor {
 	}
 
 	private shouldShowScrollbar(): boolean {
-		return this.scrollbarDragging || this.scrollOffset > 0 || Date.now() <= this.scrollbarVisibleUntil;
+		return this.scrollOffset > 0 || this.scrollbarDragging;
 	}
 
 	private isScrollbarActive(): boolean {
 		return this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
+	}
+
+	private formatScrollbarGlyph(color: string): string {
+		const theme = this.options.sidebar?.theme;
+		try {
+			if (theme && typeof theme.fg === "function") {
+				return `${SCROLLBAR_RESET_INTENSITY}${theme.fg(color, SCROLLBAR_GLYPH)}${SCROLLBAR_RESET_INTENSITY}`;
+			}
+		} catch {}
+		return `${SCROLLBAR_RESET_INTENSITY}${SCROLLBAR_DIM}${SCROLLBAR_GLYPH}${SCROLLBAR_RESET_INTENSITY}`;
 	}
 
 	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
@@ -701,10 +715,11 @@ export class TerminalSplitCompositor {
 		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
 		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
 
-		const thumbGlyph = this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE : SCROLLBAR_THUMB;
+		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
+		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
 		return visibleLines.map((line, index) => {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			return isThumb ? overlayRightColumn(line, geometry.col, thumbGlyph) : line;
+			return overlayRightColumn(line, geometry.col, isThumb ? thumbGlyph : trackGlyph);
 		});
 	}
 
