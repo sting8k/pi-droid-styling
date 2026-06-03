@@ -15,6 +15,9 @@ import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
 import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
+import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
+import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
+import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
 import { installRenderThrottle } from "./performance/render-throttle.js";
 import { installRenderWidthGuard } from "./performance/render-width-guard.js";
 import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
@@ -172,6 +175,7 @@ export default function (pi: ExtensionAPI) {
 			setAssistantUpdateRenderRequester(() => tui.requestRender());
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
+			installRenderAutowrapGuard(tui as any);
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
@@ -207,6 +211,8 @@ export default function (pi: ExtensionAPI) {
 				},
 			});
 			installRenderWidthGuard(tui as any);
+			installRenderPhysicalSync(tui as any);
+			installRenderFrameDebug(tui as any);
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {

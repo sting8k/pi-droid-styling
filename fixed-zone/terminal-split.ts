@@ -91,6 +91,7 @@ const SCROLLBAR_THUMB_ACTIVE_COLOR = "muted";
 const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 2500;
+const SCROLLBAR_VISUAL_ENABLED = true;
 const SCROLLBAR_HIT_COLUMNS = 3;
 // Leave the physical last column blank; exact-width glyph writes can leave terminals in a pending-wrap state.
 const SCROLLBAR_WRAP_GUARD_COLUMNS = 1;
@@ -100,7 +101,10 @@ const TOP_HINT = "^Shift T TOP";
 const BOTTOM_HINT = "^Shift G BOT";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
+const DISABLE_AUTOWRAP = "\x1b[?7l";
+const ENABLE_AUTOWRAP = "\x1b[?7h";
 const RESET_TERMINAL_SEGMENT = "\x1b[0m\x1b]8;;\x07";
+const CLEAR_VIEWPORT = "\x1b[2J\x1b[H";
 
 function setScrollRegion(top: number, bottom: number): string {
 	return `\x1b[${top};${bottom}r`;
@@ -302,6 +306,7 @@ export class TerminalSplitCompositor {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
+		this.clearViewportForInitialRender();
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -371,7 +376,14 @@ export class TerminalSplitCompositor {
 	}
 
 	private writeGrid(data: string): void {
-		this.writeRaw(data);
+		if (data.length === 0) return;
+		this.writeRaw(DISABLE_AUTOWRAP + data + ENABLE_AUTOWRAP);
+	}
+
+	private clearViewportForInitialRender(): void {
+		const previousLines = (this.tui as TuiLike & { previousLines?: unknown }).previousLines;
+		if (Array.isArray(previousLines) && previousLines.length > 0) return;
+		this.writeRaw(CLEAR_VIEWPORT);
 	}
 
 	private getRawRows(): number {
@@ -498,9 +510,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private getClusterOptions(): FixedZoneClusterOptions {
-		return this.scrollOffset > 0
-			? { scrollHint: BOTTOM_HINT }
-			: { scrollHint: TOP_HINT };
+		return { scrollHint: this.scrollOffset > 0 ? BOTTOM_HINT : TOP_HINT };
 	}
 
 	private getClusterStateKey(): string {
@@ -729,6 +739,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
+		if (!SCROLLBAR_VISUAL_ENABLED) return null;
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const trackRows = Math.max(0, scrollableRows);
 		const scrollbarCol = Math.max(1, layout.contentWidth - SCROLLBAR_WRAP_GUARD_COLUMNS);
@@ -1247,7 +1258,7 @@ export class TerminalSplitCompositor {
 			this.lastPaintedClusterRows = paintRows;
 			let output = saveCursor();
 			paintRows.forEach((line, index) => {
-				output += moveCursor(startRow + index, 1) + clearLine() + line;
+				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + clearLine() + line;
 			});
 			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
 			profileCount("fixed.cluster.paint.full");

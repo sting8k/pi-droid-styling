@@ -20,21 +20,13 @@ export interface FixedZoneCluster {
 
 export interface FixedZoneClusterOptions {
 	scrollHint?: string;
-	showScrollDivider?: boolean;
 	hintRightInset?: number;
-	dividerInset?: number;
 }
 
 const DIM_START = "\x1b[2m";
 const DIM_END = "\x1b[22m";
 const DEFAULT_CONTENT_INSET = 2;
 const MIN_HINT_GAP = 2;
-
-function scrollDividerLine(width: number, inset = DEFAULT_CONTENT_INSET): string {
-	const side = " ".repeat(Math.max(0, Math.min(inset, Math.floor((width - 1) / 2))));
-	const dividerWidth = Math.max(1, width - safeVisibleWidth(side) * 2);
-	return `${side}${DIM_START}${"┄".repeat(dividerWidth)}${DIM_END}${side}`;
-}
 
 function normalizeLine(line: string, width: number): string {
 	if (safeVisibleWidth(line) <= width) return line;
@@ -102,11 +94,6 @@ export function renderFixedUserZoneCluster(renderables: HiddenRenderable[], widt
 	}
 
 	cursor = applyScrollHintButton(lines, cursor, options.scrollHint, width, options.hintRightInset);
-
-	if (options.showScrollDivider) {
-		lines.unshift(normalizeLine(scrollDividerLine(width, options.dividerInset), width));
-		if (cursor) cursor = { ...cursor, row: cursor.row + 1 };
-	}
 
 	if (maxRows <= 0 || lines.length <= maxRows) return { lines, cursor };
 
