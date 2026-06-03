@@ -2,6 +2,7 @@ import { matchesKey } from "@earendil-works/pi-tui";
 import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
 import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -139,6 +140,21 @@ function overlayRightColumn(line: string, width: number, glyph: string): string 
 	if (width <= 0) return line;
 	if (width === 1) return glyph;
 	return `${padLine(line, width - 1)}${glyph}`;
+}
+
+function applyContentInset(lines: readonly string[], width: number): string[] {
+	return lines.map((line) => padTuiContentLine(line, width));
+}
+
+function applyContentInsetToCluster(cluster: FixedZoneCluster, width: number): FixedZoneCluster {
+	const result: FixedZoneCluster = { lines: applyContentInset(cluster.lines, width) };
+	if (cluster.cursor) {
+		result.cursor = {
+			...cluster.cursor,
+			col: getTuiContentCursorColumn(cluster.cursor.col, width),
+		};
+	}
+	return result;
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -456,9 +472,10 @@ export class TerminalSplitCompositor {
 		const start = profileNow();
 		this.renderingCluster = true;
 		try {
-			const cluster = renderFixedUserZoneCluster(this.hiddenRenderables, width, this.getMaxClusterRows(rawRows), this.getClusterOptions());
-			profileSample("fixed.cluster.rows.count", cluster.lines.length);
-			return cluster;
+			const cluster = renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), this.getMaxClusterRows(rawRows), this.getClusterOptions());
+			const insetCluster = applyContentInsetToCluster(cluster, width);
+			profileSample("fixed.cluster.rows.count", insetCluster.lines.length);
+			return insetCluster;
 		} finally {
 			this.renderingCluster = false;
 			profileDuration("fixed.cluster.render.ms", start);
@@ -740,10 +757,12 @@ export class TerminalSplitCompositor {
 			const scrollableRows = this.getScrollableRows();
 			const retainedLines = Math.max(1, MAX_FIXED_ROOT_LINES - 1);
 			const rootRenderStart = profileNow();
+			const rootRenderWidth = getTuiContentInnerWidth(layout.contentWidth);
 			let lines: string[];
 			let omittedLines = 0;
+			let linesHaveContentInset = false;
 			try {
-				const windowed = this.renderWindowedRoot(layout.contentWidth, retainedLines);
+				const windowed = this.renderWindowedRoot(rootRenderWidth, retainedLines);
 				if (windowed) {
 					profileCount("fixed.root.windowRender.used");
 					profileDuration("fixed.root.windowRender.ms", rootRenderStart);
@@ -754,16 +773,17 @@ export class TerminalSplitCompositor {
 					profileSample("fixed.root.windowRender.omitted.count", windowed.omitted ? 1 : 0);
 					profileSample("fixed.root.windowRender.omittedUnits.count", windowed.omitted ? windowed.skippedComponents + windowed.truncatedLines : 0);
 					omittedLines = windowed.omitted ? windowed.truncatedLines : 0;
-					lines = windowed.omitted ? [this.rootOmittedMarker(windowed, layout.contentWidth), ...windowed.lines] : windowed.lines;
+					lines = windowed.omitted ? [this.rootOmittedMarker(windowed, rootRenderWidth), ...windowed.lines] : windowed.lines;
 				} else {
 					profileCount("fixed.root.windowRender.fallback.noChildren");
 					const renderedLines = this.originalTuiRender(layout.contentWidth);
 					profileDuration("fixed.root.originalRender.ms", rootRenderStart);
 					profileSample("fixed.root.originalLines.count", renderedLines.length);
 					omittedLines = Math.max(0, renderedLines.length - retainedLines);
+					linesHaveContentInset = true;
 					lines = omittedLines > 0
 						? [
-							safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
+							padTuiContentLine(safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, rootRenderWidth, "…"), layout.contentWidth),
 							...renderedLines.slice(-retainedLines),
 						]
 						: renderedLines;
@@ -775,13 +795,15 @@ export class TerminalSplitCompositor {
 				profileDuration("fixed.root.originalRender.ms", fallbackStart);
 				profileSample("fixed.root.originalLines.count", renderedLines.length);
 				omittedLines = Math.max(0, renderedLines.length - retainedLines);
+				linesHaveContentInset = true;
 				lines = omittedLines > 0
 					? [
-						safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, layout.contentWidth, "…"),
+						padTuiContentLine(safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, rootRenderWidth, "…"), layout.contentWidth),
 						...renderedLines.slice(-retainedLines),
 					]
 					: renderedLines;
 			}
+			if (!linesHaveContentInset) lines = applyContentInset(lines, layout.contentWidth);
 			profileSample("fixed.root.lines.count", lines.length);
 			profileSample("fixed.root.retainedLines.count", lines.length);
 			profileSample("fixed.root.omittedLines.count", omittedLines);

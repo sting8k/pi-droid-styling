@@ -23,6 +23,23 @@ function isTerminalImageLine(line: string): boolean {
 	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM_IMAGE_PREFIX);
 }
 
+export function getTuiContentInnerWidth(width: number): number {
+	return Math.max(1, width - PAD_LEFT - PAD_RIGHT);
+}
+
+export function getTuiContentCursorColumn(col: number, width: number): number {
+	return Math.max(1, Math.min(width, col + PAD_LEFT));
+}
+
+export function padTuiContentLine(line: string, width: number): string {
+	const padded = `${PADDING_PREFIX}${line}`;
+	if (isTerminalImageLine(line)) return padded;
+	if (safeVisibleWidth(padded) > width) {
+		return safeTruncateToWidth(padded, width, "");
+	}
+	return padded;
+}
+
 export function installTuiPadding(tui: AnyComponent): void {
 	const state = tui as any;
 	if (state[PATCHED]) return;
@@ -30,15 +47,8 @@ export function installTuiPadding(tui: AnyComponent): void {
 	state[ORIGINAL_RENDER] ??= tui.render.bind(tui);
 
 	tui.render = function paddedTuiRender(width: number): string[] {
-		const innerWidth = Math.max(1, width - PAD_LEFT - PAD_RIGHT);
+		const innerWidth = getTuiContentInnerWidth(width);
 		const lines = state[ORIGINAL_RENDER](innerWidth);
-		return lines.map((line: string) => {
-			const padded = `${PADDING_PREFIX}${line}`;
-			if (isTerminalImageLine(line)) return padded;
-			if (safeVisibleWidth(padded) > width) {
-				return safeTruncateToWidth(padded, width, "");
-			}
-			return padded;
-		});
+		return lines.map((line: string) => padTuiContentLine(line, width));
 	};
 }
