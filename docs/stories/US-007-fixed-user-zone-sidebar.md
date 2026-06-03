@@ -10,7 +10,7 @@ normal
 
 ## Product Contract
 
-When `fixedUserZone` and `fixedUserZoneSidebar` are both enabled, wide terminals reserve a right sidebar for session/project metadata while the chat/feed and fixed user zone render in the remaining left content area. If the terminal is too narrow, the sidebar is hidden and the fixed footer keeps the compact metadata fallback.
+When the hidden fixed-zone sidebar is internally enabled with `fixedUserZone`, wide terminals reserve a right sidebar for session/project metadata while the chat/feed and fixed user zone render in the remaining left content area. If the terminal is too narrow, the sidebar is hidden and the fixed footer keeps the compact metadata fallback.
 
 ## Relevant Product Docs
 
@@ -20,7 +20,7 @@ When `fixedUserZone` and `fixedUserZoneSidebar` are both enabled, wide terminals
 
 ## Acceptance Criteria
 
-- `fixedUserZoneSidebar` defaults to `false` and is validated/backfilled from `~/.pi/agent/pi-droid-styling.json`.
+- Sidebar remains hidden/internal and is not exposed through `~/.pi/agent/pi-droid-styling.json`.
 - Sidebar is a child behavior of `fixedUserZone`; it never appears when `fixedUserZone` is disabled.
 - Sidebar auto-hides on narrow terminals so content keeps a minimum usable width.
 - When sidebar is active, it reserves the full right rail across the terminal height, including beside the fixed user zone.

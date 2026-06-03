@@ -179,7 +179,7 @@ export default function (pi: ExtensionAPI) {
 				enabled: config.fixedUserZone,
 				onCopySelection: copyToClipboard,
 				sidebar: {
-					enabled: config.fixedUserZoneSidebar,
+					enabled: false,
 					theme: {
 						fg: (color: string, text: string) => {
 							try {

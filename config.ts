@@ -8,7 +8,6 @@ export interface DroidStylingConfig {
 	dimToolOutput: boolean;
 	customWorkingMessage: boolean;
 	fixedUserZone: boolean;
-	fixedUserZoneSidebar: boolean;
 }
 
 const DEFAULTS: DroidStylingConfig = {
@@ -17,12 +16,11 @@ const DEFAULTS: DroidStylingConfig = {
 	dimToolOutput: false,
 	customWorkingMessage: false,
 	fixedUserZone: false,
-	fixedUserZoneSidebar: false,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
 const MAX_EXPANDED_LINES_LIMIT = 1000;
-const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll"] as const;
+const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll", "fixedUserZoneSidebar"] as const;
 
 let cached: DroidStylingConfig = { ...DEFAULTS };
 let cachedMtimeMs = -1;
@@ -49,7 +47,6 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
-		fixedUserZoneSidebar: booleanOrDefault(config.fixedUserZoneSidebar, DEFAULTS.fixedUserZoneSidebar),
 	};
 }
 
