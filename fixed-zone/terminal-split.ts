@@ -1189,10 +1189,11 @@ export class TerminalSplitCompositor {
 
 		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
 		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
+		const clearTail = this.getSidebarLayout(this.getRawColumns()).active ? "" : clearLineRight();
 		let output = saveCursor();
 		for (let index = 0; index < geometry.trackRows; index++) {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearLineRight();
+			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearTail;
 		}
 		const painted = output + restoreCursor();
 		profileCount("fixed.scrollbar.paint");

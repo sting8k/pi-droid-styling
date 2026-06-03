@@ -39,8 +39,10 @@ const DISPLAYED_LENGTHS_KEY = Symbol("presentation-displayed-lengths");
 const LAST_SOURCE_TEXTS_KEY = Symbol("presentation-last-source-texts");
 const LAST_PRESENTATION_AT_KEY = Symbol("presentation-last-at");
 const LAST_PRESENTATION_CHARS_KEY = Symbol("presentation-last-chars");
+const REQUESTER_GENERATION_KEY = Symbol("presentation-requester-generation");
 
 let requestRender: (() => void) | undefined;
+let requestRenderGeneration = 0;
 const Segmenter = (Intl as any).Segmenter;
 const graphemeSegmenter = typeof Segmenter === "function"
 	? new Segmenter(undefined, { granularity: "grapheme" })
@@ -48,6 +50,7 @@ const graphemeSegmenter = typeof Segmenter === "function"
 
 export function setAssistantUpdateRenderRequester(requester: (() => void) | undefined): void {
 	requestRender = requester;
+	requestRenderGeneration++;
 }
 
 type TextEntry = {
@@ -231,8 +234,16 @@ function recordPresentationMetrics(component: any, message: any, mode: "flush" |
 	component[LAST_PRESENTATION_CHARS_KEY] = chars;
 }
 
-function requestPresentationRender(): void {
-	if (!requestRender) return;
+function markRequesterGeneration(component: any): void {
+	component[REQUESTER_GENERATION_KEY] = requestRenderGeneration;
+}
+
+function isRequesterGenerationCurrent(component: any): boolean {
+	return component[REQUESTER_GENERATION_KEY] === requestRenderGeneration;
+}
+
+function requestPresentationRender(component: any): void {
+	if (!requestRender || !isRequesterGenerationCurrent(component)) return;
 	try {
 		requestRender();
 		profileCount("assistant.updateContent.presentation.requestRender");
@@ -256,6 +267,11 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 			component[TIMER_KEY] = null;
 			const source = component[SOURCE_KEY];
 			if (!source) return;
+			if (!isRequesterGenerationCurrent(component)) {
+				clearPresentationState(component);
+				profileCount("assistant.updateContent.presentation.staleRequester");
+				return;
+			}
 
 			const backlogBefore = computeBacklog(component);
 			profileSample("assistant.updateContent.presentation.backlogChars.count", backlogBefore);
@@ -273,7 +289,7 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 			try {
 				orig.call(component, displayed);
 				if (component?.lastMessage === displayed) component.lastMessage = source;
-				requestPresentationRender();
+				requestPresentationRender(component);
 			} finally {
 				profileDuration("assistant.updateContent.ms", start);
 			}
@@ -309,6 +325,7 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 		profileCount("assistant.updateContent.streaming");
 		if ((this as any)[TIMER_KEY]) profileCount("assistant.updateContent.coalesced");
 		(this as any)[SOURCE_KEY] = message;
+		markRequesterGeneration(this);
 		updateSourceState(this, message);
 		scheduleTick(this);
 	};
