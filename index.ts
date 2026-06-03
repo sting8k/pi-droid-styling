@@ -12,9 +12,11 @@ import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-
 import { installFinishedRenderCache } from "./performance/finished-render-cache.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
+import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
 import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderThrottle } from "./performance/render-throttle.js";
+import { installRenderWidthGuard } from "./performance/render-width-guard.js";
 import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
@@ -37,6 +39,7 @@ export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
 	installQuickEditRenderer(ToolExecutionComponent);
+	installMarkdownCodeBlockRenderer();
 	installFooterStatsPatch();
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -203,6 +206,7 @@ export default function (pi: ExtensionAPI) {
 					},
 				},
 			});
+			installRenderWidthGuard(tui as any);
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {

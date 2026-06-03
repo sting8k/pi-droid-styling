@@ -484,7 +484,7 @@ export class TerminalSplitCompositor {
 
 	private getClusterOptions(): FixedZoneClusterOptions {
 		return this.scrollOffset > 0
-			? { scrollHint: BOTTOM_HINT, showScrollDivider: true }
+			? { scrollHint: BOTTOM_HINT }
 			: { scrollHint: TOP_HINT };
 	}
 
