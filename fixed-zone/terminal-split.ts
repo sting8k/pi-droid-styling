@@ -431,13 +431,14 @@ export class TerminalSplitCompositor {
 		}
 	}
 
-	private markClusterPaintDirty(data: string): void {
-		// A forced TUI render clears the full terminal (`2J`/`3J`) before drawing
-		// the scrollable root. The fixed cluster is painted out-of-band after that;
-		// if its rows are unchanged, the paint cache would otherwise skip repainting
-		// and `/new` can leave the user zone/footer blank until the next input.
-		if (data.length > 0 && (data.includes("\x1b[2J") || data.includes("\x1b[3J") || data.includes("\x1bc"))) {
-			profileCount("fixed.cluster.paint.dirty.coreClear");
+	private markClusterPaintDirty(data: string, clusterHeight = this.lastClusterHeight): void {
+		// TUI diff rendering owns only the scrollable region, while the fixed cluster
+		// is painted out-of-band. In practice, line clears, CR/LF, or terminal
+		// pending-wrap state near the scroll/fixed boundary can still mutate the first
+		// fixed row even when the cluster data itself is unchanged. Treat any core
+		// write while the cluster exists as making the cluster paint cache unsafe.
+		if (clusterHeight > 0 && data.length > 0) {
+			profileCount("fixed.cluster.paint.dirty.coreWrite");
 			this.resetClusterPaintCache();
 		}
 	}
@@ -1140,8 +1141,8 @@ export class TerminalSplitCompositor {
 				const layout = this.getSidebarLayout(this.getRawColumns());
 				const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 				this.markSidebarPaintDirty(layout, data);
-				this.markClusterPaintDirty(data);
 				const clusterHeight = cluster.lines.length;
+				this.markClusterPaintDirty(data, clusterHeight);
 				if (clusterHeight === 0) {
 					const sidebarRows = this.renderSidebarRows(layout, rawRows);
 					this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
