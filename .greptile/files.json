@@ -1,0 +1,27 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Repository operating guide, Harness requirements, and source-of-truth agent instructions."
+    },
+    {
+      "path": "docs/FEATURE_INTAKE.md",
+      "description": "Risk lanes and documentation expectations for incoming work."
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "description": "Architecture boundaries, runtime ownership, render-drift notes, and validation ladder for pi-droid-styling.",
+      "scope": ["index.ts", "core/**", "editor/**", "fixed-zone/**", "messages/**", "performance/**", "theme/**", "tool-tags/**", "*.ts"]
+    },
+    {
+      "path": "docs/TEST_MATRIX.md",
+      "description": "Validation evidence matrix for product behavior, regressions, and Harness stories.",
+      "scope": ["docs/**", "scripts/**", "index.ts", "core/**", "editor/**", "fixed-zone/**", "messages/**", "performance/**", "theme/**", "tool-tags/**", "*.ts"]
+    },
+    {
+      "path": "scripts/README.md",
+      "description": "Operational guide for render profiling, frame-log debugging, and Pi runtime trace helpers.",
+      "scope": ["scripts/**", "performance/**", "fixed-zone/**", "tool-tags/**", "package.json"]
+    }
+  ]
+}
