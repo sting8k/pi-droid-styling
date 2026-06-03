@@ -24,7 +24,7 @@ type AnyTui = {
 	previousHeight?: unknown;
 	previousViewportTop?: unknown;
 	hardwareCursorRow?: unknown;
-	[PATCHED]?: boolean;
+	[PATCHED]?: ((...args: unknown[]) => unknown) | boolean;
 	[DEBUG_EVENTS]?: PhysicalSyncDebugEvent[];
 };
 
@@ -105,7 +105,10 @@ export function installRenderPhysicalSync(tui: AnyTui): void {
 	const periodicSelfHealEnabled = process.env.PI_DROID_RENDER_FULL_REPAINT === "1";
 	const repaintEnabled = shapeRepaintEnabled || periodicSelfHealEnabled;
 	if (!anchorEnabled && !repaintEnabled) return;
-	if (!tui || tui[PATCHED] || typeof tui.doRender !== "function") return;
+	if (!tui || typeof tui.doRender !== "function") return;
+	const patched = tui[PATCHED];
+	if (typeof patched === "function" && tui.doRender === patched) return;
+	if (patched === true && tui.doRender.name === "physicallySyncedDoRender") return;
 	const terminal = tui.terminal;
 	if (!terminal || typeof terminal.write !== "function") return;
 
@@ -116,8 +119,7 @@ export function installRenderPhysicalSync(tui: AnyTui): void {
 	const debugEnabled = process.env.PI_DROID_RENDER_DEBUG === "1";
 	let lastSelfHealAt = 0;
 	let lastFullSweepAt = 0;
-	tui[PATCHED] = true;
-	tui.doRender = function physicallySyncedDoRender(...args: unknown[]): unknown {
+	const physicallySyncedDoRender = function physicallySyncedDoRender(this: unknown, ...args: unknown[]): unknown {
 		const activeWrite = terminal.write;
 		if (typeof activeWrite !== "function") return originalDoRender(...args);
 		if (debugEnabled) tui[DEBUG_EVENTS] = [];
@@ -166,6 +168,8 @@ export function installRenderPhysicalSync(tui: AnyTui): void {
 			terminal.write = activeWrite;
 		}
 	};
+	tui[PATCHED] = physicallySyncedDoRender;
+	tui.doRender = physicallySyncedDoRender;
 }
 
 function readFullRepaintIntervalMs(): number {

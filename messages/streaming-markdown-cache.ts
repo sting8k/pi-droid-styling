@@ -37,8 +37,16 @@ function getObjectId(value: any): string {
 }
 
 function stableJson(value: any): string {
+	const seen = new WeakSet<object>();
+	const normalize = (input: any): any => {
+		if (!input || typeof input !== "object") return input;
+		if (seen.has(input)) return "<circular>";
+		seen.add(input);
+		if (Array.isArray(input)) return input.map(normalize);
+		return Object.fromEntries(Object.keys(input).sort().map((key) => [key, normalize(input[key])]));
+	};
 	try {
-		return JSON.stringify(value ?? null, Object.keys(value ?? {}).sort());
+		return JSON.stringify(normalize(value ?? null));
 	} catch {
 		return "<unserializable>";
 	}
