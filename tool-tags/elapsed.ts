@@ -57,20 +57,28 @@ export function formatToolMetrics(result: AgentToolResult<any> | undefined): str
 	return [formatElapsed(result), formatOutputSize(result)].filter(Boolean).join(" · ");
 }
 
+export function annotateToolResultMetrics(result: AgentToolResult<any> | undefined, elapsedMs?: number): void {
+	if (!result || typeof result !== "object") return;
+	if (!result.details || typeof result.details !== "object") {
+		(result as any).details = {};
+	}
+	const details = result.details as any;
+	const existingElapsed = details[ELAPSED_KEY];
+	if (typeof elapsedMs === "number" && Number.isFinite(elapsedMs) && (typeof existingElapsed !== "number" || !Number.isFinite(existingElapsed))) {
+		details[ELAPSED_KEY] = elapsedMs;
+	}
+	if (typeof details[OUTPUT_CHARS_KEY] !== "number" || !Number.isFinite(details[OUTPUT_CHARS_KEY])) {
+		details[OUTPUT_CHARS_KEY] = getTextOutputLength(result);
+	}
+}
+
 export function wrapExecuteWithTiming<T extends (...args: any[]) => Promise<AgentToolResult<any>>>(
 	executeFn: T,
 ): T {
 	return (async (...args: any[]) => {
 		const start = performance.now();
 		const result = await executeFn(...args);
-		const elapsed = performance.now() - start;
-		if (result && typeof result === "object") {
-			if (!result.details || typeof result.details !== "object") {
-				(result as any).details = {};
-			}
-			(result.details as any)[ELAPSED_KEY] = elapsed;
-			(result.details as any)[OUTPUT_CHARS_KEY] = getTextOutputLength(result);
-		}
+		annotateToolResultMetrics(result, performance.now() - start);
 		return result;
 	}) as T;
 }

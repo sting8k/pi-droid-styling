@@ -20,7 +20,7 @@ When `fixedUserZone` is enabled, the editor/user zone stays fixed at the bottom 
 ## Acceptance Criteria
 
 - `fixedUserZone` defaults to `false` and is validated from `~/.pi/agent/pi-droid-styling.json`.
-- `fixedUserZoneMouseScroll` defaults to `true` and is validated independently.
+- Mouse scroll is always enabled whenever `fixedUserZone` is enabled.
 - Fixed-zone logic lives under `fixed-zone/`; `index.ts` only wires lifecycle/install.
 - When enabled, the status/widgets/editor/footer zone is removed from normal root flow, terminal rows are reserved, terminal writes are constrained to the scrollable region, and the fixed zone is repainted at the bottom.
 - Runtime patches are idempotent and disposable.
@@ -29,7 +29,7 @@ When `fixedUserZone` is enabled, the editor/user zone stays fixed at the bottom 
 
 - Commands: none user-facing in this slice.
 - Queries: none.
-- API: config flags `fixedUserZone`, `fixedUserZoneMouseScroll`.
+- API: config flag `fixedUserZone`; mouse scroll is not user-configurable.
 - Tables: none.
 - Domain rules: fixed means scroll-isolated, not cosmetic.
 - UI surfaces: Pi interactive TUI editor/status/widget/footer area.

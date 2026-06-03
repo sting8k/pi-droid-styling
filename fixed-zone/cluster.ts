@@ -1,4 +1,5 @@
-import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 export interface RenderableLike {
 	render(width: number): string[];
@@ -19,9 +20,7 @@ export interface FixedZoneCluster {
 
 export interface FixedZoneClusterOptions {
 	scrollHint?: string;
-	showScrollDivider?: boolean;
 	hintRightInset?: number;
-	dividerInset?: number;
 }
 
 const DIM_START = "\x1b[2m";
@@ -29,15 +28,9 @@ const DIM_END = "\x1b[22m";
 const DEFAULT_CONTENT_INSET = 2;
 const MIN_HINT_GAP = 2;
 
-function scrollDividerLine(width: number, inset = DEFAULT_CONTENT_INSET): string {
-	const side = " ".repeat(Math.max(0, Math.min(inset, Math.floor((width - 1) / 2))));
-	const dividerWidth = Math.max(1, width - visibleWidth(side) * 2);
-	return `${side}${DIM_START}${"┄".repeat(dividerWidth)}${DIM_END}${side}`;
-}
-
 function normalizeLine(line: string, width: number): string {
-	if (visibleWidth(line) <= width) return line;
-	return truncateToWidth(line, width, "");
+	if (safeVisibleWidth(line) <= width) return line;
+	return safeTruncateToWidth(line, width, "");
 }
 
 function dim(text: string): string {
@@ -45,17 +38,17 @@ function dim(text: string): string {
 }
 
 function occupiedLineWidth(line: string, cursorCol: number): number {
-	return Math.max(cursorCol, visibleWidth(line.replace(/\s+$/u, "")));
+	return Math.max(cursorCol, safeVisibleWidth(line.replace(/\s+$/u, "")));
 }
 
 function appendRight(line: string, right: string, width: number, rightInset = DEFAULT_CONTENT_INSET): string {
-	const rightWidth = visibleWidth(right);
+	const rightWidth = safeVisibleWidth(right);
 	const safeInset = Math.max(0, Math.min(rightInset, Math.floor((width - 1) / 2)));
 	if (rightWidth + safeInset >= width) return line;
-	const lineWidth = visibleWidth(line);
+	const lineWidth = safeVisibleWidth(line);
 	const leftWidth = width - safeInset - rightWidth;
 	if (lineWidth > leftWidth) {
-		return `${truncateToWidth(line, leftWidth, "")}${right}${" ".repeat(safeInset)}`;
+		return `${safeTruncateToWidth(line, leftWidth, "")}${right}${" ".repeat(safeInset)}`;
 	}
 	return `${line}${" ".repeat(leftWidth - lineWidth)}${right}${" ".repeat(safeInset)}`;
 }
@@ -70,7 +63,7 @@ function applyScrollHintButton(lines: string[], cursor: FixedZoneCluster["cursor
 	const line = lines[rowIndex] ?? "";
 	const right = scrollHintButton(hint);
 	const safeInset = Math.max(0, Math.min(rightInset, Math.floor((width - 1) / 2)));
-	if (occupiedLineWidth(line, cursor.col) + MIN_HINT_GAP + visibleWidth(right) + safeInset > width) return cursor;
+	if (occupiedLineWidth(line, cursor.col) + MIN_HINT_GAP + safeVisibleWidth(right) + safeInset > width) return cursor;
 	lines[rowIndex] = appendRight(line, right, width, rightInset);
 	return cursor;
 }
@@ -83,7 +76,7 @@ function stripCursorMarker(line: string, row: number): { line: string; cursor?: 
 		line: line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length),
 		cursor: {
 			row,
-			col: visibleWidth(beforeMarker) + 1,
+			col: safeVisibleWidth(beforeMarker) + 1,
 		},
 	};
 }
@@ -101,11 +94,6 @@ export function renderFixedUserZoneCluster(renderables: HiddenRenderable[], widt
 	}
 
 	cursor = applyScrollHintButton(lines, cursor, options.scrollHint, width, options.hintRightInset);
-
-	if (options.showScrollDivider) {
-		lines.unshift(normalizeLine(scrollDividerLine(width, options.dividerInset), width));
-		if (cursor) cursor = { ...cursor, row: cursor.row + 1 };
-	}
 
 	if (maxRows <= 0 || lines.length <= maxRows) return { lines, cursor };
 

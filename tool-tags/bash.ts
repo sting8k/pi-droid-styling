@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { createBashTool, highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
@@ -230,7 +230,7 @@ function createBashResultPreview(
 				}
 
 				const truncatedShown = shownLines.map((line) => {
-					const truncated = truncateToWidth(line, bodyWidth, "…");
+					const truncated = safeTruncateToWidth(line, bodyWidth, "…");
 					if (color === "error") return formatToolOutputLine(theme, truncated, "error");
 					return cfg.dimToolOutput ? formatToolOutputLine(theme, truncated) : formatToolOutputLine(theme, truncated, "text");
 				});
@@ -244,7 +244,7 @@ function createBashResultPreview(
 					return cacheLines;
 				}
 
-				const hint = truncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, bodyWidth, "…");
+				const hint = safeTruncateToWidth(`... ${remaining} more lines, press Ctrl+o to expand`, bodyWidth, "…");
 				cacheKey = cacheId;
 				cacheLines = [...truncatedShown, "", theme.fg("muted", hint)];
 				return cacheLines;
@@ -261,9 +261,8 @@ function createBashResultPreview(
 				return cacheLines;
 			}
 
-			const clamped = logicalLines.join("\n");
-			const wrapped = wrapTextWithAnsi(clamped, bodyWidth);
-			const expandedLines = wrapped.length === 1 && wrapped[0] === "" ? [] : wrapped;
+			const truncatedLines = logicalLines.map((line) => safeTruncateToWidth(line, bodyWidth, "…"));
+			const expandedLines = truncatedLines.length === 1 && truncatedLines[0] === "" ? [] : truncatedLines;
 			const applyColor = (l: string) => color === "error" ? formatToolOutputLine(theme, l, "error") : cfg.dimToolOutput ? formatToolOutputLine(theme, l) : formatToolOutputLine(theme, l, "text");
 			if (cfg.maxExpandedLines > 0 && expandedLines.length > cfg.maxExpandedLines) {
 				const truncated = expandedLines.slice(-cfg.maxExpandedLines).map(applyColor);

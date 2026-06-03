@@ -1,8 +1,8 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
+import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
@@ -52,11 +52,11 @@ function stripItalicAnsi(text: string): string {
 }
 
 function getAssistantBodyWidth(width: number): number {
-	return Math.max(1, width - visibleWidth(composePrefixedLine("")) - 1);
+	return Math.max(1, width - safeVisibleWidth(composePrefixedLine("")) - 1);
 }
 
 function addAssistantGutter(lines: string[]): string[] {
-	const indent = " ".repeat(visibleWidth(composePrefixedLine("")));
+	const indent = " ".repeat(safeVisibleWidth(composePrefixedLine("")));
 	return lines.map((line) => {
 		if (stripAnsi(line).trim().length === 0) return line;
 		return `${indent}${dropLeadingColumns(line, 1)}`;
@@ -108,7 +108,7 @@ function isToolCallOnlyAssistantMessage(message: any): boolean {
 }
 
 function alignContinuationLines(lines: string[], targetIndex: number): void {
-	const indent = " ".repeat(visibleWidth(composePrefixedLine("")));
+	const indent = " ".repeat(safeVisibleWidth(composePrefixedLine("")));
 	for (let i = targetIndex + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		if (stripAnsi(line).trim().length === 0) continue;
@@ -121,7 +121,7 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 
 	const compactPrefixBase = composePrefixedLine("");
 	const compactPrefix =
-		visibleWidth(compactPrefixBase) > width ? truncateToWidth(compactPrefixBase, width, "") : compactPrefixBase;
+		safeVisibleWidth(compactPrefixBase) > width ? safeTruncateToWidth(compactPrefixBase, width, "") : compactPrefixBase;
 	const output = [...lines];
 
 	let targetIndex = -1;
@@ -140,7 +140,7 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 	alignContinuationLines(output, targetIndex);
 
 	return output.map((renderedLine) =>
-		visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,
+		safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 	);
 }
 
@@ -214,7 +214,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 
 		const compactPrefixBase = composePrefixedLine("");
 		const compactPrefix =
-			visibleWidth(compactPrefixBase) > width ? truncateToWidth(compactPrefixBase, width, "") : compactPrefixBase;
+			safeVisibleWidth(compactPrefixBase) > width ? safeTruncateToWidth(compactPrefixBase, width, "") : compactPrefixBase;
 		const divider = buildDividerLine(width);
 
 		if (lines.length === 0) {
@@ -223,7 +223,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 
 		if (this.__assistantResponsePrefixChildMode) {
 			const result = lines.map((renderedLine) =>
-				visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,
+				safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 			);
 			const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
 			return showDivider ? [divider, ...result, ""] : [...result, ""];
@@ -251,7 +251,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 		alignContinuationLines(output, targetIndex);
 
 		const result = output.map((renderedLine) =>
-			visibleWidth(renderedLine) > width ? truncateToWidth(renderedLine, width, "") : renderedLine,
+			safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 		);
 
 		// Add turn divider before assistant message

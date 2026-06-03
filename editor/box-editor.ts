@@ -1,7 +1,8 @@
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { homedir, hostname, userInfo } from "node:os";
 
+import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
@@ -42,6 +43,7 @@ type BranchInfo = {
 type BranchProvider = () => BranchInfo | null;
 type ResponseSpeedProvider = () => number | null;
 type FooterStatusProvider = () => string | null;
+type MetadataPlacementProvider = () => "footer" | "sidebar";
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -95,12 +97,17 @@ export class BoxEditor extends CustomEditor {
 		private readonly getBranch?: BranchProvider,
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
 		private readonly getFooterStatus?: FooterStatusProvider,
+		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 	) {
 		super(tui, theme, kb);
 	}
 
 	private color(hex: string, text: string): string {
 		return this.fullTheme ? fgHex(this.fullTheme, hex, text) : text;
+	}
+
+	private metadataInSidebar(): boolean {
+		return this.getMetadataPlacement?.() === "sidebar";
 	}
 
 	private getSlashAutocompleteModel(): SlashAutocompleteModel | null {
@@ -163,16 +170,16 @@ export class BoxEditor extends CustomEditor {
 			showSlashPrefix && rawCommand.length > 0 && !rawCommand.startsWith("/") ? `/${rawCommand}` : rawCommand;
 		const description = typeof item.description === "string" ? normalizeSingleLine(item.description) : "";
 		const prefix = isSelected ? "> " : "  ";
-		const prefixWidth = visibleWidth(prefix);
+		const prefixWidth = safeVisibleWidth(prefix);
 
 		if (description && width > 40) {
 			const maxCommandWidth = Math.min(30, Math.max(8, width - prefixWidth - 10));
-			const commandText = truncateToWidth(command, maxCommandWidth, "");
-			const spacing = " ".repeat(Math.max(1, 32 - visibleWidth(commandText)));
-			const remaining = width - prefixWidth - visibleWidth(commandText) - visibleWidth(spacing);
+			const commandText = safeTruncateToWidth(command, maxCommandWidth, "");
+			const spacing = " ".repeat(Math.max(1, 32 - safeVisibleWidth(commandText)));
+			const remaining = width - prefixWidth - safeVisibleWidth(commandText) - safeVisibleWidth(spacing);
 
 			if (remaining > 8) {
-				const descriptionText = truncateToWidth(description, remaining, "");
+				const descriptionText = safeTruncateToWidth(description, remaining, "");
 				if (isSelected) {
 					return this.color(getThemeExtra(this.fullTheme, "slashSelectedColor"), `${prefix}${commandText}${spacing}${descriptionText}`);
 				}
@@ -182,7 +189,7 @@ export class BoxEditor extends CustomEditor {
 			}
 		}
 
-		const commandOnly = truncateToWidth(command, Math.max(1, width - prefixWidth), "");
+		const commandOnly = safeTruncateToWidth(command, Math.max(1, width - prefixWidth), "");
 		if (isSelected) return this.color(getThemeExtra(this.fullTheme, "slashSelectedColor"), `${prefix}${commandOnly}`);
 		return `${prefix}${this.color(getThemeExtra(this.fullTheme, "slashCommandColor"), commandOnly)}`;
 	}
@@ -213,7 +220,7 @@ export class BoxEditor extends CustomEditor {
 		lines.push(border(`┌${"─".repeat(innerWidth)}┐`));
 		if (visibleItems.length === 0) {
 			const noMatch = this.color(getThemeExtra(this.fullTheme, "slashDescriptionColor"), "  No matching commands");
-			const paddedNoMatch = `${noMatch}${" ".repeat(Math.max(0, innerWidth - visibleWidth(noMatch)))}`;
+			const paddedNoMatch = `${noMatch}${" ".repeat(Math.max(0, innerWidth - safeVisibleWidth(noMatch)))}`;
 			lines.push(`${border("│")}${paddedNoMatch}${border("│")}`);
 		} else {
 			for (let i = 0; i < visibleItems.length; i++) {
@@ -227,7 +234,7 @@ export class BoxEditor extends CustomEditor {
 					innerWidth,
 					model.showSlashPrefix,
 				);
-				const paddedRow = `${row}${" ".repeat(Math.max(0, innerWidth - visibleWidth(row)))}`;
+				const paddedRow = `${row}${" ".repeat(Math.max(0, innerWidth - safeVisibleWidth(row)))}`;
 				lines.push(`${border("│")}${paddedRow}${border("│")}`);
 			}
 		}
@@ -237,8 +244,8 @@ export class BoxEditor extends CustomEditor {
 		const shownEnd = startIndex + visibleItems.length;
 		const hint = ` Use ↑↓ to navigate, Tab/Enter to select, Esc to cancel  Showing ${shownStart}-${shownEnd} of ${totalItems}`;
 		const coloredHint = this.color(getThemeExtra(this.fullTheme, "slashHintColor"), hint);
-		const truncatedHint = visibleWidth(coloredHint) > width ? truncateToWidth(coloredHint, width, "") : coloredHint;
-		lines.push(`${truncatedHint}${" ".repeat(Math.max(0, width - visibleWidth(truncatedHint)))}`);
+		const truncatedHint = safeVisibleWidth(coloredHint) > width ? safeTruncateToWidth(coloredHint, width, "") : coloredHint;
+		lines.push(`${truncatedHint}${" ".repeat(Math.max(0, width - safeVisibleWidth(truncatedHint)))}`);
 
 		return lines;
 	}
@@ -264,8 +271,8 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private pad(content: string, width: number): string {
-		const truncated = visibleWidth(content) > width ? truncateToWidth(content, width, "") : content;
-		return `${truncated}${" ".repeat(Math.max(0, width - visibleWidth(truncated)))}`;
+		const truncated = safeVisibleWidth(content) > width ? safeTruncateToWidth(content, width, "") : content;
+		return `${truncated}${" ".repeat(Math.max(0, width - safeVisibleWidth(truncated)))}`;
 	}
 
 	private formatCompactTokens(count: number): string {
@@ -377,7 +384,7 @@ export class BoxEditor extends CustomEditor {
 
 	private renderTopBorder(width: number): string {
 		const prefix = this.tone("accent", `== [${currentUserHost()}] == `);
-		const remaining = Math.max(0, width - visibleWidth(prefix));
+		const remaining = Math.max(0, width - safeVisibleWidth(prefix));
 		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
 	}
 
@@ -392,15 +399,16 @@ export class BoxEditor extends CustomEditor {
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
-		const path = `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}`;
+		const showFooterMetadata = !this.metadataInSidebar();
+		const path = showFooterMetadata ? `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}` : null;
 		const leftParts = [path, model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
-		const branch = this.formatBranchBadge();
+		const branch = showFooterMetadata ? this.formatBranchBadge() : null;
 		const right = branch ? `${sep} ${branch.rendered}` : "";
-		const rightPlainWidth = branch ? visibleWidth(`│ ${branch.plain}`) : 0;
+		const rightPlainWidth = branch ? safeVisibleWidth(`│ ${branch.plain}`) : 0;
 		const available = Math.max(1, width - rightPlainWidth - (right ? 1 : 0));
-		const trimmedMain = visibleWidth(left) > available ? truncateToWidth(left, available, "…") : left;
-		const gap = right ? " ".repeat(Math.max(1, width - visibleWidth(trimmedMain) - rightPlainWidth)) : "";
+		const trimmedMain = safeVisibleWidth(left) > available ? safeTruncateToWidth(left, available, "…") : left;
+		const gap = right ? " ".repeat(Math.max(1, width - safeVisibleWidth(trimmedMain) - rightPlainWidth)) : "";
 		return this.pad(`${trimmedMain}${gap}${right}`, width);
 	}
 
@@ -426,7 +434,7 @@ export class BoxEditor extends CustomEditor {
 				line = `${before}${marker}\x1b[7m${atCursor}\x1b[27m${rest}`;
 			}
 
-			const wrapped = wrapTextWithAnsi(line, width);
+			const wrapped = safeWrapTextWithAnsi(line, width);
 			rendered.push(...(wrapped.length > 0 ? wrapped : [""]));
 		}
 
@@ -442,15 +450,15 @@ export class BoxEditor extends CustomEditor {
 			speedBadge ? `${bullet} ${this.tone("muted", speedBadge)}` : null,
 		].filter(Boolean);
 		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
-		const footerStatus = this.getFooterStatus?.() ?? "";
+		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
 		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
 		if (!rightPlain) return this.pad(left, width);
 
 		const right = this.tone("dim", rightPlain);
-		const rightWidth = visibleWidth(rightPlain);
+		const rightWidth = safeVisibleWidth(rightPlain);
 		const availableLeft = Math.max(1, width - rightWidth - 2);
-		const trimmedLeft = visibleWidth(left) > availableLeft ? truncateToWidth(left, availableLeft, "…") : left;
-		const gap = " ".repeat(Math.max(2, width - visibleWidth(trimmedLeft) - rightWidth));
+		const trimmedLeft = safeVisibleWidth(left) > availableLeft ? safeTruncateToWidth(left, availableLeft, "…") : left;
+		const gap = " ".repeat(Math.max(2, width - safeVisibleWidth(trimmedLeft) - rightWidth));
 		return this.pad(`${trimmedLeft}${gap}${right}`, width);
 	}
 
@@ -459,7 +467,7 @@ export class BoxEditor extends CustomEditor {
 		const text = this.getText();
 		const prompt = this.bold(this.tone("accent", "❯"));
 		const promptPrefix = `${prompt}  `;
-		const prefixWidth = visibleWidth(promptPrefix);
+		const prefixWidth = safeVisibleWidth(promptPrefix);
 		const inputInnerWidth = Math.max(1, width);
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
 		const parentLines = super.render(contentWidth);
@@ -472,7 +480,7 @@ export class BoxEditor extends CustomEditor {
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const renderedLine = line;
-			const available = Math.max(1, inputInnerWidth - visibleWidth(prefix));
+			const available = Math.max(1, inputInnerWidth - safeVisibleWidth(prefix));
 			return this.pad(`${prefix}${this.pad(renderedLine, available)}`, width);
 		});
 
@@ -488,7 +496,7 @@ export class BoxEditor extends CustomEditor {
 		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.tone("border", value));
 		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
 
-		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`);
+		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - safeVisibleWidth(line)))}`);
 		return [...lines, ...paddedAutocomplete];
 	}
 }

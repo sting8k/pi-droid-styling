@@ -1,8 +1,8 @@
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
+import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
@@ -109,7 +109,7 @@ export function installUserMessagePrefix(theme: any): void {
 
 		const result = output.map((renderedLine) => {
 			const plainLine = stripEmphasisAnsi(renderedLine);
-			return visibleWidth(plainLine) > width ? truncateToWidth(plainLine, width, "") : plainLine;
+			return safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
 		});
 
 		// Add turn divider before user message

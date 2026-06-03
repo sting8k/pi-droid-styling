@@ -4,9 +4,10 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 import { stripAnsi } from "./theme/ansi.js";
+import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -209,18 +210,18 @@ function stripInlineBreaksPreserveAnsi(value: string): string {
 }
 
 function padRight(value: string, width: number): string {
-	const visual = visibleWidth(stripAnsi(value));
+	const visual = safeVisibleWidth(stripAnsi(value));
 	if (visual >= width) return value;
 	return value + " ".repeat(width - visual);
 }
 
 function fitToWidth(value: string, width: number): string {
-	return padRight(truncateToWidth(value, width), width);
+	return padRight(safeTruncateToWidth(value, width), width);
 }
 
 function padRenderedLineWidth(line: string, width: number): string {
 	const safeWidth = Math.max(1, width);
-	const current = visibleWidth(stripAnsi(line));
+	const current = safeVisibleWidth(stripAnsi(line));
 	if (current >= safeWidth) return line;
 	return line + " ".repeat(safeWidth - current);
 }
@@ -487,7 +488,7 @@ export class SplitDiffComponent implements Component {
 		const divider = this.theme.fg("borderMuted", " │ ");
 		const prefix = `${marker} ${lineNumber}${divider}`;
 		const prefixPlain = `${markerChar} ${" ".repeat(this.lineNumberWidth)} │ `;
-		const tailWidth = Math.max(0, columnWidth - visibleWidth(prefixPlain));
+		const tailWidth = Math.max(0, columnWidth - safeVisibleWidth(prefixPlain));
 		let rendered = prefix + " ".repeat(tailWidth);
 
 		const bg = this.getCellFillBackground(kind, side);
@@ -541,7 +542,7 @@ export class SplitDiffComponent implements Component {
 			this.theme.fg("borderMuted", " │ ");
 		const contPrefixPlain = `${markerChar} ${" ".repeat(this.lineNumberWidth)} │ `;
 
-		const codeWidth = Math.max(1, columnWidth - visibleWidth(firstPrefixPlain));
+		const codeWidth = Math.max(1, columnWidth - safeVisibleWidth(firstPrefixPlain));
 		const rowBg = this.getRowBackground(lineKind);
 		const emphasisBg = this.getEmphasisBackground(lineKind);
 
@@ -579,8 +580,8 @@ export class SplitDiffComponent implements Component {
 			let rendered = prefixAnsi + segment;
 
 			// Defensive pad if prefix widths diverge because of unicode widths
-			const expectedWidth = visibleWidth(prefixPlain) + codeWidth;
-			const currentWidth = visibleWidth(stripAnsi(rendered));
+			const expectedWidth = safeVisibleWidth(prefixPlain) + codeWidth;
+			const currentWidth = safeVisibleWidth(stripAnsi(rendered));
 			if (currentWidth < expectedWidth) {
 				rendered += " ".repeat(expectedWidth - currentWidth);
 			}
@@ -600,7 +601,7 @@ export class SplitDiffComponent implements Component {
 
 		const safeWidth = Math.max(20, width);
 		const columnSeparator = this.theme.fg("borderMuted", " │ ");
-		const separatorWidth = visibleWidth(stripAnsi(columnSeparator));
+		const separatorWidth = safeVisibleWidth(stripAnsi(columnSeparator));
 		const leftWidth = Math.max(20, Math.floor((safeWidth - separatorWidth) / 2));
 		const rightWidth = Math.max(20, safeWidth - separatorWidth - leftWidth);
 
@@ -623,7 +624,7 @@ export class SplitDiffComponent implements Component {
 				this.theme.fg("dim", lineNumberLabel) +
 				this.theme.fg("borderMuted", " │ ");
 			const prefixPlain = `${markerPad}${stripAnsi(lineNumberLabel)} │ `;
-			const codeWidth = Math.max(0, columnWidth - visibleWidth(prefixPlain));
+			const codeWidth = Math.max(0, columnWidth - safeVisibleWidth(prefixPlain));
 			return padRenderedLineWidth(prefixAnsi + " ".repeat(codeWidth), columnWidth);
 		};
 

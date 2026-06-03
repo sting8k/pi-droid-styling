@@ -5,12 +5,21 @@ import { BoxEditor } from "./editor/box-editor.js";
 import { installFixedUserZone } from "./fixed-zone/install.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
-import { installAssistantUpdateDebounce } from "./performance/debounce-update.js";
+import { getPiVersion } from "./core/pi-version.js";
+import { readSessionMetadata } from "./core/session-metadata.js";
+import { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } from "./performance/debounce-update.js";
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
+import { installFinishedRenderCache } from "./performance/finished-render-cache.js";
 import { loadConfig } from "./config.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
+import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
+import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
+import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
+import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
+import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
 import { installRenderThrottle } from "./performance/render-throttle.js";
+import { installRenderWidthGuard } from "./performance/render-width-guard.js";
 import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
@@ -21,6 +30,7 @@ import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
+import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
 let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
@@ -32,6 +42,7 @@ export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
 	installQuickEditRenderer(ToolExecutionComponent);
+	installMarkdownCodeBlockRenderer();
 	installFooterStatsPatch();
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -60,9 +71,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		profileCount("session.shutdown");
+		flushProfile("session_shutdown");
 		syncTerminalThemeForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
+		setAssistantUpdateRenderRequester(undefined);
 		try {
 			ctx.ui.setEditorComponent(undefined);
 		} catch {
@@ -71,8 +85,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		profileCount("session.start");
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
+		setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantSpeedTracker.resetSession();
 		try {
@@ -104,10 +120,12 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// No setTheme() call — use whatever theme is selected in settings
+		installAssistantStreamingMarkdownCache(AssistantMessageComponent);
 		installAssistantMessagePrefix(sessionUi.theme);
 		installUserMessagePrefix(sessionUi.theme);
 		installAssistantUpdateDebounce(AssistantMessageComponent);
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
+		installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 
 		let lastTerminalBg = "";
 		let lastTerminalFg = "";
@@ -154,14 +172,47 @@ export default function (pi: ExtensionAPI) {
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			installRenderThrottle(tui as any);
+			setAssistantUpdateRenderRequester(() => tui.requestRender());
 			virtualizeChatContainer(tui as any);
 			installTuiPadding(tui as any);
+			installRenderAutowrapGuard(tui as any);
+			const piVersion = getPiVersion();
+			let fixedZoneSidebarActive = false;
+			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
-				mouseScroll: config.fixedUserZoneMouseScroll,
 				onCopySelection: copyToClipboard,
+				sidebar: {
+					enabled: false,
+					theme: {
+						fg: (color: string, text: string) => {
+							try {
+								return typeof sessionUi.theme?.fg === "function" ? sessionUi.theme.fg(color as any, text) : text;
+							} catch {
+								return text;
+							}
+						},
+					},
+					onActiveChange: (active) => { fixedZoneSidebarActive = active; },
+					getInfo: () => {
+						const git = fetchBranch();
+						const sessionMetadata = readSessionMetadata(ctx);
+						return {
+							sessionId: sessionMetadata.id,
+							sessionName: sessionMetadata.name,
+							cwd: sessionCwd,
+							branch: git?.branch,
+							insertions: git?.insertions,
+							deletions: git?.deletions,
+							modifiedFiles: git?.modifiedFiles,
+							piVersion,
+						};
+					},
+				},
 			});
-			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
+			installRenderWidthGuard(tui as any);
+			installRenderPhysicalSync(tui as any);
+			installRenderFrameDebug(tui as any);
 			return new BoxEditor(
 				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
 				() => {
@@ -191,6 +242,7 @@ export default function (pi: ExtensionAPI) {
 				fetchBranch,
 				() => assistantSpeedTracker.getWordsPerSecond(),
 				getFooterStatusLine,
+				() => fixedZoneSidebarActive ? "sidebar" : "footer",
 			);
 		});
 	});

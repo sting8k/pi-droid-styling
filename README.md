@@ -38,13 +38,34 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "maxExpandedLines": 50,
   "dimToolOutput": false,
   "customWorkingMessage": false,
-  "fixedUserZone": false,
-  "fixedUserZoneMouseScroll": true
+  "fixedUserZone": false
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 `fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
+
+## Profiling
+
+Render profiling is disabled by default. To capture render/update/git/sidebar metrics plus memory, CPU delta, and event-loop utilization:
+
+```sh
+PI_DROID_PROFILE=1 PI_DROID_PROFILE_OUT=/tmp/pi-droid-profile.jsonl pi
+```
+
+Useful environment variables:
+
+- `PI_DROID_PROFILE=1` enables profiling.
+- `PI_DROID_PROFILE_OUT=/path/profile.jsonl` writes JSONL output. Use `stderr` or `stdout` for stream output.
+- `PI_DROID_PROFILE_INTERVAL_MS=5000` controls summary cadence.
+
+Synthetic self-check:
+
+```sh
+npm run profile:render
+```
+
+The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. Runtime terminal paint/GPU cost still needs a real Pi TUI capture.
 
 ## Notes
 

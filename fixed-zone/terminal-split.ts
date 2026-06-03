@@ -1,6 +1,11 @@
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
+import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
+import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
+import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
+import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
 
 interface TerminalLike {
 	write(data: string): void;
@@ -15,11 +20,36 @@ interface TuiLike {
 	doRender?(): void;
 }
 
-export interface TerminalSplitOptions {
-	mouseScroll: boolean;
-	onCopySelection?: (text: string) => void;
+interface RenderableLike {
+	render(width: number): string[];
+	children?: RenderableLike[];
+	constructor?: { name?: string };
 }
 
+type WindowedRootRender = {
+	lines: string[];
+	omitted: boolean;
+	renderedComponents: number;
+	skippedComponents: number;
+	truncatedLines: number;
+	visitedComponents: number;
+};
+
+const WINDOWABLE_CONTAINER_NAMES = new Set(["Container", "TUI"]);
+
+function isRenderable(value: unknown): value is RenderableLike {
+	return typeof value === "object" && value !== null && typeof (value as RenderableLike).render === "function";
+}
+
+export interface TerminalSplitOptions {
+	onCopySelection?: (text: string) => void;
+	sidebar?: {
+		enabled: boolean;
+		getInfo?: FixedZoneSidebarInfoProvider;
+		theme?: FixedZoneSidebarTheme;
+		onActiveChange?: (active: boolean) => void;
+	};
+}
 interface SgrMousePacket {
 	button: number;
 	col: number;
@@ -28,18 +58,53 @@ interface SgrMousePacket {
 }
 
 interface SelectionPoint {
+	region: "root" | "sidebar";
 	line: number;
 	col: number;
 }
 
+type SidebarRowsCache = {
+	rawRows: number;
+	sidebarWidth: number;
+	selectionKey: string;
+	rows: string[];
+	renderedRows: string[];
+};
+
+type ScrollbarGeometry = {
+	col: number;
+	trackRows: number;
+	maxStart: number;
+	thumbTop: number;
+	thumbRows: number;
+};
+
 const MIN_SCROLLABLE_ROWS = 3;
-const WHEEL_SCROLL_LINES = 3;
+const WHEEL_SCROLL_BASE_LINES = 1;
+const WHEEL_SCROLL_MAX_LINES = 4;
+const WHEEL_SCROLL_BURST_MS = 90;
+const WHEEL_SCROLL_RESET_MS = 160;
+const SCROLLBAR_GLYPH = "█";
+const SCROLLBAR_TRACK_COLOR = "borderMuted";
+const SCROLLBAR_THUMB_COLOR = "dim";
+const SCROLLBAR_THUMB_ACTIVE_COLOR = "muted";
+const SCROLLBAR_DIM = "\x1b[2m";
+const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
+const SCROLLBAR_VISIBLE_MS = 2500;
+const SCROLLBAR_VISUAL_ENABLED = true;
+const SCROLLBAR_HIT_COLUMNS = 3;
+// Leave the physical last column blank; exact-width glyph writes can leave terminals in a pending-wrap state.
+const SCROLLBAR_WRAP_GUARD_COLUMNS = 1;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
 const TOP_HINT = "^Shift T TOP";
 const BOTTOM_HINT = "^Shift G BOT";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
+const DISABLE_AUTOWRAP = "\x1b[?7l";
+const ENABLE_AUTOWRAP = "\x1b[?7h";
+const RESET_TERMINAL_SEGMENT = "\x1b[0m\x1b]8;;\x07";
+const CLEAR_VIEWPORT = "\x1b[2J\x1b[H";
 
 function setScrollRegion(top: number, bottom: number): string {
 	return `\x1b[${top};${bottom}r`;
@@ -51,6 +116,10 @@ function moveCursor(row: number, col: number): string {
 
 function clearLine(): string {
 	return "\x1b[2K";
+}
+
+function clearLineRight(): string {
+	return "\x1b[K";
 }
 
 function saveCursor(): string {
@@ -72,8 +141,28 @@ function findPropertyDescriptor(target: object, key: PropertyKey): PropertyDescr
 }
 
 function fitLine(line: string, width: number): string {
-	if (visibleWidth(line) <= width) return line;
-	return truncateToWidth(line, width, "");
+	if (safeVisibleWidth(line) <= width) return line;
+	return safeTruncateToWidth(line, width, "");
+}
+
+function padLine(line: string, width: number): string {
+	const fitted = fitLine(line, width);
+	return `${fitted}${" ".repeat(Math.max(0, width - safeVisibleWidth(fitted)))}`;
+}
+
+function applyContentInset(lines: readonly string[], width: number): string[] {
+	return lines.map((line) => padTuiContentLine(line, width));
+}
+
+function applyContentInsetToCluster(cluster: FixedZoneCluster, width: number): FixedZoneCluster {
+	const result: FixedZoneCluster = { lines: applyContentInset(cluster.lines, width) };
+	if (cluster.cursor) {
+		result.cursor = {
+			...cluster.cursor,
+			col: getTuiContentCursorColumn(cluster.cursor.col, width),
+		};
+	}
+	return result;
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -104,11 +193,11 @@ function mouseBaseButton(button: number): number {
 	return button & ~(4 | 8 | 16 | 32);
 }
 
-function mouseScrollDelta(packet: SgrMousePacket): number {
+function mouseScrollDirection(packet: SgrMousePacket): number {
 	if (packet.final !== "M") return 0;
 	const baseButton = mouseBaseButton(packet.button);
-	if (baseButton === 64) return WHEEL_SCROLL_LINES;
-	if (baseButton === 65) return -WHEEL_SCROLL_LINES;
+	if (baseButton === 64) return 1;
+	if (baseButton === 65) return -1;
 	return 0;
 }
 
@@ -132,7 +221,7 @@ function sliceColumns(text: string, startCol: number, endCol: number): string {
 	let col = 0;
 	let result = "";
 	for (const char of Array.from(text)) {
-		const width = Math.max(0, visibleWidth(char));
+		const width = Math.max(0, safeVisibleWidth(char));
 		if (col >= startCol && col < endCol) result += char;
 		col += width;
 	}
@@ -141,6 +230,11 @@ function sliceColumns(text: string, startCol: number, endCol: number): string {
 
 function compareSelectionPoints(a: SelectionPoint, b: SelectionPoint): number {
 	return a.line === b.line ? a.col - b.col : a.line - b.line;
+}
+
+function sameStringList(a: readonly string[], b: readonly string[]): boolean {
+	if (a.length !== b.length) return false;
+	return a.every((value, index) => value === b[index]);
 }
 
 function isJumpBottomInput(data: string): boolean {
@@ -155,10 +249,12 @@ export class TerminalSplitCompositor {
 	private readonly originalTerminalWrite: TerminalLike["write"];
 	private readonly originalTuiRender: TuiLike["render"];
 	private readonly originalTuiDoRender?: () => void;
+	private readonly hiddenRenderableTargets: WeakSet<object>;
 	private readonly originalRowsOwnDescriptor?: PropertyDescriptor;
 	private readonly originalRowsDescriptor?: PropertyDescriptor;
 	private readonly hadOwnRowsDescriptor: boolean;
 	private scrollOffset = 0;
+	private lastRenderedScrollOffset = 0;
 	private disposed = false;
 	private painting = false;
 	private lastRootLineCount = 0;
@@ -170,10 +266,24 @@ export class TerminalSplitCompositor {
 	private rootLines: string[] = [];
 	private visibleRootStart = 0;
 	private visibleScrollableRows = 0;
+	private scrollbarDragging = false;
+	private scrollbarDragOffset = 0;
+	private scrollbarVisibleUntil = 0;
+	private scrollbarHideTimer: ReturnType<typeof setTimeout> | undefined;
 	private selectionAnchor: SelectionPoint | null = null;
 	private selectionFocus: SelectionPoint | null = null;
 	private selectionDragging = false;
 	private pendingMouseInput = "";
+	private lastWheelAt = 0;
+	private lastWheelDirection = 0;
+	private wheelBurst = 0;
+	private sidebarActive = false;
+	private sidebarRows: string[] = [];
+	private sidebarRowsCache: SidebarRowsCache | undefined;
+	private lastPaintedSidebarKey = "";
+	private lastPaintedSidebarRows: string[] = [];
+	private lastPaintedClusterKey = "";
+	private lastPaintedClusterRows: string[] = [];
 
 	constructor(
 		private readonly tui: TuiLike,
@@ -183,6 +293,7 @@ export class TerminalSplitCompositor {
 		this.originalTerminalWrite = tui.terminal.write;
 		this.originalTuiRender = tui.render.bind(tui);
 		this.originalTuiDoRender = typeof tui.doRender === "function" ? tui.doRender.bind(tui) : undefined;
+		this.hiddenRenderableTargets = new WeakSet(hiddenRenderables.map((renderable) => renderable.target as object));
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
@@ -192,8 +303,10 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		const terminal = this.tui.terminal;
 		const rawRows = this.getRawRows();
-		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
+		this.clearViewportForInitialRender();
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -203,21 +316,17 @@ export class TerminalSplitCompositor {
 		if (this.originalTuiDoRender) {
 			this.tui.doRender = () => this.renderPass();
 		}
-		if (this.options.mouseScroll) {
-			this.writeRaw(ENABLE_MOUSE);
-		}
+		this.writeRaw(ENABLE_MOUSE);
 	}
 
 	handleInput(data: string): { consume?: boolean; data?: string } | undefined {
 		if (this.disposed) return undefined;
 		let current = data;
-		if (this.options.mouseScroll) {
-			const mouseInput = parseMouseInput(this.pendingMouseInput + current);
-			this.pendingMouseInput = mouseInput.pending;
-			for (const packet of mouseInput.packets) this.handleMousePacket(packet);
-			current = mouseInput.filtered;
-			if (current.length === 0 && (mouseInput.packets.length > 0 || mouseInput.pending.length > 0)) return { consume: true };
-		}
+		const mouseInput = parseMouseInput(this.pendingMouseInput + current);
+		this.pendingMouseInput = mouseInput.pending;
+		for (const packet of mouseInput.packets) this.handleMousePacket(packet);
+		current = mouseInput.filtered;
+		if (current.length === 0 && (mouseInput.packets.length > 0 || mouseInput.pending.length > 0)) return { consume: true };
 		if (isJumpBottomInput(current)) {
 			this.jumpToBottom();
 			return { consume: true };
@@ -233,6 +342,17 @@ export class TerminalSplitCompositor {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.pendingMouseInput = "";
+		this.lastWheelAt = 0;
+		this.lastWheelDirection = 0;
+		this.wheelBurst = 0;
+		this.scrollbarDragging = false;
+		this.scrollbarDragOffset = 0;
+		this.scrollbarVisibleUntil = 0;
+		if (this.scrollbarHideTimer) {
+			clearTimeout(this.scrollbarHideTimer);
+			this.scrollbarHideTimer = undefined;
+		}
+		this.setSidebarActive(false);
 		this.tui.terminal.write = this.originalTerminalWrite;
 		this.tui.render = this.originalTuiRender;
 		if (this.originalTuiDoRender) {
@@ -243,16 +363,27 @@ export class TerminalSplitCompositor {
 		} else {
 			delete (this.tui.terminal as any).rows;
 		}
-		if (this.options.mouseScroll) {
-			this.writeRaw(DISABLE_MOUSE);
-		}
+		this.writeRaw(DISABLE_MOUSE);
 		this.scrollRegionBottom = 0;
 		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())));
 		this.tui.requestRender(true);
 	}
 
 	private writeRaw(data: string): void {
+		profileCount("terminal.write.raw.calls");
+		profileTextBytes("terminal.write.raw.bytes", data);
 		this.originalTerminalWrite.call(this.tui.terminal, data);
+	}
+
+	private writeGrid(data: string): void {
+		if (data.length === 0) return;
+		this.writeRaw(DISABLE_AUTOWRAP + data + ENABLE_AUTOWRAP);
+	}
+
+	private clearViewportForInitialRender(): void {
+		const previousLines = (this.tui as TuiLike & { previousLines?: unknown }).previousLines;
+		if (Array.isArray(previousLines) && previousLines.length > 0) return;
+		this.writeRaw(CLEAR_VIEWPORT);
 	}
 
 	private getRawRows(): number {
@@ -270,33 +401,130 @@ export class TerminalSplitCompositor {
 		return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
 	}
 
+	private setSidebarActive(active: boolean): void {
+		if (this.sidebarActive === active) return;
+		profileCount(active ? "fixed.sidebar.active.on" : "fixed.sidebar.active.off");
+		this.sidebarActive = active;
+		if (!active && this.selectionAnchor?.region === "sidebar") this.clearSelection();
+		this.clusterCache = undefined;
+		this.sidebarRowsCache = undefined;
+		this.resetSidebarPaintCache();
+		this.resetClusterPaintCache();
+		this.options.sidebar?.onActiveChange?.(active);
+	}
+
+	private getSidebarLayout(rawWidth = this.getRawColumns()): FixedZoneSidebarLayout {
+		const layout = computeFixedZoneSidebarLayout(rawWidth, this.options.sidebar?.enabled === true);
+		this.setSidebarActive(layout.active);
+		return layout;
+	}
+
+	private sidebarSelectionKey(): string {
+		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "sidebar" || this.selectionFocus.region !== "sidebar") return "none";
+		return `${this.selectionAnchor.line}:${this.selectionAnchor.col}:${this.selectionFocus.line}:${this.selectionFocus.col}`;
+	}
+
+	private resetSidebarPaintCache(): void {
+		this.lastPaintedSidebarKey = "";
+		this.lastPaintedSidebarRows = [];
+	}
+
+	private resetClusterPaintCache(): void {
+		this.lastPaintedClusterKey = "";
+		this.lastPaintedClusterRows = [];
+	}
+
+	private markSidebarPaintDirty(layout: FixedZoneSidebarLayout, data: string): void {
+		// TUI diff rendering can use CR/LF or line clears inside the scroll region,
+		// which mutates sidebar cells even when the sidebar data itself is unchanged.
+		if (layout.active && data.length > 0) {
+			profileCount("fixed.sidebar.paint.dirty.coreWrite");
+			this.resetSidebarPaintCache();
+		}
+	}
+
+	private markClusterPaintDirty(data: string, clusterHeight = this.lastClusterHeight): void {
+		// TUI diff rendering owns only the scrollable region, while the fixed cluster
+		// is painted out-of-band. In practice, line clears, CR/LF, or terminal
+		// pending-wrap state near the scroll/fixed boundary can still mutate the first
+		// fixed row even when the cluster data itself is unchanged. Treat any core
+		// write while the cluster exists as making the cluster paint cache unsafe.
+		if (clusterHeight > 0 && data.length > 0) {
+			profileCount("fixed.cluster.paint.dirty.coreWrite");
+			this.resetClusterPaintCache();
+		}
+	}
+
+	private renderSidebarRows(layout: FixedZoneSidebarLayout, rawRows: number): string[] {
+		if (!layout.active) {
+			this.sidebarRows = [];
+			this.sidebarRowsCache = undefined;
+			return [];
+		}
+		const selectionKey = this.sidebarSelectionKey();
+		const cached = this.sidebarRowsCache;
+		if (cached && cached.rawRows === rawRows && cached.sidebarWidth === layout.sidebarWidth && cached.selectionKey === selectionKey) {
+			profileCount("fixed.sidebar.rows.cacheHit");
+			this.sidebarRows = cached.rows;
+			return cached.renderedRows;
+		}
+		profileCount("fixed.sidebar.rows.cacheMiss");
+		const totalStart = profileNow();
+		const infoStart = profileNow();
+		const info = this.options.sidebar?.getInfo?.();
+		profileDuration("fixed.sidebar.info.ms", infoStart);
+		const renderStart = profileNow();
+		const rows = renderFixedZoneSidebar(info, layout.sidebarWidth, rawRows, this.options.sidebar?.theme);
+		profileDuration("fixed.sidebar.rows.render.ms", renderStart);
+		const highlightStart = profileNow();
+		const renderedRows = rows.map((line, index) => this.renderSidebarSelectionHighlight(line, index));
+		profileDuration("fixed.sidebar.rows.highlight.ms", highlightStart);
+		profileSample("fixed.sidebar.rows.count", rows.length);
+		profileDuration("fixed.sidebar.rows.total.ms", totalStart);
+		this.sidebarRows = rows;
+		this.sidebarRowsCache = { rawRows, sidebarWidth: layout.sidebarWidth, selectionKey, rows, renderedRows };
+		return renderedRows;
+	}
+
+	private composeWithSidebar(content: string, layout: FixedZoneSidebarLayout, sidebarRows: string[], rowIndex: number): string {
+		if (!layout.active) return fitLine(content, layout.contentWidth);
+		return `${padLine(content, layout.contentWidth)}${sidebarRows[rowIndex] ?? ""}`;
+	}
+
 	private getMaxClusterRows(rawRows = this.getRawRows()): number {
 		return Math.max(0, rawRows - MIN_SCROLLABLE_ROWS);
 	}
 
-	private renderCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
+	private renderCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
+		const start = profileNow();
 		this.renderingCluster = true;
 		try {
-			return renderFixedUserZoneCluster(this.hiddenRenderables, width, this.getMaxClusterRows(rawRows), this.getClusterOptions());
+			const cluster = renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), this.getMaxClusterRows(rawRows), this.getClusterOptions());
+			const insetCluster = applyContentInsetToCluster(cluster, width);
+			profileSample("fixed.cluster.rows.count", insetCluster.lines.length);
+			return insetCluster;
 		} finally {
 			this.renderingCluster = false;
+			profileDuration("fixed.cluster.render.ms", start);
 		}
 	}
 
 	private getClusterOptions(): FixedZoneClusterOptions {
-		return this.scrollOffset > 0
-			? { scrollHint: BOTTOM_HINT, showScrollDivider: true }
-			: { scrollHint: TOP_HINT };
+		return { scrollHint: this.scrollOffset > 0 ? BOTTOM_HINT : TOP_HINT };
 	}
 
 	private getClusterStateKey(): string {
 		return this.scrollOffset > 0 ? "scrolled" : "bottom";
 	}
 
-	private refreshCluster(width = this.getRawColumns(), rawRows = this.getRawRows()): FixedZoneCluster {
+	private refreshCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
 		const stateKey = this.getClusterStateKey();
 		const cached = this.clusterCache;
-		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) return cached.cluster;
+		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) {
+			profileCount("fixed.cluster.cacheHit");
+			return cached.cluster;
+		}
+		profileCount("fixed.cluster.cacheMiss");
 		const cluster = this.renderCluster(width, rawRows);
 		this.lastClusterHeight = cluster.lines.length;
 		this.clusterCache = { width, rawRows, stateKey, cluster };
@@ -306,7 +534,8 @@ export class TerminalSplitCompositor {
 	private getScrollableRows(): number {
 		if (this.disposed || this.painting || this.renderingCluster) return this.getRawRows();
 		const rawRows = this.getRawRows();
-		const cluster = this.refreshCluster(this.getRawColumns(), rawRows);
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		return Math.max(1, rawRows - cluster.lines.length);
 	}
 
@@ -316,6 +545,7 @@ export class TerminalSplitCompositor {
 
 	private syncScrollRegion(scrollBottom: number): void {
 		if (this.scrollRegionBottom === scrollBottom) return;
+		profileCount("fixed.scrollRegion.changed");
 		this.scrollRegionBottom = scrollBottom;
 		this.writeRaw(saveCursor() + setScrollRegion(1, scrollBottom) + restoreCursor());
 	}
@@ -335,49 +565,406 @@ export class TerminalSplitCompositor {
 		this.writeRaw(moveCursor(this.getTuiCursorScreenRow(scrollableRows), 1));
 	}
 
-	private renderScrollableRoot(width: number): string[] {
-		const rawRows = this.getRawRows();
-		if (!this.renderPassActive) this.clusterCache = undefined;
-		this.refreshCluster(width, rawRows);
-		const scrollableRows = this.getScrollableRows();
-		const lines = this.originalTuiRender(width);
-		this.rootLines = lines;
-		this.lastRootLineCount = lines.length;
+	private getWindowableChildren(component: RenderableLike, isRoot = false): RenderableLike[] | null {
+		if (!Array.isArray(component.children)) return null;
+		if (isRoot) return component.children.filter(isRenderable);
+		if (isVirtualizedChatContainer(component)) {
+			profileCount("fixed.root.windowRender.virtualizedChatLeaf");
+			return null;
+		}
+		const constructorName = component.constructor?.name ?? "";
+		return WINDOWABLE_CONTAINER_NAMES.has(constructorName) ? component.children.filter(isRenderable) : null;
+	}
+
+	private renderTailComponent(component: RenderableLike, width: number, maxLines: number, isRoot = false): WindowedRootRender {
+		if (maxLines <= 0) {
+			return { lines: [], omitted: true, renderedComponents: 0, skippedComponents: 1, truncatedLines: 0, visitedComponents: 0 };
+		}
+
+		if (this.hiddenRenderableTargets.has(component as object)) {
+			profileCount("fixed.root.windowRender.skipHiddenTarget");
+			return { lines: [], omitted: false, renderedComponents: 0, skippedComponents: 0, truncatedLines: 0, visitedComponents: 1 };
+		}
+
+		const children = this.getWindowableChildren(component, isRoot);
+		if (!children) {
+			const rendered = component.render(width);
+			const truncatedLines = Math.max(0, rendered.length - maxLines);
+			return {
+				lines: truncatedLines > 0 ? rendered.slice(-maxLines) : rendered,
+				omitted: truncatedLines > 0,
+				renderedComponents: 1,
+				skippedComponents: 0,
+				truncatedLines,
+				visitedComponents: 1,
+			};
+		}
+
+		const chunks: string[][] = [];
+		let lineCount = 0;
+		let omitted = false;
+		let renderedComponents = 0;
+		let skippedComponents = 0;
+		let truncatedLines = 0;
+		let visitedComponents = 1;
+
+		for (let index = children.length - 1; index >= 0; index--) {
+			if (lineCount >= maxLines) {
+				omitted = true;
+				skippedComponents += index + 1;
+				break;
+			}
+
+			const child = children[index];
+			const childResult = this.renderTailComponent(child, width, maxLines - lineCount);
+			if (childResult.lines.length > 0) {
+				chunks.push(childResult.lines);
+				lineCount += childResult.lines.length;
+			}
+			omitted = omitted || childResult.omitted;
+			renderedComponents += childResult.renderedComponents;
+			skippedComponents += childResult.skippedComponents;
+			truncatedLines += childResult.truncatedLines;
+			visitedComponents += childResult.visitedComponents;
+		}
+
+		chunks.reverse();
+		return {
+			lines: chunks.flat(),
+			omitted,
+			renderedComponents,
+			skippedComponents,
+			truncatedLines,
+			visitedComponents,
+		};
+	}
+
+	private renderWindowedRoot(width: number, maxLines: number): WindowedRootRender | null {
+		const root = this.tui as unknown as RenderableLike;
+		if (!Array.isArray(root.children)) return null;
+		return this.renderTailComponent(root, width, maxLines, true);
+	}
+
+	private rootOmittedMarker(windowed: WindowedRootRender, width: number): string {
+		const skippedText = windowed.skippedComponents > 0 ? `; ${windowed.skippedComponents} earlier components skipped` : "";
+		const truncatedText = windowed.truncatedLines > 0 ? `; ${windowed.truncatedLines} lines trimmed inside render window` : "";
+		return safeTruncateToWidth(`… earlier root content omitted before render${skippedText}${truncatedText}`, width, "…");
+	}
+
+	private findVisibleAnchor(lines: string[], start: number, rowCount: number): { line: string; relativeRow: number } | null {
+		const end = Math.min(lines.length, start + Math.max(1, rowCount));
+		for (let index = start; index < end; index++) {
+			const line = lines[index];
+			if (line !== undefined && stripAnsi(line).trim().length > 0) {
+				return { line, relativeRow: index - start };
+			}
+		}
+		return lines[start] !== undefined ? { line: lines[start], relativeRow: 0 } : null;
+	}
+
+	private updateScrollAnchor(
+		lines: string[],
+		scrollableRows: number,
+		previousLines: string[],
+		previousStart: number,
+		previousRows: number,
+		previousOffset: number,
+	): number {
 		const maxOffset = Math.max(0, lines.length - scrollableRows);
-		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxOffset));
-		const start = Math.max(0, maxOffset - this.scrollOffset);
-		this.visibleRootStart = start;
-		this.visibleScrollableRows = scrollableRows;
-		return lines.slice(start, start + scrollableRows).map((line, index) => this.renderSelectionHighlight(line, start + index));
+		const offsetChangedSinceRender = previousOffset !== this.lastRenderedScrollOffset;
+		if (offsetChangedSinceRender || previousLines.length === 0) {
+			this.scrollOffset = Math.max(0, Math.min(previousOffset, maxOffset));
+			this.lastRenderedScrollOffset = this.scrollOffset;
+			profileCount(this.scrollOffset > 0 ? "fixed.scrollAnchor.manualOffset" : "fixed.scrollAnchor.followBottom");
+			return Math.max(0, maxOffset - this.scrollOffset);
+		}
+
+		if (previousOffset <= 0) {
+			this.scrollOffset = 0;
+			this.lastRenderedScrollOffset = this.scrollOffset;
+			profileCount("fixed.scrollAnchor.followBottom");
+			return maxOffset;
+		}
+
+		let start = previousStart;
+		const anchor = this.findVisibleAnchor(previousLines, previousStart, previousRows || scrollableRows);
+		if (anchor) {
+			const searchFrom = Math.max(0, Math.min(previousStart, Math.max(0, lines.length - 1)));
+			let anchorIndex = lines.indexOf(anchor.line, searchFrom);
+			if (anchorIndex < 0) anchorIndex = lines.indexOf(anchor.line);
+			if (anchorIndex >= 0) {
+				start = anchorIndex - anchor.relativeRow;
+				profileCount("fixed.scrollAnchor.anchorHit");
+			} else {
+				profileCount("fixed.scrollAnchor.anchorMiss");
+			}
+		} else {
+			profileCount("fixed.scrollAnchor.anchorUnavailable");
+		}
+
+		start = Math.max(0, Math.min(start, maxOffset));
+		this.scrollOffset = maxOffset - start;
+		this.lastRenderedScrollOffset = this.scrollOffset;
+		profileCount("fixed.scrollAnchor.preserved");
+		profileSample("fixed.scrollAnchor.offset", this.scrollOffset);
+		return start;
+	}
+
+	private markScrollbarInteraction(): void {
+		this.scrollbarVisibleUntil = Date.now() + SCROLLBAR_VISIBLE_MS;
+		if (this.scrollbarHideTimer) clearTimeout(this.scrollbarHideTimer);
+		this.scrollbarHideTimer = setTimeout(() => {
+			this.scrollbarHideTimer = undefined;
+			this.scrollbarVisibleUntil = 0;
+			if (!this.disposed && !this.scrollbarDragging && this.scrollOffset <= 0) this.tui.requestRender(true);
+		}, SCROLLBAR_VISIBLE_MS);
+	}
+
+	private shouldShowScrollbar(): boolean {
+		return this.scrollOffset > 0 || this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
+	}
+
+	private isScrollbarActive(): boolean {
+		return this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
+	}
+
+	private formatScrollbarGlyph(color: string): string {
+		const theme = this.options.sidebar?.theme;
+		try {
+			if (theme && typeof theme.fg === "function") {
+				return `${SCROLLBAR_RESET_INTENSITY}${theme.fg(color, SCROLLBAR_GLYPH)}${SCROLLBAR_RESET_INTENSITY}`;
+			}
+		} catch {}
+		return `${SCROLLBAR_RESET_INTENSITY}${SCROLLBAR_DIM}${SCROLLBAR_GLYPH}${SCROLLBAR_RESET_INTENSITY}`;
+	}
+
+	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
+		if (!SCROLLBAR_VISUAL_ENABLED) return null;
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const trackRows = Math.max(0, scrollableRows);
+		const scrollbarCol = Math.max(1, layout.contentWidth - SCROLLBAR_WRAP_GUARD_COLUMNS);
+		if (totalRows <= trackRows || trackRows <= 1 || scrollbarCol <= 0) return null;
+
+		const maxStart = Math.max(1, totalRows - trackRows);
+		const thumbRows = Math.max(1, Math.min(trackRows, Math.round((trackRows / totalRows) * trackRows)));
+		const thumbTop = Math.max(0, Math.min(trackRows - thumbRows, Math.round((start / maxStart) * (trackRows - thumbRows))));
+		return { col: scrollbarCol, trackRows, maxStart, thumbTop, thumbRows };
+	}
+
+	private renderScrollableRoot(_width: number): string[] {
+		const totalStart = profileNow();
+		try {
+			const previousRootLines = this.rootLines;
+			const previousVisibleRootStart = this.visibleRootStart;
+			const previousVisibleScrollableRows = this.visibleScrollableRows;
+			const previousScrollOffset = this.scrollOffset;
+			const rawRows = this.getRawRows();
+			const layout = this.getSidebarLayout(this.getRawColumns());
+			if (!this.renderPassActive) {
+				this.clusterCache = undefined;
+				this.sidebarRowsCache = undefined;
+			}
+			this.refreshCluster(layout.contentWidth, rawRows);
+			const scrollableRows = this.getScrollableRows();
+			const retainedLines = Math.max(1, MAX_FIXED_ROOT_LINES - 1);
+			const rootRenderStart = profileNow();
+			const rootRenderWidth = getTuiContentInnerWidth(layout.contentWidth);
+			let lines: string[];
+			let omittedLines = 0;
+			let linesHaveContentInset = false;
+			try {
+				const windowed = this.renderWindowedRoot(rootRenderWidth, retainedLines);
+				if (windowed) {
+					profileCount("fixed.root.windowRender.used");
+					profileDuration("fixed.root.windowRender.ms", rootRenderStart);
+					profileSample("fixed.root.windowRender.renderedComponents.count", windowed.renderedComponents);
+					profileSample("fixed.root.windowRender.skippedComponents.count", windowed.skippedComponents);
+					profileSample("fixed.root.windowRender.visitedComponents.count", windowed.visitedComponents);
+					profileSample("fixed.root.windowRender.truncatedLines.count", windowed.truncatedLines);
+					profileSample("fixed.root.windowRender.omitted.count", windowed.omitted ? 1 : 0);
+					profileSample("fixed.root.windowRender.omittedUnits.count", windowed.omitted ? windowed.skippedComponents + windowed.truncatedLines : 0);
+					omittedLines = windowed.omitted ? windowed.truncatedLines : 0;
+					lines = windowed.omitted ? [this.rootOmittedMarker(windowed, rootRenderWidth), ...windowed.lines] : windowed.lines;
+				} else {
+					profileCount("fixed.root.windowRender.fallback.noChildren");
+					const renderedLines = this.originalTuiRender(layout.contentWidth);
+					profileDuration("fixed.root.originalRender.ms", rootRenderStart);
+					profileSample("fixed.root.originalLines.count", renderedLines.length);
+					omittedLines = Math.max(0, renderedLines.length - retainedLines);
+					linesHaveContentInset = true;
+					lines = omittedLines > 0
+						? [
+							padTuiContentLine(safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, rootRenderWidth, "…"), layout.contentWidth),
+							...renderedLines.slice(-retainedLines),
+						]
+						: renderedLines;
+				}
+			} catch {
+				profileCount("fixed.root.windowRender.fallback.error");
+				const fallbackStart = profileNow();
+				const renderedLines = this.originalTuiRender(layout.contentWidth);
+				profileDuration("fixed.root.originalRender.ms", fallbackStart);
+				profileSample("fixed.root.originalLines.count", renderedLines.length);
+				omittedLines = Math.max(0, renderedLines.length - retainedLines);
+				linesHaveContentInset = true;
+				lines = omittedLines > 0
+					? [
+						padTuiContentLine(safeTruncateToWidth(`… ${omittedLines} earlier rendered lines omitted`, rootRenderWidth, "…"), layout.contentWidth),
+						...renderedLines.slice(-retainedLines),
+					]
+					: renderedLines;
+			}
+			if (!linesHaveContentInset) lines = applyContentInset(lines, layout.contentWidth);
+			profileSample("fixed.root.lines.count", lines.length);
+			profileSample("fixed.root.retainedLines.count", lines.length);
+			profileSample("fixed.root.omittedLines.count", omittedLines);
+			this.rootLines = lines;
+			this.lastRootLineCount = lines.length;
+			const start = this.updateScrollAnchor(
+				lines,
+				scrollableRows,
+				previousRootLines,
+				previousVisibleRootStart,
+				previousVisibleScrollableRows,
+				previousScrollOffset,
+			);
+			this.visibleRootStart = start;
+			this.visibleScrollableRows = scrollableRows;
+			const visibleStart = profileNow();
+			const visibleLines = lines.slice(start, start + scrollableRows)
+				.map((line, index) => this.renderSelectionHighlight(line, start + index));
+			profileDuration("fixed.root.visibleLines.ms", visibleStart);
+			profileSample("fixed.root.visibleRows.count", visibleLines.length);
+			if (!layout.active) return visibleLines;
+			const sidebarRows = this.renderSidebarRows(layout, rawRows);
+			const composeStart = profileNow();
+			const composed = visibleLines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, index));
+			profileDuration("fixed.root.composeSidebar.ms", composeStart);
+			return composed;
+		} finally {
+			profileDuration("fixed.root.renderScrollable.ms", totalStart);
+		}
 	}
 
 	private getMaxScrollOffset(): number {
 		return Math.max(0, this.lastRootLineCount - this.getScrollableRows());
 	}
 
-	private scrollBy(delta: number): void {
+	private setScrollOffset(nextOffset: number, reason: string): boolean {
 		const maxOffset = this.getMaxScrollOffset();
+		const next = Math.max(0, Math.min(maxOffset, nextOffset));
+		if (next === this.scrollOffset) {
+			profileCount(`fixed.input.${reason}.noop`);
+			return false;
+		}
+
 		this.clearSelection();
-		this.scrollOffset = Math.max(0, Math.min(maxOffset, this.scrollOffset + delta));
+		this.markScrollbarInteraction();
+		this.scrollOffset = next;
 		this.tui.requestRender();
+		return true;
+	}
+
+	private scrollBy(delta: number): void {
+		profileCount("fixed.input.scrollBy.calls");
+		profileSample("fixed.input.scrollBy.delta", delta);
+		this.setScrollOffset(this.scrollOffset + delta, "scrollBy");
+	}
+
+	private getAcceleratedWheelScrollDelta(direction: number, now = Date.now()): number {
+		const elapsed = this.lastWheelAt > 0 ? now - this.lastWheelAt : Number.POSITIVE_INFINITY;
+		const sameDirection = direction === this.lastWheelDirection;
+
+		if (!sameDirection || elapsed > WHEEL_SCROLL_RESET_MS) {
+			this.wheelBurst = 0;
+		} else if (elapsed <= WHEEL_SCROLL_BURST_MS) {
+			this.wheelBurst = Math.min(WHEEL_SCROLL_MAX_LINES - WHEEL_SCROLL_BASE_LINES, this.wheelBurst + 1);
+		} else {
+			this.wheelBurst = Math.max(0, this.wheelBurst - 1);
+		}
+
+		this.lastWheelAt = now;
+		this.lastWheelDirection = direction;
+		const lines = Math.min(WHEEL_SCROLL_MAX_LINES, WHEEL_SCROLL_BASE_LINES + this.wheelBurst);
+		profileSample("fixed.input.mouseScroll.lines", lines);
+		return direction * lines;
 	}
 
 	private jumpToTop(): void {
-		this.clearSelection();
-		this.scrollOffset = this.getMaxScrollOffset();
-		this.tui.requestRender();
+		profileCount("fixed.input.jumpTop.calls");
+		this.setScrollOffset(this.getMaxScrollOffset(), "jumpTop");
 	}
 
 	private jumpToBottom(): void {
-		this.clearSelection();
-		this.scrollOffset = 0;
-		this.tui.requestRender();
+		profileCount("fixed.input.jumpBottom.calls");
+		this.setScrollOffset(0, "jumpBottom");
+	}
+
+	private scrollbarGeometryForPacket(packet: SgrMousePacket): ScrollbarGeometry | null {
+		const geometry = this.computeScrollbarGeometry();
+		if (!geometry || packet.row < 1 || packet.row > geometry.trackRows) return null;
+		const hitEndCol = Math.min(this.getSidebarLayout().contentWidth, geometry.col + SCROLLBAR_WRAP_GUARD_COLUMNS);
+		const hitStartCol = Math.max(1, hitEndCol - SCROLLBAR_HIT_COLUMNS + 1);
+		if (packet.col < hitStartCol || packet.col > hitEndCol) return null;
+
+		const rowIndex = packet.row - 1;
+		const hitsThumb = rowIndex >= geometry.thumbTop && rowIndex < geometry.thumbTop + geometry.thumbRows;
+		if (!this.shouldShowScrollbar() && !hitsThumb) return null;
+		return geometry;
+	}
+
+	private setScrollFromScrollbarRow(row: number, geometry: ScrollbarGeometry, dragOffset: number, reason: string): void {
+		const maxThumbTop = Math.max(0, geometry.trackRows - geometry.thumbRows);
+		const thumbTop = Math.max(0, Math.min(maxThumbTop, row - 1 - dragOffset));
+		const start = maxThumbTop <= 0 ? 0 : Math.round((thumbTop / maxThumbTop) * geometry.maxStart);
+		profileSample(`fixed.scrollbar.${reason}.start`, start);
+		this.setScrollOffset(this.getMaxScrollOffset() - start, `scrollbar.${reason}`);
+	}
+
+	private handleScrollbarPacket(packet: SgrMousePacket): boolean {
+		if (this.scrollbarDragging) {
+			if (isMouseRelease(packet)) {
+				profileCount("fixed.scrollbar.drag.finish");
+				this.scrollbarDragging = false;
+				this.scrollbarDragOffset = 0;
+				this.markScrollbarInteraction();
+				return true;
+			}
+
+			if (isLeftDrag(packet)) {
+				const geometry = this.computeScrollbarGeometry();
+				if (!geometry) return true;
+				profileCount("fixed.scrollbar.drag.move");
+				this.setScrollFromScrollbarRow(packet.row, geometry, this.scrollbarDragOffset, "drag");
+				return true;
+			}
+		}
+
+		const geometry = this.scrollbarGeometryForPacket(packet);
+		if (!geometry || !isLeftPress(packet)) return false;
+
+		const rowIndex = packet.row - 1;
+		if (rowIndex >= geometry.thumbTop && rowIndex < geometry.thumbTop + geometry.thumbRows) {
+			profileCount("fixed.scrollbar.drag.start");
+			this.clearSelection();
+			this.tui.requestRender();
+			this.scrollbarDragging = true;
+			this.markScrollbarInteraction();
+			this.scrollbarDragOffset = rowIndex - geometry.thumbTop;
+			return true;
+		}
+
+		profileCount("fixed.scrollbar.track.click");
+		this.scrollBy(rowIndex < geometry.thumbTop ? geometry.trackRows : -geometry.trackRows);
+		return true;
 	}
 
 	private handleMousePacket(packet: SgrMousePacket): void {
-		const delta = mouseScrollDelta(packet);
-		if (delta !== 0) {
-			this.scrollBy(delta);
+		if (this.handleScrollbarPacket(packet)) return;
+		const wheelDirection = mouseScrollDirection(packet);
+		if (wheelDirection !== 0) {
+			profileCount("fixed.input.mouseScroll.calls");
+			this.scrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
 			return;
 		}
 
@@ -393,6 +980,7 @@ export class TerminalSplitCompositor {
 		}
 
 		if (isLeftPress(packet)) {
+			profileCount("fixed.input.selection.start");
 			this.selectionAnchor = point;
 			this.selectionFocus = point;
 			this.selectionDragging = true;
@@ -400,15 +988,30 @@ export class TerminalSplitCompositor {
 			return;
 		}
 
-		if (this.selectionDragging && isLeftDrag(packet)) {
+		if (this.selectionDragging && isLeftDrag(packet) && this.selectionAnchor?.region === point.region) {
+			if (this.selectionFocus && compareSelectionPoints(this.selectionFocus, point) === 0) {
+				profileCount("fixed.input.selection.dragNoop");
+				return;
+			}
+			profileCount("fixed.input.selection.dragRender");
 			this.selectionFocus = point;
 			this.tui.requestRender();
 		}
 	}
 
 	private selectionPointForPacket(packet: SgrMousePacket): SelectionPoint | null {
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		if (layout.active && packet.col > layout.contentWidth) {
+			if (packet.row < 1 || packet.row > this.getRawRows()) return null;
+			return {
+				region: "sidebar",
+				line: packet.row - 1,
+				col: Math.max(0, packet.col - layout.contentWidth - 1),
+			};
+		}
 		if (packet.row < 1 || packet.row > this.visibleScrollableRows) return null;
 		return {
+			region: "root",
 			line: this.visibleRootStart + packet.row - 1,
 			col: Math.max(0, packet.col - 1),
 		};
@@ -416,12 +1019,15 @@ export class TerminalSplitCompositor {
 
 	private finishSelection(point: SelectionPoint | null): void {
 		if (!this.selectionDragging) return;
-		if (point) this.selectionFocus = point;
+		profileCount("fixed.input.selection.finish");
+		if (point && this.selectionAnchor?.region === point.region) this.selectionFocus = point;
 		this.selectionDragging = false;
 		const selectedText = this.getSelectedText();
 		if (selectedText) {
+			profileCount("fixed.input.selection.copy");
 			this.options.onCopySelection?.(selectedText);
 		} else {
+			profileCount("fixed.input.selection.empty");
 			this.clearSelection();
 		}
 		this.tui.requestRender();
@@ -435,24 +1041,36 @@ export class TerminalSplitCompositor {
 
 	private getSelectedText(): string {
 		if (!this.selectionAnchor || !this.selectionFocus) return "";
+		if (this.selectionAnchor.region !== this.selectionFocus.region) return "";
 		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
 		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
 		if (start.line === end.line && start.col === end.col) return "";
+		const sourceLines = start.region === "sidebar" ? this.sidebarRows : this.rootLines;
 		const selected: string[] = [];
 		for (let lineIndex = start.line; lineIndex <= end.line; lineIndex++) {
-			const line = stripAnsi(this.rootLines[lineIndex] ?? "");
+			const line = stripAnsi(sourceLines[lineIndex] ?? "");
 			selected.push(sliceColumns(line, lineIndex === start.line ? start.col : 0, lineIndex === end.line ? end.col : Number.POSITIVE_INFINITY));
 		}
 		return selected.join("\n").replace(/[ \t]+$/gm, "").trimEnd();
 	}
 
 	private renderSelectionHighlight(line: string, lineIndex: number): string {
+		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "root" || this.selectionFocus.region !== "root") return line;
+		return this.renderLineSelectionHighlight(line, lineIndex);
+	}
+
+	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
+		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "sidebar" || this.selectionFocus.region !== "sidebar") return line;
+		return this.renderLineSelectionHighlight(line, lineIndex);
+	}
+
+	private renderLineSelectionHighlight(line: string, lineIndex: number): string {
 		if (!this.selectionAnchor || !this.selectionFocus) return line;
 		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
 		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
 		if (lineIndex < start.line || lineIndex > end.line) return line;
 		const plain = stripAnsi(line);
-		const lineWidth = visibleWidth(plain);
+		const lineWidth = safeVisibleWidth(plain);
 		const startCol = lineIndex === start.line ? Math.max(0, Math.min(start.col, lineWidth)) : 0;
 		const endCol = lineIndex === end.line ? Math.max(startCol, Math.min(end.col, lineWidth)) : lineWidth;
 		if (startCol === endCol) return line;
@@ -460,70 +1078,196 @@ export class TerminalSplitCompositor {
 	}
 
 	private renderPass(): void {
-		if (!this.originalTuiDoRender) return;
-		this.renderPassActive = true;
-		this.clusterCache = undefined;
+		profileCount("fixed.renderPass.calls");
+		const totalStart = profileNow();
 		try {
-			this.originalTuiDoRender();
-			this.requestRepaint();
-		} finally {
-			this.renderPassActive = false;
+			if (!this.originalTuiDoRender) return;
+			this.renderPassActive = true;
 			this.clusterCache = undefined;
+			this.sidebarRowsCache = undefined;
+			try {
+				const doRenderStart = profileNow();
+				this.originalTuiDoRender();
+				profileDuration("tui.doRender.ms", doRenderStart);
+				this.requestRepaint();
+			} finally {
+				this.renderPassActive = false;
+				this.clusterCache = undefined;
+				this.sidebarRowsCache = undefined;
+			}
+		} finally {
+			profileDuration("fixed.renderPass.ms", totalStart);
 		}
 	}
 
 	private requestRepaint(): void {
-		if (this.disposed || this.painting) return;
-		const rawRows = this.getRawRows();
-		const width = this.getRawColumns();
-		const cluster = this.refreshCluster(width, rawRows);
-		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-		if (cluster.lines.length === 0) return;
-		this.painting = true;
+		profileCount("fixed.repaint.request.calls");
+		const totalStart = profileNow();
 		try {
-			this.writeRaw(this.buildFixedClusterPaint(cluster, rawRows, width));
+			if (this.disposed || this.painting) {
+				profileCount("fixed.repaint.skip.busy");
+				return;
+			}
+			const rawRows = this.getRawRows();
+			const layout = this.getSidebarLayout(this.getRawColumns());
+			const cluster = this.refreshCluster(layout.contentWidth, rawRows);
+			const sidebarRows = this.renderSidebarRows(layout, rawRows);
+			this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
+			const scrollbarPaint = this.buildScrollbarPaint();
+			if (cluster.lines.length === 0 && !layout.active && scrollbarPaint.length === 0) {
+				profileCount("fixed.repaint.skip.empty");
+				return;
+			}
+			this.painting = true;
+			try {
+				const output = this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows) + scrollbarPaint;
+				if (output.length === 0) {
+					profileCount("fixed.repaint.skip.unchanged");
+					return;
+				}
+				profileTextBytes("fixed.repaint.output.bytes", output);
+				this.writeGrid(output);
+			} finally {
+				this.painting = false;
+			}
 		} finally {
-			this.painting = false;
+			profileDuration("fixed.repaint.total.ms", totalStart);
 		}
 	}
 
 	private write(data: string): void {
-		if (this.painting || this.disposed) {
-			this.writeRaw(data);
-			return;
-		}
-		this.painting = true;
+		profileCount("fixed.write.core.calls");
+		profileTextBytes("fixed.write.core.bytes", data);
+		const totalStart = profileNow();
 		try {
-			const rawRows = this.getRawRows();
-			const width = this.getRawColumns();
-			const cluster = this.refreshCluster(width, rawRows);
-			const clusterHeight = cluster.lines.length;
-			if (clusterHeight === 0) {
-				this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
+			if (this.painting || this.disposed) {
+				profileCount("fixed.write.core.bypass");
 				this.writeRaw(data);
 				return;
 			}
-			const scrollBottom = this.getScrollBottom(rawRows, clusterHeight);
-			this.syncScrollRegion(scrollBottom);
-			if (this.renderPassActive) this.moveToTuiCursor(scrollBottom);
-			this.writeRaw(this.renderPassActive ? data : data + this.buildFixedClusterPaint(cluster, rawRows, width));
+			this.painting = true;
+			if (!this.renderPassActive) this.sidebarRowsCache = undefined;
+			try {
+				const rawRows = this.getRawRows();
+				const layout = this.getSidebarLayout(this.getRawColumns());
+				const cluster = this.refreshCluster(layout.contentWidth, rawRows);
+				this.markSidebarPaintDirty(layout, data);
+				const clusterHeight = cluster.lines.length;
+				this.markClusterPaintDirty(data, clusterHeight);
+				if (clusterHeight === 0) {
+					const sidebarRows = this.renderSidebarRows(layout, rawRows);
+					this.syncScrollRegion(this.getScrollBottom(rawRows, clusterHeight));
+					const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildScrollbarPaint();
+					profileTextBytes("fixed.write.output.bytes", output);
+					this.writeGrid(output);
+					return;
+				}
+				const scrollBottom = this.getScrollBottom(rawRows, clusterHeight);
+				this.syncScrollRegion(scrollBottom);
+				if (this.renderPassActive) {
+					profileCount("fixed.write.core.renderPassOnly");
+					this.moveToTuiCursor(scrollBottom);
+					this.writeGrid(data);
+					return;
+				}
+				const sidebarRows = this.renderSidebarRows(layout, rawRows);
+				const output = data + this.buildSidebarPaint(rawRows, layout, sidebarRows) + this.buildFixedClusterPaint(cluster, rawRows, layout, sidebarRows) + this.buildScrollbarPaint();
+				profileTextBytes("fixed.write.output.bytes", output);
+				this.writeGrid(output);
+			} finally {
+				this.painting = false;
+				if (!this.renderPassActive) this.sidebarRowsCache = undefined;
+			}
 		} finally {
-			this.painting = false;
+			profileDuration("fixed.write.core.ms", totalStart);
 		}
 	}
 
-	private buildFixedClusterPaint(cluster: FixedZoneCluster, rawRows: number, width: number): string {
-		const startRow = rawRows - cluster.lines.length + 1;
+	private buildScrollbarPaint(): string {
+		const geometry = this.computeScrollbarGeometry();
+		if (!geometry || !this.shouldShowScrollbar()) return "";
+
+		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
+		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
+		const clearTail = this.getSidebarLayout(this.getRawColumns()).active ? "" : clearLineRight();
 		let output = saveCursor();
-		cluster.lines.forEach((line, index) => {
-			const row = startRow + index;
-			output += moveCursor(row, 1) + clearLine() + fitLine(line, width);
-		});
-		if (cluster.cursor) {
-			const cursorRow = startRow + cluster.cursor.row - 1;
-			const cursorCol = Math.max(1, Math.min(width, cluster.cursor.col));
-			return output + moveCursor(cursorRow, cursorCol);
+		for (let index = 0; index < geometry.trackRows; index++) {
+			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
+			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearTail;
 		}
-		return output + restoreCursor();
+		const painted = output + restoreCursor();
+		profileCount("fixed.scrollbar.paint");
+		profileSample("fixed.scrollbar.paint.rows.count", geometry.trackRows);
+		profileSample("fixed.scrollbar.thumbRows.count", geometry.thumbRows);
+		profileSample("fixed.scrollbar.thumbTop", geometry.thumbTop);
+		profileTextBytes("fixed.scrollbar.paint.bytes", painted);
+		return painted;
+	}
+
+	private buildSidebarPaint(rawRows: number, layout: FixedZoneSidebarLayout, sidebarRows = this.renderSidebarRows(layout, rawRows)): string {
+		const start = profileNow();
+		try {
+			if (!layout.active) {
+				this.resetSidebarPaintCache();
+				return "";
+			}
+			const blankSidebarRow = " ".repeat(layout.sidebarWidth);
+			const paintRows = Array.from({ length: rawRows }, (_value, index) => sidebarRows[index] ?? blankSidebarRow);
+			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}`;
+			if (this.lastPaintedSidebarKey === paintKey && sameStringList(this.lastPaintedSidebarRows, paintRows)) {
+				profileCount("fixed.sidebar.paint.skipUnchanged");
+				return "";
+			}
+			this.lastPaintedSidebarKey = paintKey;
+			this.lastPaintedSidebarRows = paintRows;
+			let output = saveCursor();
+			for (let row = 1; row <= rawRows; row++) {
+				output += moveCursor(row, layout.contentWidth + 1) + paintRows[row - 1];
+			}
+			const painted = output + restoreCursor();
+			profileCount("fixed.sidebar.paint.full");
+			profileSample("fixed.sidebar.paint.rows.count", rawRows);
+			profileTextBytes("fixed.sidebar.paint.bytes", painted);
+			return painted;
+		} finally {
+			profileDuration("fixed.sidebar.paint.ms", start);
+		}
+	}
+
+	private buildFixedClusterPaint(cluster: FixedZoneCluster, rawRows: number, layout: FixedZoneSidebarLayout, sidebarRows = this.renderSidebarRows(layout, rawRows)): string {
+		const start = profileNow();
+		try {
+			if (cluster.lines.length === 0) {
+				this.resetClusterPaintCache();
+				return "";
+			}
+			const startRow = rawRows - cluster.lines.length + 1;
+			const paintRows = cluster.lines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1));
+			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
+			const cursorPaint = cluster.cursor
+				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
+				: "";
+			if (this.lastPaintedClusterKey === paintKey && sameStringList(this.lastPaintedClusterRows, paintRows)) {
+				profileCount("fixed.cluster.paint.skipUnchanged");
+				if (cursorPaint) {
+					profileCount("fixed.cluster.paint.cursorOnly");
+					profileTextBytes("fixed.cluster.paint.cursorBytes", cursorPaint);
+				}
+				return cursorPaint;
+			}
+			this.lastPaintedClusterKey = paintKey;
+			this.lastPaintedClusterRows = paintRows;
+			let output = saveCursor();
+			paintRows.forEach((line, index) => {
+				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + clearLine() + line;
+			});
+			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
+			profileCount("fixed.cluster.paint.full");
+			profileSample("fixed.cluster.paint.rows.count", cluster.lines.length);
+			profileTextBytes("fixed.cluster.paint.bytes", painted);
+			return painted;
+		} finally {
+			profileDuration("fixed.cluster.paint.ms", start);
+		}
 	}
 }

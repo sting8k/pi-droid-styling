@@ -1,11 +1,14 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
+import { loadConfig } from "../config.js";
 import { formatBoxedFooter, formatToolName, formatToolParamLines, renderBoxedToolCall, renderBoxedToolResult, renderLines } from "./common.js";
+import { annotateToolResultMetrics } from "./elapsed.js";
 
 const PATCH_FLAG = "__defaultBadgePatched__";
 const RENDERED_FLAG = Symbol("__defaultBadge_rendered__");
 const BOXED_FALLBACK_FLAG = Symbol("__defaultBadge_boxedFallback__");
+const EXECUTION_STARTED_AT_FLAG = Symbol("__defaultBadge_executionStartedAt__");
 
 const CUSTOM_TOOLS = new Set(["read", "write", "edit", "bash", "ls", "find", "grep", "quick_edit", "substitute_edit", "target_edit"]);
 const MAX_FALLBACK_PREVIEW_LINES = 10;
@@ -37,36 +40,72 @@ function getTextOutput(owner: any): string {
 		.trimEnd();
 }
 
+type FallbackRenderCache = {
+	width: number;
+	theme: any;
+	result: any;
+	expanded: boolean;
+	maxLines: number;
+	isError: boolean;
+	isPartial: boolean;
+	hasResult: boolean;
+	lines: string[];
+};
+
 function createBoxedFallbackComponent(owner: any): Component {
+	let cache: FallbackRenderCache | null = null;
 	return {
-		invalidate() {},
+		invalidate() { cache = null; },
 		render(width: number): string[] {
 			const theme = getRenderTheme();
 			const isError = Boolean(owner.result?.isError);
 			const isPartial = Boolean(owner.isPartial);
 			const hasResult = Boolean(owner.result);
+			const expanded = Boolean(owner.expanded);
+			const maxLines = hasResult && expanded ? loadConfig().maxExpandedLines : MAX_FALLBACK_PREVIEW_LINES;
+			if (
+				cache &&
+				cache.width === width &&
+				cache.theme === theme &&
+				cache.result === owner.result &&
+				cache.expanded === expanded &&
+				cache.maxLines === maxLines &&
+				cache.isError === isError &&
+				cache.isPartial === isPartial &&
+				cache.hasResult === hasResult
+			) {
+				return cache.lines;
+			}
+
 			const call = renderBoxedToolCall(theme, formatToolName(String(owner.toolName ?? "Tool")), formatToolParamLines(owner.args, theme), {
 				isError,
 				isPartial,
 				isPending: isPartial && !hasResult,
 			});
-			if (!hasResult) return call.render(width);
+			if (!hasResult) {
+				const lines = call.render(width);
+				cache = { width, theme, result: owner.result, expanded, maxLines, isError, isPartial, hasResult, lines };
+				return lines;
+			}
 
 			const output = getTextOutput(owner);
-			const renderOptions = { expanded: Boolean(owner.expanded), isPartial };
+			const renderOptions = { expanded, isPartial };
 			const result = renderBoxedToolResult(theme, (contentWidth) => {
 				const body = renderLines(theme, output, renderOptions, {
-					maxLines: MAX_FALLBACK_PREVIEW_LINES,
+					maxLines,
 					color: isError ? "error" : "toolOutput",
 					width: contentWidth,
 				});
 				return body ? body.split("\n") : [];
 			}, {
 				footerLines: [formatBoxedFooter(theme, owner.result)],
+				renderLineBudget: maxLines,
 				isError,
 				isPartial,
 			});
-			return [...call.render(width), ...result.render(width)];
+			const lines = [...call.render(width), ...result.render(width)];
+			cache = { width, theme, result: owner.result, expanded, maxLines, isError, isPartial, hasResult, lines };
+			return lines;
 		},
 	};
 }
@@ -117,6 +156,26 @@ export function installDefaultBadge(): void {
 		proto.getRenderContext = function patchedBoxedRenderContext(this: any, ...args: any[]) {
 			const context = baseGetRenderContext.apply(this, args);
 			return { ...context, hasResult: Boolean(this.result) };
+		};
+	}
+
+	const baseMarkExecutionStarted = proto.markExecutionStarted;
+	if (typeof baseMarkExecutionStarted === "function") {
+		proto.markExecutionStarted = function patchedDefaultBadgeMarkExecutionStarted(this: any, ...args: any[]) {
+			this[EXECUTION_STARTED_AT_FLAG] = performance.now();
+			return baseMarkExecutionStarted.apply(this, args);
+		};
+	}
+
+	const baseUpdateResult = proto.updateResult;
+	if (typeof baseUpdateResult === "function") {
+		proto.updateResult = function patchedDefaultBadgeUpdateResult(this: any, result: any, isPartial: boolean = false, ...rest: any[]) {
+			if (!isPartial && result && typeof result === "object") {
+				const startedAt = typeof this[EXECUTION_STARTED_AT_FLAG] === "number" ? this[EXECUTION_STARTED_AT_FLAG] : undefined;
+				const elapsedMs = startedAt === undefined ? undefined : Math.max(0, performance.now() - startedAt);
+				annotateToolResultMetrics(result, elapsedMs);
+			}
+			return baseUpdateResult.call(this, result, isPartial, ...rest);
 		};
 	}
 

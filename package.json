@@ -16,7 +16,10 @@
   "license": "MIT",
   "scripts": {
     "dev:link": "npm install",
-    "dev:clean": "rm -rf node_modules"
+    "dev:clean": "rm -rf node_modules",
+    "profile:render": "node scripts/render-profile-bench.mjs",
+    "trace:pi": "node scripts/pi-trace.mjs",
+    "debug:render-log": "node scripts/render-frame-log-summary.mjs"
   },
   "pi": {
     "extensions": [
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.0",
-    "@earendil-works/pi-tui": "^0.78.0"
+    "@earendil-works/pi-tui": "^0.78.0",
+    "typescript": "^6.0.3"
   }
 }

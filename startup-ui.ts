@@ -4,7 +4,8 @@ import { join } from "path";
 
 import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Spacer, Text } from "@earendil-works/pi-tui";
+import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
@@ -12,8 +13,8 @@ const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
 const MESSAGE_TEXT_INDENT = "   ";
 const STARTUP_PANEL_SIDE_PADDING = 2;
-const SYSTEM_CONTEXT_TYPE_WIDTH = visibleWidth("System & Context");
-const SYSTEM_CONTEXT_METRIC_WIDTH = visibleWidth("Words/Lines");
+const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
+const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
 const PI_ASCII_LOGO = [
 	"┏━━━┓ ┏━┓",
@@ -103,7 +104,7 @@ function indentStartupLines(lines: string[]): string[] {
 }
 
 function startupBodyWidth(width: number): number {
-	return Math.max(1, width - visibleWidth(MESSAGE_TEXT_INDENT));
+	return Math.max(1, width - safeVisibleWidth(MESSAGE_TEXT_INDENT));
 }
 
 function renderPanelBorder(theme: ThemeLike, left: string, right: string, panelWidth: number): string {
@@ -112,7 +113,7 @@ function renderPanelBorder(theme: ThemeLike, left: string, right: string, panelW
 
 function renderPanelLine(theme: ThemeLike, content: string, panelWidth: number): string {
 	const sidePadding = " ".repeat(STARTUP_PANEL_SIDE_PADDING);
-	const padding = " ".repeat(Math.max(0, panelWidth - visibleWidth(content)));
+	const padding = " ".repeat(Math.max(0, panelWidth - safeVisibleWidth(content)));
 	return `${theme.fg("dim", "│")}${sidePadding}${content}${padding}${sidePadding}${theme.fg("dim", "│")}`;
 }
 
@@ -124,7 +125,7 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 
 	if (sortedItems.length === 0) {
 		const message = theme.fg("dim", "No system or context files loaded");
-		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, visibleWidth(titleLine), visibleWidth(message));
+		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine), safeVisibleWidth(message));
 		return [
 			renderPanelBorder(theme, "┌", "┐", panelWidth),
 			renderPanelLine(theme, titleLine, panelWidth),
@@ -136,13 +137,13 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 	const typeHeader = "Type";
 	const pathHeader = "Path";
 	const metricLabel = "Words/Lines";
-	const typeWidth = Math.max(SYSTEM_CONTEXT_TYPE_WIDTH, typeHeader.length, ...sortedItems.map((item) => visibleWidth(item.kind)));
+	const typeWidth = Math.max(SYSTEM_CONTEXT_TYPE_WIDTH, typeHeader.length, ...sortedItems.map((item) => safeVisibleWidth(item.kind)));
 	const columnDivider = ` ${theme.fg("muted", "|")} `;
-	const columnDividerWidth = visibleWidth(columnDivider);
+	const columnDividerWidth = safeVisibleWidth(columnDivider);
 	const metricWidth = Math.max(SYSTEM_CONTEXT_METRIC_WIDTH, metricLabel.length, ...sortedItems.map((item) => `${item.words}/${item.lines}`.length));
-	let pathWidth = Math.max(pathHeader.length, ...sortedItems.map((item) => visibleWidth(item.path)));
+	let pathWidth = Math.max(pathHeader.length, ...sortedItems.map((item) => safeVisibleWidth(item.path)));
 	const baseRowWidth = typeWidth + columnDividerWidth + pathWidth + columnDividerWidth + metricWidth;
-	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, visibleWidth(titleLine), baseRowWidth);
+	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine), baseRowWidth);
 	pathWidth += panelWidth - baseRowWidth;
 	const header = `${theme.fg("muted", typeHeader.padEnd(typeWidth))}${columnDivider}${theme.fg("muted", pathHeader.padEnd(pathWidth))}${columnDivider}${theme.fg("muted", metricLabel.padStart(metricWidth))}`;
 	const separator = `${theme.fg("dim", "─".repeat(typeWidth))}${columnDivider}${theme.fg("dim", "─".repeat(pathWidth))}${columnDivider}${theme.fg("dim", "─".repeat(metricWidth))}`;
@@ -155,9 +156,9 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 
 	for (const item of sortedItems) {
 		const metric = `${item.words}/${item.lines}`;
-		const typePadding = " ".repeat(Math.max(0, typeWidth - visibleWidth(item.kind)));
-		const pathPadding = " ".repeat(Math.max(0, pathWidth - visibleWidth(item.path)));
-		const metricPadding = " ".repeat(Math.max(0, metricWidth - visibleWidth(metric)));
+		const typePadding = " ".repeat(Math.max(0, typeWidth - safeVisibleWidth(item.kind)));
+		const pathPadding = " ".repeat(Math.max(0, pathWidth - safeVisibleWidth(item.path)));
+		const metricPadding = " ".repeat(Math.max(0, metricWidth - safeVisibleWidth(metric)));
 		lines.push(renderPanelLine(
 			theme,
 			`${theme.fg("dim", item.kind)}${typePadding}${columnDivider}${theme.fg("dim", item.path)}${pathPadding}${columnDivider}${metricPadding}${theme.fg("dim", metric)}`,
@@ -184,12 +185,12 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	const summary = theme.bold(theme.fg("accent", "◆")) + MESSAGE_TEXT_INDENT.slice(1) + theme.bold(theme.fg("accent", "Resources")) + theme.fg("dim", total ? RESOURCE_ROW_GAP : "") + total;
 	if (!expanded) return summary;
 
-	const panelBodyWidth = Math.max(1, visibleWidth(summary) - visibleWidth(MESSAGE_TEXT_INDENT));
+	const panelBodyWidth = Math.max(1, safeVisibleWidth(summary) - safeVisibleWidth(MESSAGE_TEXT_INDENT));
 	return [summary, "", ...indentStartupLines(renderSystemContextPanel(theme, systemContextItems, panelBodyWidth))].join("\n");
 }
 
 function compactHeader(theme: ThemeLike, width: number): string {
-	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => visibleWidth(line)));
+	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => safeVisibleWidth(line)));
 	const gap = "   ";
 	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
 	const hints = [
@@ -200,13 +201,13 @@ function compactHeader(theme: ThemeLike, width: number): string {
 	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
 	const details = [title, hints, status, ""];
 	const safeWidth = Math.max(1, width);
-	const detailWidth = safeWidth - logoWidth - visibleWidth(gap);
+	const detailWidth = safeWidth - logoWidth - safeVisibleWidth(gap);
 
 	if (detailWidth >= 12) {
 		return PI_ASCII_LOGO
 			.map((line, index) => {
-				const logoPadding = " ".repeat(Math.max(0, logoWidth - visibleWidth(line)));
-				const detail = details[index] ? truncateToWidth(details[index]!, detailWidth, "…") : "";
+				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(line)));
+				const detail = details[index] ? safeTruncateToWidth(details[index]!, detailWidth, "…") : "";
 				return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
 			})
 			.join("\n");
@@ -215,13 +216,13 @@ function compactHeader(theme: ThemeLike, width: number): string {
 	if (safeWidth >= logoWidth) {
 		return [
 			...PI_ASCII_LOGO.map((line) => theme.fg("accent", line)),
-			truncateToWidth(title, safeWidth, "…"),
-			truncateToWidth(hints, safeWidth, "…"),
-			truncateToWidth(status, safeWidth, "…"),
+			safeTruncateToWidth(title, safeWidth, "…"),
+			safeTruncateToWidth(hints, safeWidth, "…"),
+			safeTruncateToWidth(status, safeWidth, "…"),
 		].join("\n");
 	}
 
-	return [title, status].map((line) => truncateToWidth(line, safeWidth, "…")).join("\n");
+	return [title, status].map((line) => safeTruncateToWidth(line, safeWidth, "…")).join("\n");
 }
 
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
