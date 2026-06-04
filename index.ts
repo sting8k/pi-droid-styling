@@ -38,6 +38,10 @@ let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
 let terminalSignalHandlersInstalled = false;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 
+function isRemoteClipboardSession(env = process.env): boolean {
+	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION);
+}
+
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
 	installDefaultBadge();
@@ -179,9 +183,27 @@ export default function (pi: ExtensionAPI) {
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
+			const notifySelectionCopy = (message: string, type: "info" | "warning") => {
+				try {
+					sessionUi.notify(message, type);
+				} catch {
+					profileCount("fixed.input.selection.copyNotify.error");
+				}
+			};
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
-				onCopySelection: copyToClipboard,
+				onCopySelection: (text, clipboard) => {
+					void copyToClipboard(text).then(
+						() => {
+							if (isRemoteClipboardSession()) clipboard.emitOsc52Clipboard();
+							notifySelectionCopy("Copied selection", "info");
+						},
+						() => {
+							const osc52Emitted = clipboard.emitOsc52Clipboard();
+							notifySelectionCopy(osc52Emitted ? "Copied selection" : "Copy failed", osc52Emitted ? "info" : "warning");
+						},
+					);
+				},
 				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
 				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
 				sidebar: {
