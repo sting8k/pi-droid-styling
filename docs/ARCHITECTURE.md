@@ -31,7 +31,7 @@ tool-tags/
   Tool call renderers, badges, elapsed metrics, and tool-output formatting
 
 theme/
-  ANSI helpers, theme discovery/extras, and terminal background sync
+  ANSI helpers and theme discovery/extras; terminal defaults are not mutated
 
 performance/
   Debounce, throttle, and virtualization patches for render hot paths
@@ -55,7 +55,7 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 3. Patch installers must be idempotent because sessions and extensions can reload.
    Terminal compositor patches must also restore `terminal.write`, `terminal.rows`, `tui.render`, scroll regions, and input listeners on dispose.
 4. Tool rendering belongs in `tool-tags/` until that domain grows enough to justify subfolders.
-5. Theme and ANSI behavior belongs in `theme/`; performance wrappers belong in `performance/`.
+5. Theme and ANSI behavior belongs in `theme/`; component-level background painting belongs in the owning renderer; performance wrappers belong in `performance/`.
 6. Runtime providers used by UI components should be cheap on render paths and cache background work when needed.
 
 ## Dependency Direction

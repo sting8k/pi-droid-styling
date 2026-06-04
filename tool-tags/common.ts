@@ -240,6 +240,67 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 }
 
 const RESET_INTENSITY = "\x1b[22m";
+const RESET_BACKGROUND = "\x1b[49m";
+
+function sgrColorParameterEnd(codes: string[], index: number): number {
+	const code = Number(codes[index]);
+	if (code !== 38 && code !== 48) return index;
+	const mode = Number(codes[index + 1]);
+	if (mode === 2) return Math.min(codes.length - 1, index + 4);
+	if (mode === 5) return Math.min(codes.length - 1, index + 2);
+	return index;
+}
+
+function sgrHasBackgroundReset(rawCodes: string): boolean {
+	const codes = rawCodes.split(";").filter(Boolean);
+	if (codes.length === 0) return true;
+	for (let i = 0; i < codes.length; i++) {
+		const code = Number(codes[i]);
+		if (code === 0 || code === 49) return true;
+		i = sgrColorParameterEnd(codes, i);
+	}
+	return false;
+}
+
+function removeStandaloneBackgroundReset(rawCodes: string): string {
+	const codes = rawCodes.split(";").filter(Boolean);
+	if (codes.length === 0) return "0";
+
+	const rebuilt: string[] = [];
+	for (let i = 0; i < codes.length; i++) {
+		const code = Number(codes[i]);
+		if (code === 49) continue;
+		const end = sgrColorParameterEnd(codes, i);
+		for (let j = i; j <= end; j++) rebuilt.push(codes[j]!);
+		i = end;
+	}
+	return rebuilt.join(";");
+}
+
+function keepBackgroundAcrossResets(text: string, bgAnsi: string): string {
+	if (!text) return text;
+	return text.replace(/\x1b\[([0-9;]*)m/g, (sequence, rawCodes) => {
+		const codes = String(rawCodes ?? "");
+		if (!sgrHasBackgroundReset(codes)) return sequence;
+		const rebuilt = removeStandaloneBackgroundReset(codes);
+		return `${rebuilt ? `\x1b[${rebuilt}m` : ""}${bgAnsi}`;
+	});
+}
+
+function themeBg(theme: any, bgName: string, text: string): string {
+	try {
+		if (typeof theme?.getBgAnsi === "function") {
+			const bgAnsi = String(theme.getBgAnsi(bgName) ?? "");
+			if (bgAnsi && bgAnsi !== RESET_BACKGROUND) return `${bgAnsi}${keepBackgroundAcrossResets(text, bgAnsi)}${RESET_BACKGROUND}`;
+		}
+	} catch {}
+
+	try {
+		return typeof theme?.bg === "function" ? theme.bg(bgName, text) : text;
+	} catch {
+		return text;
+	}
+}
 
 function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, text: string): string {
 	const color = getThemeExtra(theme, extraKey);
@@ -282,12 +343,12 @@ export function boxedToolBgName(isError?: boolean, isPartial?: boolean): string 
 	return isPartial ? "toolPendingBg" : isError ? "toolErrorBg" : "toolSuccessBg";
 }
 
-export function boxBg(_theme: any, text: string, _bgName = "toolSuccessBg"): string {
-	return text;
+export function boxBg(theme: any, text: string, bgName = "toolSuccessBg"): string {
+	return themeBg(theme, bgName, text);
 }
 
-function boxBgLines(_theme: any, lines: string[], _bgName?: string): string[] {
-	return lines;
+function boxBgLines(theme: any, lines: string[], bgName = "toolSuccessBg"): string[] {
+	return lines.map((line) => boxBg(theme, line, bgName));
 }
 
 export function boxBorder(theme: any, left: string, right: string, width: number): string {

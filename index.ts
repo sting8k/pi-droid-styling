@@ -21,8 +21,7 @@ import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.
 import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
 import { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
 import { installRenderWidthGuard } from "./performance/render-width-guard.js";
-import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
-import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
+import { setFullTheme } from "./theme/theme-extras.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
@@ -34,9 +33,8 @@ import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 
-let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
+let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
 let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
-let terminalSignalHandlersInstalled = false;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 
 function isRemoteClipboardSession(env = process.env): boolean {
@@ -113,7 +111,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
-		syncTerminalThemeForCurrentSession = undefined;
+		syncThemeExtrasForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		setAssistantUpdateRenderRequester(undefined);
@@ -169,10 +167,8 @@ export default function (pi: ExtensionAPI) {
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
 		installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 
-		let lastTerminalBg = "";
-		let lastTerminalFg = "";
 		let lastForcedThemeScanAt = 0;
-		const syncTerminalTheme = (force = false) => {
+		const syncThemeExtras = (force = false) => {
 			if (force) {
 				const now = Date.now();
 				if (lastForcedThemeScanAt > 0 && now - lastForcedThemeScanAt < FORCE_THEME_SCAN_INTERVAL_MS) {
@@ -182,27 +178,16 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 			setFullTheme(sessionUi.theme, force);
-			const bg = getThemeVar("bg");
-			const fg = getThemeVar("text");
-			if (!bg || (bg === lastTerminalBg && fg === lastTerminalFg)) return;
-			lastTerminalBg = bg;
-			lastTerminalFg = fg;
-			applyTerminalBg(bg, fg || undefined);
 		};
-		syncTerminalThemeForCurrentSession = syncTerminalTheme;
-		syncTerminalTheme(true);
-		if (!terminalSignalHandlersInstalled) {
-			terminalSignalHandlersInstalled = true;
-			process.once("exit", restoreTerminalBg);
-			process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
-			process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
-		}
+		syncThemeExtrasForCurrentSession = syncThemeExtras;
+		syncThemeExtras(true);
 
 		const interactiveModePrototype = InteractiveMode.prototype as any;
 		const originalUpdateEditorBorderColor = interactiveModePrototype.updateEditorBorderColor;
+		// Keep the legacy marker name so extension reloads do not stack wrappers.
 		if (typeof originalUpdateEditorBorderColor === "function" && !originalUpdateEditorBorderColor.__droidTerminalThemeSync) {
 			const wrappedUpdateEditorBorderColor = function (this: any, ...args: any[]) {
-				syncTerminalThemeForCurrentSession?.(true);
+				syncThemeExtrasForCurrentSession?.(true);
 				return originalUpdateEditorBorderColor.apply(this, args);
 			};
 			(wrappedUpdateEditorBorderColor as any).__droidTerminalThemeSync = true;

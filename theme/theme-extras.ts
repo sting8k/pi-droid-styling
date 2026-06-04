@@ -191,22 +191,3 @@ export function getThemeExtra(_theme: any, key: string): string {
 	}
 	return HARDCODED_DEFAULTS[key] ?? "";
 }
-
-function isHexColor(value: string): boolean {
-	return /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
-}
-
-function resolveThemeExportColor(key: string): string {
-	if (!cachedThemeExport) return "";
-	const value = cachedThemeExport[key];
-	if (typeof value !== "string" || !value) return "";
-	const resolved = cachedVars && typeof cachedVars[value] === "string" ? cachedVars[value] : value;
-	return isHexColor(resolved) ? resolved : "";
-}
-
-export function getThemeVar(key: string): string {
-	const value = cachedVars && typeof cachedVars[key] === "string" ? cachedVars[key] : "";
-	if (value) return value;
-	if (key === "bg") return resolveThemeExportColor("pageBg");
-	return "";
-}
