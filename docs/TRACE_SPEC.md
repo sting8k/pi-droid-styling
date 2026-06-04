@@ -125,17 +125,17 @@ docs confusing
 
 ```bash
 scripts/bin/harness-cli trace \
-  --summary "Completed high-risk terminal theme behavior change with manual smoke proof" \
+  --summary "Completed high-risk terminal-safe theme background change with manual smoke proof" \
   --intake 12 \
   --story US-014 \
   --agent droid \
   --outcome completed \
   --duration 4200 \
   --tokens 52000 \
-  --actions "read architecture docs,patched terminal theme sync,ran source review,performed Pi smoke test" \
-  --read "docs/ARCHITECTURE.md,docs/product/overview.md,theme/terminal-bg.ts,index.ts" \
-  --changed "theme/terminal-bg.ts,index.ts,docs/product/overview.md" \
-  --decisions "kept theme sync best-effort,avoided forcing a theme" \
+  --actions "read architecture docs,patched component background rendering,ran source review,performed Pi smoke test" \
+  --read "docs/ARCHITECTURE.md,docs/product/overview.md,index.ts,tool-tags/common.ts" \
+  --changed "index.ts,tool-tags/common.ts,docs/product/overview.md" \
+  --decisions "kept theme extras sync best-effort,avoided OSC 10/11 default-color mutation" \
   --errors "none" \
   --friction "No automated Pi smoke runner exists; platform proof was manual." \
   --notes "Detailed trace required because the task changed terminal/platform behavior."

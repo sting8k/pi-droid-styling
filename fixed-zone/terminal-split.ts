@@ -3,9 +3,12 @@ import { profileCount, profileDuration, profileNow, profileSample, profileTextBy
 import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
+import { paintFrameBackgroundLine, paintFrameBackgroundSegment } from "../theme/frame-background.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
+import { FixedZoneSelection, SELECTION_MULTI_CLICK_MS, stripAnsi, type SelectionActivity, type SelectionPoint, type SelectionRegion } from "./selection.js";
+import { defaultFixedZoneNoticeTtlMs, fixedZoneNoticeKey, renderFixedZoneNoticeFooter, type FixedZoneNotice, type FixedZoneNoticeKind, type FixedZoneNoticeTheme } from "./notice.js";
 
 interface TerminalLike {
 	write(data: string): void;
@@ -41,8 +44,16 @@ function isRenderable(value: unknown): value is RenderableLike {
 	return typeof value === "object" && value !== null && typeof (value as RenderableLike).render === "function";
 }
 
+export interface SelectionCopyContext {
+	emitOsc52Clipboard(): boolean;
+	showNotice(kind: FixedZoneNoticeKind, message: string, ttlMs?: number): void;
+}
+
 export interface TerminalSplitOptions {
-	onCopySelection?: (text: string) => void;
+	onCopySelection?: (text: string, context: SelectionCopyContext) => void;
+	requestScrollRender?: () => void;
+	theme?: FixedZoneNoticeTheme & { frameBgAnsi?: () => string };
+	scrollFrameMs?: number;
 	sidebar?: {
 		enabled: boolean;
 		getInfo?: FixedZoneSidebarInfoProvider;
@@ -55,12 +66,6 @@ interface SgrMousePacket {
 	col: number;
 	row: number;
 	final: "M" | "m";
-}
-
-interface SelectionPoint {
-	region: "root" | "sidebar";
-	line: number;
-	col: number;
 }
 
 type SidebarRowsCache = {
@@ -84,6 +89,16 @@ const WHEEL_SCROLL_BASE_LINES = 1;
 const WHEEL_SCROLL_MAX_LINES = 4;
 const WHEEL_SCROLL_BURST_MS = 90;
 const WHEEL_SCROLL_RESET_MS = 160;
+const WHEEL_SCROLL_MAX_PENDING_LINES = WHEEL_SCROLL_MAX_LINES * 2;
+const WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES = 3;
+const WHEEL_SCROLL_MEDIUM_STEP_LINES = 2;
+const WHEEL_SCROLL_LARGE_STEP_PENDING_LINES = 4;
+const WHEEL_SCROLL_LARGE_STEP_LINES = 3;
+const WHEEL_SCROLL_FAST_STEP_PENDING_LINES = 5;
+const WHEEL_SCROLL_FAST_STEP_LINES = 4;
+const DEFAULT_SCROLL_FRAME_MS = 20;
+const SELECTION_CLEAR_AFTER_COPY_MS = 700;
+const MAX_OSC52_ENCODED_LENGTH = 100_000;
 const SCROLLBAR_GLYPH = "█";
 const SCROLLBAR_TRACK_COLOR = "borderMuted";
 const SCROLLBAR_THUMB_COLOR = "dim";
@@ -116,10 +131,6 @@ function moveCursor(row: number, col: number): string {
 
 function clearLine(): string {
 	return "\x1b[2K";
-}
-
-function clearLineRight(): string {
-	return "\x1b[K";
 }
 
 function saveCursor(): string {
@@ -163,6 +174,27 @@ function applyContentInsetToCluster(cluster: FixedZoneCluster, width: number): F
 		};
 	}
 	return result;
+}
+
+function isBlankVisualLine(line: string): boolean {
+	return stripAnsi(line).trim().length === 0;
+}
+
+function trimTrailingSpacerLine(cluster: FixedZoneCluster): FixedZoneCluster {
+	const lastRow = cluster.lines.length;
+	if (lastRow === 0 || cluster.cursor?.row === lastRow) return cluster;
+	if (!isBlankVisualLine(cluster.lines[lastRow - 1] ?? "")) return cluster;
+	return { lines: cluster.lines.slice(0, -1), cursor: cluster.cursor };
+}
+
+function limitClusterRows(cluster: FixedZoneCluster, maxRows: number): FixedZoneCluster {
+	if (maxRows <= 0) return { lines: [] };
+	if (cluster.lines.length <= maxRows) return cluster;
+	const start = cluster.lines.length - maxRows;
+	const cursor = cluster.cursor && cluster.cursor.row > start
+		? { row: cluster.cursor.row - start, col: cluster.cursor.col }
+		: undefined;
+	return { lines: cluster.lines.slice(start), cursor };
 }
 
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
@@ -213,25 +245,6 @@ function isMouseRelease(packet: SgrMousePacket): boolean {
 	return packet.final === "m";
 }
 
-function stripAnsi(text: string): string {
-	return text.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
-}
-
-function sliceColumns(text: string, startCol: number, endCol: number): string {
-	let col = 0;
-	let result = "";
-	for (const char of Array.from(text)) {
-		const width = Math.max(0, safeVisibleWidth(char));
-		if (col >= startCol && col < endCol) result += char;
-		col += width;
-	}
-	return result;
-}
-
-function compareSelectionPoints(a: SelectionPoint, b: SelectionPoint): number {
-	return a.line === b.line ? a.col - b.col : a.line - b.line;
-}
-
 function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 	if (a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);
@@ -270,13 +283,17 @@ export class TerminalSplitCompositor {
 	private scrollbarDragOffset = 0;
 	private scrollbarVisibleUntil = 0;
 	private scrollbarHideTimer: ReturnType<typeof setTimeout> | undefined;
-	private selectionAnchor: SelectionPoint | null = null;
-	private selectionFocus: SelectionPoint | null = null;
-	private selectionDragging = false;
+	private readonly selection = new FixedZoneSelection();
+	private selectionCopyTimer: ReturnType<typeof setTimeout> | undefined;
+	private selectionClearTimer: ReturnType<typeof setTimeout> | undefined;
+	private notice: FixedZoneNotice | null = null;
+	private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingMouseInput = "";
 	private lastWheelAt = 0;
 	private lastWheelDirection = 0;
 	private wheelBurst = 0;
+	private smoothScrollPendingDelta = 0;
+	private smoothScrollTimer: ReturnType<typeof setTimeout> | undefined;
 	private sidebarActive = false;
 	private sidebarRows: string[] = [];
 	private sidebarRowsCache: SidebarRowsCache | undefined;
@@ -299,6 +316,36 @@ export class TerminalSplitCompositor {
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
 	}
 
+	showNotice(kind: FixedZoneNoticeKind, message: string, ttlMs = defaultFixedZoneNoticeTtlMs(kind)): void {
+		this.clearNoticeTimer();
+		this.notice = { kind, message };
+		profileCount(`fixed.notice.show.${kind}`);
+		profileSample("fixed.notice.message.chars", message.length);
+		this.clusterCache = undefined;
+		this.resetClusterPaintCache();
+		this.tui.requestRender();
+		this.noticeTimer = setTimeout(() => {
+			this.noticeTimer = undefined;
+			if (this.disposed) return;
+			this.clearNotice();
+		}, Math.max(0, Math.floor(ttlMs)));
+	}
+
+	private clearNotice(): void {
+		this.clearNoticeTimer();
+		if (!this.notice) return;
+		this.notice = null;
+		this.clusterCache = undefined;
+		this.resetClusterPaintCache();
+		this.tui.requestRender();
+	}
+
+	private clearNoticeTimer(): void {
+		if (!this.noticeTimer) return;
+		clearTimeout(this.noticeTimer);
+		this.noticeTimer = undefined;
+	}
+
 	install(): void {
 		if (this.disposed) return;
 		const terminal = this.tui.terminal;
@@ -306,7 +353,7 @@ export class TerminalSplitCompositor {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-		this.clearViewportForInitialRender();
+		this.clearViewport();
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -345,6 +392,9 @@ export class TerminalSplitCompositor {
 		this.lastWheelAt = 0;
 		this.lastWheelDirection = 0;
 		this.wheelBurst = 0;
+		this.clearSmoothWheelScroll();
+		this.clearPendingSelectionTimers();
+		this.clearNoticeTimer();
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -365,7 +415,7 @@ export class TerminalSplitCompositor {
 		}
 		this.writeRaw(DISABLE_MOUSE);
 		this.scrollRegionBottom = 0;
-		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())));
+		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())) + CLEAR_VIEWPORT);
 		this.tui.requestRender(true);
 	}
 
@@ -380,9 +430,7 @@ export class TerminalSplitCompositor {
 		this.writeRaw(DISABLE_AUTOWRAP + data + ENABLE_AUTOWRAP);
 	}
 
-	private clearViewportForInitialRender(): void {
-		const previousLines = (this.tui as TuiLike & { previousLines?: unknown }).previousLines;
-		if (Array.isArray(previousLines) && previousLines.length > 0) return;
+	private clearViewport(): void {
 		this.writeRaw(CLEAR_VIEWPORT);
 	}
 
@@ -405,7 +453,7 @@ export class TerminalSplitCompositor {
 		if (this.sidebarActive === active) return;
 		profileCount(active ? "fixed.sidebar.active.on" : "fixed.sidebar.active.off");
 		this.sidebarActive = active;
-		if (!active && this.selectionAnchor?.region === "sidebar") this.clearSelection();
+		if (!active && this.selection.anchor?.region === "sidebar") this.clearSelection();
 		this.clusterCache = undefined;
 		this.sidebarRowsCache = undefined;
 		this.resetSidebarPaintCache();
@@ -420,8 +468,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private sidebarSelectionKey(): string {
-		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "sidebar" || this.selectionFocus.region !== "sidebar") return "none";
-		return `${this.selectionAnchor.line}:${this.selectionAnchor.col}:${this.selectionFocus.line}:${this.selectionFocus.col}`;
+		return this.selection.cacheKey("sidebar");
 	}
 
 	private resetSidebarPaintCache(): void {
@@ -491,17 +538,48 @@ export class TerminalSplitCompositor {
 		return `${padLine(content, layout.contentWidth)}${sidebarRows[rowIndex] ?? ""}`;
 	}
 
+	private frameBgAnsi(): string {
+		try {
+			return this.options.theme?.frameBgAnsi?.() ?? "";
+		} catch {
+			return "";
+		}
+	}
+
+	private paintFrameRow(line: string, targetWidth = this.getRawColumns()): string {
+		return paintFrameBackgroundLine(line, this.frameBgAnsi(), targetWidth);
+	}
+
+	private paintFrameSegment(text: string): string {
+		return paintFrameBackgroundSegment(text, this.frameBgAnsi());
+	}
+
 	private getMaxClusterRows(rawRows = this.getRawRows()): number {
 		return Math.max(0, rawRows - MIN_SCROLLABLE_ROWS);
+	}
+
+	private renderNoticeFooter(width: number): string {
+		return padTuiContentLine(renderFixedZoneNoticeFooter(this.notice, getTuiContentInnerWidth(width), this.options.theme), width);
 	}
 
 	private renderCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
 		const start = profileNow();
 		this.renderingCluster = true;
 		try {
-			const cluster = renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), this.getMaxClusterRows(rawRows), this.getClusterOptions());
+			const maxClusterRows = this.getMaxClusterRows(rawRows);
+			const footerRows = maxClusterRows > 0 ? 1 : 0;
+			const contentRows = Math.max(0, maxClusterRows - footerRows);
+			const renderContentRows = contentRows > 0 ? contentRows + footerRows : 0;
+			const renderedCluster = renderContentRows > 0
+				? renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), renderContentRows, this.getClusterOptions())
+				: { lines: [] };
+			const cluster = footerRows > 0
+				? limitClusterRows(trimTrailingSpacerLine(renderedCluster), contentRows)
+				: renderedCluster;
 			const insetCluster = applyContentInsetToCluster(cluster, width);
+			if (footerRows > 0) insetCluster.lines.push(this.renderNoticeFooter(width));
 			profileSample("fixed.cluster.rows.count", insetCluster.lines.length);
+			profileSample("fixed.notice.footer.rows.count", footerRows);
 			return insetCluster;
 		} finally {
 			this.renderingCluster = false;
@@ -514,7 +592,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private getClusterStateKey(): string {
-		return this.scrollOffset > 0 ? "scrolled" : "bottom";
+		return `${this.scrollOffset > 0 ? "scrolled" : "bottom"}:${fixedZoneNoticeKey(this.notice)}`;
 	}
 
 	private refreshCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
@@ -861,11 +939,87 @@ export class TerminalSplitCompositor {
 		this.clearSelection();
 		this.markScrollbarInteraction();
 		this.scrollOffset = next;
-		this.tui.requestRender();
+		if (this.options.requestScrollRender) this.options.requestScrollRender();
+		else this.tui.requestRender();
 		return true;
 	}
 
+	private getSmoothScrollFrameMs(): number {
+		const frameMs = this.options.scrollFrameMs;
+		if (typeof frameMs !== "number" || !Number.isFinite(frameMs) || frameMs < 0) return DEFAULT_SCROLL_FRAME_MS;
+		return Math.floor(frameMs);
+	}
+
+	private clearSmoothWheelScrollTimer(): void {
+		if (!this.smoothScrollTimer) return;
+		clearTimeout(this.smoothScrollTimer);
+		this.smoothScrollTimer = undefined;
+	}
+
+	private clearSmoothWheelScroll(): void {
+		this.smoothScrollPendingDelta = 0;
+		this.clearSmoothWheelScrollTimer();
+	}
+
+	private scheduleSmoothWheelScrollStep(): void {
+		if (this.smoothScrollTimer || this.smoothScrollPendingDelta === 0) return;
+		this.smoothScrollTimer = setTimeout(() => {
+			this.smoothScrollTimer = undefined;
+			this.consumeSmoothWheelScrollStep();
+		}, this.getSmoothScrollFrameMs());
+	}
+
+	private getSmoothWheelStepMagnitude(pendingMagnitude: number): number {
+		if (pendingMagnitude >= WHEEL_SCROLL_FAST_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_FAST_STEP_LINES, pendingMagnitude);
+		}
+		if (pendingMagnitude >= WHEEL_SCROLL_LARGE_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_LARGE_STEP_LINES, pendingMagnitude);
+		}
+		if (pendingMagnitude >= WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_MEDIUM_STEP_LINES, pendingMagnitude);
+		}
+		return 1;
+	}
+
+	private consumeSmoothWheelScrollStep(): void {
+		if (this.disposed || this.smoothScrollPendingDelta === 0) {
+			this.clearSmoothWheelScroll();
+			return;
+		}
+
+		const pendingMagnitude = Math.abs(this.smoothScrollPendingDelta);
+		const stepMagnitude = this.getSmoothWheelStepMagnitude(pendingMagnitude);
+		const step = this.smoothScrollPendingDelta > 0 ? stepMagnitude : -stepMagnitude;
+		this.smoothScrollPendingDelta -= step;
+		const moved = this.setScrollOffset(this.scrollOffset + step, "smoothWheel");
+		profileSample("fixed.input.smoothWheel.step", stepMagnitude);
+		profileSample("fixed.input.smoothWheel.pending", Math.abs(this.smoothScrollPendingDelta));
+		if (!moved) {
+			this.clearSmoothWheelScroll();
+			return;
+		}
+		this.scheduleSmoothWheelScrollStep();
+	}
+
+	private smoothWheelScrollBy(delta: number): void {
+		profileCount("fixed.input.smoothWheel.calls");
+		profileSample("fixed.input.smoothWheel.delta", delta);
+		if (delta === 0) return;
+
+		if (this.smoothScrollPendingDelta !== 0 && Math.sign(delta) !== Math.sign(this.smoothScrollPendingDelta)) {
+			this.smoothScrollPendingDelta = 0;
+		}
+
+		const pending = this.smoothScrollPendingDelta + delta;
+		this.smoothScrollPendingDelta = Math.max(-WHEEL_SCROLL_MAX_PENDING_LINES, Math.min(WHEEL_SCROLL_MAX_PENDING_LINES, pending));
+		profileSample("fixed.input.smoothWheel.pending", Math.abs(this.smoothScrollPendingDelta));
+		this.clearSmoothWheelScrollTimer();
+		this.consumeSmoothWheelScrollStep();
+	}
+
 	private scrollBy(delta: number): void {
+		this.clearSmoothWheelScroll();
 		profileCount("fixed.input.scrollBy.calls");
 		profileSample("fixed.input.scrollBy.delta", delta);
 		this.setScrollOffset(this.scrollOffset + delta, "scrollBy");
@@ -892,11 +1046,13 @@ export class TerminalSplitCompositor {
 
 	private jumpToTop(): void {
 		profileCount("fixed.input.jumpTop.calls");
+		this.clearSmoothWheelScroll();
 		this.setScrollOffset(this.getMaxScrollOffset(), "jumpTop");
 	}
 
 	private jumpToBottom(): void {
 		profileCount("fixed.input.jumpBottom.calls");
+		this.clearSmoothWheelScroll();
 		this.setScrollOffset(0, "jumpBottom");
 	}
 
@@ -914,6 +1070,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private setScrollFromScrollbarRow(row: number, geometry: ScrollbarGeometry, dragOffset: number, reason: string): void {
+		this.clearSmoothWheelScroll();
 		const maxThumbTop = Math.max(0, geometry.trackRows - geometry.thumbRows);
 		const thumbTop = Math.max(0, Math.min(maxThumbTop, row - 1 - dragOffset));
 		const start = maxThumbTop <= 0 ? 0 : Math.round((thumbTop / maxThumbTop) * geometry.maxStart);
@@ -964,7 +1121,7 @@ export class TerminalSplitCompositor {
 		const wheelDirection = mouseScrollDirection(packet);
 		if (wheelDirection !== 0) {
 			profileCount("fixed.input.mouseScroll.calls");
-			this.scrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
+			this.smoothWheelScrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
 			return;
 		}
 
@@ -975,27 +1132,30 @@ export class TerminalSplitCompositor {
 
 		const point = this.selectionPointForPacket(packet);
 		if (!point) {
-			if (isLeftPress(packet)) this.clearSelection();
+			if (isLeftPress(packet)) {
+				this.selection.resetClickSequence();
+				this.clearSelection();
+			}
 			return;
 		}
 
 		if (isLeftPress(packet)) {
-			profileCount("fixed.input.selection.start");
-			this.selectionAnchor = point;
-			this.selectionFocus = point;
-			this.selectionDragging = true;
+			this.clearPendingSelectionTimers();
+			this.startSelection(point);
 			this.tui.requestRender();
 			return;
 		}
 
-		if (this.selectionDragging && isLeftDrag(packet) && this.selectionAnchor?.region === point.region) {
-			if (this.selectionFocus && compareSelectionPoints(this.selectionFocus, point) === 0) {
+		if (isLeftDrag(packet)) {
+			const dragResult = this.selection.updateDrag(point);
+			if (dragResult === "noop") {
 				profileCount("fixed.input.selection.dragNoop");
 				return;
 			}
-			profileCount("fixed.input.selection.dragRender");
-			this.selectionFocus = point;
-			this.tui.requestRender();
+			if (dragResult === "updated") {
+				profileCount("fixed.input.selection.dragRender");
+				this.tui.requestRender();
+			}
 		}
 	}
 
@@ -1017,64 +1177,122 @@ export class TerminalSplitCompositor {
 		};
 	}
 
+	private startSelection(point: SelectionPoint): void {
+		const clickCount = this.selection.registerPress(point);
+		if (clickCount >= 3 && this.selection.selectLine(point, this.selectionSourceLines(point.region))) {
+			profileCount("fixed.input.selection.line");
+			return;
+		}
+		if (clickCount === 2 && this.selection.selectWord(point, this.selectionSourceLines(point.region))) {
+			profileCount("fixed.input.selection.word");
+			return;
+		}
+		profileCount("fixed.input.selection.start");
+		this.selection.startDrag(point);
+	}
+
+	private selectionSourceLines(region: SelectionRegion): readonly string[] {
+		return region === "sidebar" ? this.sidebarRows : this.rootLines;
+	}
+
 	private finishSelection(point: SelectionPoint | null): void {
-		if (!this.selectionDragging) return;
+		const finishedActivity = this.selection.finish(point);
+		if (!finishedActivity) return;
 		profileCount("fixed.input.selection.finish");
-		if (point && this.selectionAnchor?.region === point.region) this.selectionFocus = point;
-		this.selectionDragging = false;
 		const selectedText = this.getSelectedText();
 		if (selectedText) {
-			profileCount("fixed.input.selection.copy");
-			this.options.onCopySelection?.(selectedText);
-		} else {
-			profileCount("fixed.input.selection.empty");
-			this.clearSelection();
+			if (finishedActivity === "word") {
+				this.scheduleSelectionCopy(selectedText, finishedActivity);
+				return;
+			}
+			this.copySelectionText(selectedText, finishedActivity);
+			this.scheduleSelectionClear();
+			this.tui.requestRender();
+			return;
 		}
+		profileCount("fixed.input.selection.empty");
+		this.clearSelection();
 		this.tui.requestRender();
 	}
 
+	private scheduleSelectionCopy(text: string, activity: SelectionActivity): void {
+		this.clearPendingSelectionTimers();
+		this.selectionCopyTimer = setTimeout(() => {
+			this.selectionCopyTimer = undefined;
+			this.copySelectionText(text, activity);
+			this.scheduleSelectionClear();
+		}, SELECTION_MULTI_CLICK_MS);
+	}
+
+	private scheduleSelectionClear(): void {
+		this.clearPendingSelectionClear();
+		this.selectionClearTimer = setTimeout(() => {
+			this.selectionClearTimer = undefined;
+			if (this.disposed) return;
+			this.selection.clear();
+			this.tui.requestRender();
+		}, SELECTION_CLEAR_AFTER_COPY_MS);
+	}
+
+	private clearPendingSelectionTimers(): void {
+		this.clearPendingSelectionCopy();
+		this.clearPendingSelectionClear();
+	}
+
+	private clearPendingSelectionCopy(): void {
+		if (!this.selectionCopyTimer) return;
+		clearTimeout(this.selectionCopyTimer);
+		this.selectionCopyTimer = undefined;
+	}
+
+	private clearPendingSelectionClear(): void {
+		if (!this.selectionClearTimer) return;
+		clearTimeout(this.selectionClearTimer);
+		this.selectionClearTimer = undefined;
+	}
+
+	private copySelectionText(text: string, activity: SelectionActivity): void {
+		profileCount("fixed.input.selection.copy");
+		profileCount(`fixed.input.selection.copy.${activity}`);
+		profileSample("fixed.input.selection.copy.chars", text.length);
+		this.options.onCopySelection?.(text, {
+			emitOsc52Clipboard: () => this.emitOsc52Clipboard(text),
+			showNotice: (kind, message, ttlMs) => this.showNotice(kind, message, ttlMs),
+		});
+	}
+
+	private emitOsc52Clipboard(text: string): boolean {
+		if (this.disposed || text.length === 0) return false;
+		const encoded = Buffer.from(text, "utf8").toString("base64");
+		if (encoded.length > MAX_OSC52_ENCODED_LENGTH) {
+			profileCount("fixed.input.selection.osc52.tooLarge");
+			return false;
+		}
+		try {
+			this.writeRaw(`\x1b]52;c;${encoded}\x07`);
+			profileCount("fixed.input.selection.osc52.emit");
+			return true;
+		} catch {
+			profileCount("fixed.input.selection.osc52.error");
+			return false;
+		}
+	}
+
 	private clearSelection(): void {
-		this.selectionAnchor = null;
-		this.selectionFocus = null;
-		this.selectionDragging = false;
+		this.clearPendingSelectionTimers();
+		this.selection.clear();
 	}
 
 	private getSelectedText(): string {
-		if (!this.selectionAnchor || !this.selectionFocus) return "";
-		if (this.selectionAnchor.region !== this.selectionFocus.region) return "";
-		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
-		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
-		if (start.line === end.line && start.col === end.col) return "";
-		const sourceLines = start.region === "sidebar" ? this.sidebarRows : this.rootLines;
-		const selected: string[] = [];
-		for (let lineIndex = start.line; lineIndex <= end.line; lineIndex++) {
-			const line = stripAnsi(sourceLines[lineIndex] ?? "");
-			selected.push(sliceColumns(line, lineIndex === start.line ? start.col : 0, lineIndex === end.line ? end.col : Number.POSITIVE_INFINITY));
-		}
-		return selected.join("\n").replace(/[ \t]+$/gm, "").trimEnd();
+		return this.selection.getSelectedText({ root: this.rootLines, sidebar: this.sidebarRows });
 	}
 
 	private renderSelectionHighlight(line: string, lineIndex: number): string {
-		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "root" || this.selectionFocus.region !== "root") return line;
-		return this.renderLineSelectionHighlight(line, lineIndex);
+		return this.selection.renderLineHighlight("root", line, lineIndex);
 	}
 
 	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
-		if (!this.selectionAnchor || !this.selectionFocus || this.selectionAnchor.region !== "sidebar" || this.selectionFocus.region !== "sidebar") return line;
-		return this.renderLineSelectionHighlight(line, lineIndex);
-	}
-
-	private renderLineSelectionHighlight(line: string, lineIndex: number): string {
-		if (!this.selectionAnchor || !this.selectionFocus) return line;
-		const start = compareSelectionPoints(this.selectionAnchor, this.selectionFocus) <= 0 ? this.selectionAnchor : this.selectionFocus;
-		const end = start === this.selectionAnchor ? this.selectionFocus : this.selectionAnchor;
-		if (lineIndex < start.line || lineIndex > end.line) return line;
-		const plain = stripAnsi(line);
-		const lineWidth = safeVisibleWidth(plain);
-		const startCol = lineIndex === start.line ? Math.max(0, Math.min(start.col, lineWidth)) : 0;
-		const endCol = lineIndex === end.line ? Math.max(startCol, Math.min(end.col, lineWidth)) : lineWidth;
-		if (startCol === endCol) return line;
-		return `${sliceColumns(plain, 0, startCol)}\x1b[7m${sliceColumns(plain, startCol, endCol)}\x1b[27m${sliceColumns(plain, endCol, Number.POSITIVE_INFINITY)}`;
+		return this.selection.renderLineHighlight("sidebar", line, lineIndex);
 	}
 
 	private renderPass(): void {
@@ -1189,11 +1407,10 @@ export class TerminalSplitCompositor {
 
 		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
 		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
-		const clearTail = this.getSidebarLayout(this.getRawColumns()).active ? "" : clearLineRight();
 		let output = saveCursor();
 		for (let index = 0; index < geometry.trackRows; index++) {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearTail;
+			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + this.paintFrameSegment(isThumb ? thumbGlyph : trackGlyph);
 		}
 		const painted = output + restoreCursor();
 		profileCount("fixed.scrollbar.paint");
@@ -1212,7 +1429,7 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const blankSidebarRow = " ".repeat(layout.sidebarWidth);
-			const paintRows = Array.from({ length: rawRows }, (_value, index) => sidebarRows[index] ?? blankSidebarRow);
+			const paintRows = Array.from({ length: rawRows }, (_value, index) => this.paintFrameRow(sidebarRows[index] ?? blankSidebarRow, layout.sidebarWidth));
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}`;
 			if (this.lastPaintedSidebarKey === paintKey && sameStringList(this.lastPaintedSidebarRows, paintRows)) {
 				profileCount("fixed.sidebar.paint.skipUnchanged");
@@ -1242,7 +1459,7 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const startRow = rawRows - cluster.lines.length + 1;
-			const paintRows = cluster.lines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1));
+			const paintRows = cluster.lines.map((line, index) => this.paintFrameRow(this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1), this.getRawColumns()));
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
 			const cursorPaint = cluster.cursor
 				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
@@ -1258,8 +1475,10 @@ export class TerminalSplitCompositor {
 			this.lastPaintedClusterKey = paintKey;
 			this.lastPaintedClusterRows = paintRows;
 			let output = saveCursor();
+			const rowClear = this.frameBgAnsi() + clearLine();
 			paintRows.forEach((line, index) => {
-				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + clearLine() + line;
+				const prefix = line.startsWith(rowClear) ? "" : rowClear;
+				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + prefix + line;
 			});
 			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
 			profileCount("fixed.cluster.paint.full");

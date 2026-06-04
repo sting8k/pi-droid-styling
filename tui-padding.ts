@@ -34,8 +34,14 @@ export function getTuiContentCursorColumn(col: number, width: number): number {
 export function padTuiContentLine(line: string, width: number): string {
 	const padded = `${PADDING_PREFIX}${line}`;
 	if (isTerminalImageLine(line)) return padded;
-	if (safeVisibleWidth(padded) > width) {
-		return safeTruncateToWidth(padded, width, "");
+	const targetWidth = Math.max(0, Math.floor(width));
+	if (targetWidth === 0) return padded;
+	const visible = safeVisibleWidth(padded);
+	if (visible > targetWidth) {
+		return safeTruncateToWidth(padded, targetWidth, "");
+	}
+	if (visible < targetWidth) {
+		return `${padded}${" ".repeat(targetWidth - visible)}`;
 	}
 	return padded;
 }

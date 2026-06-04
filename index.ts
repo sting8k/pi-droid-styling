@@ -2,7 +2,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AssistantMessageComponent, copyToClipboard, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
-import { installFixedUserZone } from "./fixed-zone/install.js";
+import { FIXED_ZONE_SCROLL_FRAME_MS, installFixedUserZone } from "./fixed-zone/install.js";
+import { createFixedZoneTheme } from "./fixed-zone/theme.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
 import { getPiVersion } from "./core/pi-version.js";
@@ -17,26 +18,35 @@ import { installAssistantStreamingMarkdownCache } from "./messages/streaming-mar
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
 import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
+import { installRenderFrameBackground } from "./performance/render-frame-background.js";
 import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
-import { installRenderThrottle } from "./performance/render-throttle.js";
+import { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
 import { installRenderWidthGuard } from "./performance/render-width-guard.js";
-import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
-import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
+import { setFullTheme } from "./theme/theme-extras.js";
+import { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
-import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./tool-tags/loader-accent.js";
+import { createWorkingLoaderController, workingStateForAssistantMessage, type WorkingLoaderController } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
+import { installPiTasksWidgetStyling } from "./widgets/pi-tasks-widget.js";
 
-let syncTerminalThemeForCurrentSession: ((force?: boolean) => void) | undefined;
+let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
 let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
-let terminalSignalHandlersInstalled = false;
+let restoreTerminalBackgroundForCurrentSession: (() => void) | undefined;
+let disposePiTasksWidgetStylingForCurrentSession: (() => void) | undefined;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
+
+function isRemoteClipboardSession(env = process.env): boolean {
+	// jump's browser terminal receives clipboard writes through OSC 52, but
+	// jump sessions are local PTYs, not necessarily SSH/MOSH sessions.
+	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION || env.TERM_PROGRAM === "jump");
+}
 
 export default function (pi: ExtensionAPI) {
 	installCompactToolSpacing();
@@ -50,16 +60,33 @@ export default function (pi: ExtensionAPI) {
 
 	let currentThinkingLevel: string | undefined;
 	const assistantSpeedTracker = createAssistantSpeedTracker();
+	let workingLoaderController: WorkingLoaderController | undefined;
+	const runningToolCalls = new Set<string>();
 
 	const isStaleContextError = (error: unknown): boolean =>
 		error instanceof Error && error.message.includes("stale after session replacement or reload");
 
+	pi.on("before_agent_start", () => {
+		workingLoaderController?.setState("working");
+	});
+
+	pi.on("agent_start", () => {
+		runningToolCalls.clear();
+		workingLoaderController?.start("working");
+	});
+
 	pi.on("message_start", (event) => {
 		assistantSpeedTracker.handleMessageStart(event.message);
+		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
+			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+		}
 	});
 
 	pi.on("message_update", (event) => {
 		assistantSpeedTracker.handleMessageUpdate(event.message);
+		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
+			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+		}
 	});
 
 	pi.on("thinking_level_select", (event) => {
@@ -70,13 +97,36 @@ export default function (pi: ExtensionAPI) {
 		assistantSpeedTracker.handleMessageEnd(event.message);
 	});
 
+	pi.on("tool_execution_start", (event) => {
+		runningToolCalls.add(event.toolCallId);
+		workingLoaderController?.setState("running");
+	});
+
+	pi.on("tool_execution_end", (event) => {
+		runningToolCalls.delete(event.toolCallId);
+		// Keep the current label until the next live state begins.
+		// For example, a completed tool stays "Cooking" until assistant streaming resumes.
+	});
+
+	pi.on("agent_end", () => {
+		runningToolCalls.clear();
+		workingLoaderController?.stop();
+	});
+
 	pi.on("session_shutdown", (_event, ctx) => {
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
-		syncTerminalThemeForCurrentSession = undefined;
+		syncThemeExtrasForCurrentSession = undefined;
+		restoreTerminalBackgroundForCurrentSession?.();
+		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		setAssistantUpdateRenderRequester(undefined);
+		workingLoaderController?.dispose();
+		workingLoaderController = undefined;
+		disposePiTasksWidgetStylingForCurrentSession?.();
+		disposePiTasksWidgetStylingForCurrentSession = undefined;
+		runningToolCalls.clear();
 		try {
 			ctx.ui.setEditorComponent(undefined);
 		} catch {
@@ -91,6 +141,9 @@ export default function (pi: ExtensionAPI) {
 		setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantSpeedTracker.resetSession();
+		workingLoaderController?.dispose();
+		workingLoaderController = undefined;
+		runningToolCalls.clear();
 		try {
 			currentThinkingLevel = pi.getThinkingLevel();
 		} catch (error) {
@@ -98,15 +151,15 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = loadConfig();
+		disposePiTasksWidgetStylingForCurrentSession?.();
+		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi);
+		restoreTerminalBackgroundForCurrentSession?.();
+		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		if (config.customWorkingMessage) {
-			const workingMessage = getRandomWorkingMessage() ?? "Working...";
-			sessionUi.setWorkingMessage("");
-			sessionUi.setWorkingIndicator({
-				frames: SPINNER_FRAMES.map((frame) => sessionUi.theme.fg("accent", `${frame} ${workingMessage}`)),
-				intervalMs: SPINNER_INTERVAL_MS,
-			});
+			workingLoaderController = createWorkingLoaderController(sessionUi);
+			workingLoaderController.configure();
 		} else {
 			sessionUi.setWorkingMessage();
 			sessionUi.setWorkingIndicator();
@@ -127,10 +180,8 @@ export default function (pi: ExtensionAPI) {
 		installToolExecutionUpdateDebounce(ToolExecutionComponent);
 		installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 
-		let lastTerminalBg = "";
-		let lastTerminalFg = "";
 		let lastForcedThemeScanAt = 0;
-		const syncTerminalTheme = (force = false) => {
+		const syncThemeExtras = (force = false) => {
 			if (force) {
 				const now = Date.now();
 				if (lastForcedThemeScanAt > 0 && now - lastForcedThemeScanAt < FORCE_THEME_SCAN_INTERVAL_MS) {
@@ -140,27 +191,16 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 			setFullTheme(sessionUi.theme, force);
-			const bg = getThemeVar("bg");
-			const fg = getThemeVar("text");
-			if (!bg || (bg === lastTerminalBg && fg === lastTerminalFg)) return;
-			lastTerminalBg = bg;
-			lastTerminalFg = fg;
-			applyTerminalBg(bg, fg || undefined);
 		};
-		syncTerminalThemeForCurrentSession = syncTerminalTheme;
-		syncTerminalTheme(true);
-		if (!terminalSignalHandlersInstalled) {
-			terminalSignalHandlersInstalled = true;
-			process.once("exit", restoreTerminalBg);
-			process.once("SIGINT", () => { restoreTerminalBg(); process.exit(); });
-			process.once("SIGTERM", () => { restoreTerminalBg(); process.exit(); });
-		}
+		syncThemeExtrasForCurrentSession = syncThemeExtras;
+		syncThemeExtras(true);
 
 		const interactiveModePrototype = InteractiveMode.prototype as any;
 		const originalUpdateEditorBorderColor = interactiveModePrototype.updateEditorBorderColor;
+		// Keep the legacy marker name so extension reloads do not stack wrappers.
 		if (typeof originalUpdateEditorBorderColor === "function" && !originalUpdateEditorBorderColor.__droidTerminalThemeSync) {
 			const wrappedUpdateEditorBorderColor = function (this: any, ...args: any[]) {
-				syncTerminalThemeForCurrentSession?.(true);
+				syncThemeExtrasForCurrentSession?.(true);
 				return originalUpdateEditorBorderColor.apply(this, args);
 			};
 			(wrappedUpdateEditorBorderColor as any).__droidTerminalThemeSync = true;
@@ -171,6 +211,9 @@ export default function (pi: ExtensionAPI) {
 		setToolSpacingTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
+			const uiTheme = (sessionUi.theme ?? theme) as any;
+			restoreTerminalBackgroundForCurrentSession?.();
+			restoreTerminalBackgroundForCurrentSession = applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
 			installRenderThrottle(tui as any);
 			setAssistantUpdateRenderRequester(() => tui.requestRender());
 			virtualizeChatContainer(tui as any);
@@ -179,20 +222,27 @@ export default function (pi: ExtensionAPI) {
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
+			const fixedZoneTheme = createFixedZoneTheme(uiTheme);
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
-				onCopySelection: copyToClipboard,
+				onCopySelection: (text, clipboard) => {
+					void copyToClipboard(text).then(
+						() => {
+							if (isRemoteClipboardSession()) clipboard.emitOsc52Clipboard();
+							clipboard.showNotice("success", "Selected text copied to clipboard");
+						},
+						() => {
+							const osc52Emitted = clipboard.emitOsc52Clipboard();
+							clipboard.showNotice(osc52Emitted ? "success" : "warning", osc52Emitted ? "Selected text copied to clipboard" : "Copy failed");
+						},
+					);
+				},
+				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
+				theme: fixedZoneTheme,
+				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
 				sidebar: {
 					enabled: false,
-					theme: {
-						fg: (color: string, text: string) => {
-							try {
-								return typeof sessionUi.theme?.fg === "function" ? sessionUi.theme.fg(color as any, text) : text;
-							} catch {
-								return text;
-							}
-						},
-					},
+					theme: fixedZoneTheme,
 					onActiveChange: (active) => { fixedZoneSidebarActive = active; },
 					getInfo: () => {
 						const git = fetchBranch();
@@ -211,10 +261,11 @@ export default function (pi: ExtensionAPI) {
 				},
 			});
 			installRenderWidthGuard(tui as any);
+			installRenderFrameBackground(tui as any, uiTheme);
 			installRenderPhysicalSync(tui as any);
 			installRenderFrameDebug(tui as any);
 			return new BoxEditor(
-				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
+				tui, theme, kb, uiTheme, sessionCwd,
 				() => {
 					try {
 						return ctx.getContextUsage();

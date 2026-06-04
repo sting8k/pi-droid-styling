@@ -25,7 +25,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
 - Footer stats including token speed and compact session context.
-- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above.
+- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above, with mouse selection/copy support, themed bottom-row feedback, and OSC 52 clipboard propagation for terminal proxies.
 - Reload/session-safe patches to avoid stacked padding or spacing.
 
 ## Config
@@ -38,12 +38,14 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "maxExpandedLines": 50,
   "dimToolOutput": false,
   "customWorkingMessage": false,
-  "fixedUserZone": false
+  "fixedUserZone": false,
+  "forceOSC11": false
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 `fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
+`forceOSC11` is off by default on Windows/WSL/Windows Terminal. Set it to `true` only if you want to test OSC 11 terminal background sync there.
 
 ## Profiling
 
@@ -69,9 +71,9 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 
 ## Notes
 
-- Works with the active Pi theme; it does not force a theme.
+- Works with the active Pi theme; it paints TUI cells explicitly and uses OSC 11 terminal background sync on non-Windows hosts to cover terminal-owned padding/remainder areas. Windows/WSL/Windows Terminal skip OSC 11 unless `forceOSC11` is enabled.
 - Compatible color schemes: https://github.com/sting8k/pi-themes
-- `customWorkingMessage` is off by default to keep Pi core loader behavior stable.
+- `customWorkingMessage` is off by default; when enabled it keeps Pi's loader layout but uses themed `Working` / `Thinking` / `Answering` / `Cooking` states.
 
 ## License
 

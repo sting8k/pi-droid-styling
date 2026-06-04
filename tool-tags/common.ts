@@ -5,8 +5,8 @@ import { relative, resolve } from "node:path";
 
 import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
-import { fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
-import { getThemeExtra } from "../theme/theme-extras.js";
+import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
+import { getThemeExtra, getThemePageBackground, getThemeVarBackground } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
 export function isExpanded(options: ToolRenderResultOptions): boolean {
@@ -241,6 +241,36 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 
 const RESET_INTENSITY = "\x1b[22m";
 
+function themeBg(theme: any, bgName: string, text: string): string {
+	// Tool boxes sit on the page surface; status is carried by border/title colors.
+	// Prefer pageBg so boxed tool calls do not create a second card-colored slab.
+	const pageBg = getThemePageBackground(theme);
+	if (pageBg) {
+		const bgAnsi = bgHexAnsi(theme, pageBg);
+		if (bgAnsi) return wrapAnsiBackground(text, bgAnsi);
+	}
+
+	// Fallback to status bg vars if pageBg cannot be resolved.
+	const varBg = getThemeVarBackground(theme, bgName);
+	if (varBg) {
+		const bgAnsi = bgHexAnsi(theme, varBg);
+		if (bgAnsi) return wrapAnsiBackground(text, bgAnsi);
+	}
+
+	try {
+		if (typeof theme?.getBgAnsi === "function") {
+			const bgAnsi = String(theme.getBgAnsi(bgName) ?? "");
+			if (bgAnsi && bgAnsi !== RESET_BACKGROUND) return wrapAnsiBackground(text, bgAnsi);
+		}
+	} catch {}
+
+	try {
+		return typeof theme?.bg === "function" ? theme.bg(bgName, text) : text;
+	} catch {
+		return text;
+	}
+}
+
 function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, text: string): string {
 	const color = getThemeExtra(theme, extraKey);
 	if (color) {
@@ -282,12 +312,12 @@ export function boxedToolBgName(isError?: boolean, isPartial?: boolean): string 
 	return isPartial ? "toolPendingBg" : isError ? "toolErrorBg" : "toolSuccessBg";
 }
 
-export function boxBg(_theme: any, text: string, _bgName = "toolSuccessBg"): string {
-	return text;
+export function boxBg(theme: any, text: string, bgName = "toolSuccessBg"): string {
+	return themeBg(theme, bgName, text);
 }
 
-function boxBgLines(_theme: any, lines: string[], _bgName?: string): string[] {
-	return lines;
+function boxBgLines(theme: any, lines: string[], bgName = "toolSuccessBg"): string[] {
+	return lines.map((line) => boxBg(theme, line, bgName));
 }
 
 export function boxBorder(theme: any, left: string, right: string, width: number): string {
