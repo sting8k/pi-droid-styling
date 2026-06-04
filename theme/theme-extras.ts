@@ -46,20 +46,24 @@ type ThemeDiscovery = {
 	themeExport: Record<string, string> | null;
 };
 
+function themeDiscoveryFromContent(content: any): ThemeDiscovery | null {
+	const extras = content?.extras && typeof content.extras === "object"
+		? content.extras as Record<string, string>
+		: null;
+	const vars = content?.vars && typeof content.vars === "object"
+		? content.vars as Record<string, string>
+		: null;
+	const themeExport = content?.export && typeof content.export === "object"
+		? content.export as Record<string, string>
+		: null;
+	return extras || vars || themeExport ? { extras, vars, themeExport } : null;
+}
+
 function readThemeDiscoveryFromPath(filePath: string): ThemeDiscovery | null {
 	try {
 		if (!filePath || !existsSync(filePath)) return null;
 		const content = JSON.parse(readFileSync(filePath, "utf-8"));
-		const extras = content?.extras && typeof content.extras === "object"
-			? content.extras as Record<string, string>
-			: null;
-		const vars = content?.vars && typeof content.vars === "object"
-			? content.vars as Record<string, string>
-			: null;
-		const themeExport = content?.export && typeof content.export === "object"
-			? content.export as Record<string, string>
-			: null;
-		return extras || vars || themeExport ? { extras, vars, themeExport } : null;
+		return themeDiscoveryFromContent(content);
 	} catch {
 		return null;
 	}
@@ -152,7 +156,7 @@ function discoverThemeExtras(themeName: string): ThemeDiscovery | null {
 				try {
 					const content = JSON.parse(readFileSync(filePath, "utf-8"));
 					if (content?.name === themeName) {
-						const result = readThemeDiscoveryFromPath(filePath);
+						const result = themeDiscoveryFromContent(content);
 						if (result) return result;
 					}
 				} catch {}

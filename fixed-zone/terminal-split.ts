@@ -1475,9 +1475,10 @@ export class TerminalSplitCompositor {
 			this.lastPaintedClusterKey = paintKey;
 			this.lastPaintedClusterRows = paintRows;
 			let output = saveCursor();
-			const frameBg = this.frameBgAnsi();
+			const rowClear = this.frameBgAnsi() + clearLine();
 			paintRows.forEach((line, index) => {
-				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + frameBg + clearLine() + line;
+				const prefix = line.startsWith(rowClear) ? "" : rowClear;
+				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + prefix + line;
 			});
 			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
 			profileCount("fixed.cluster.paint.full");
