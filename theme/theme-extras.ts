@@ -46,6 +46,33 @@ type ThemeDiscovery = {
 	themeExport: Record<string, string> | null;
 };
 
+function readThemeDiscoveryFromPath(filePath: string): ThemeDiscovery | null {
+	try {
+		if (!filePath || !existsSync(filePath)) return null;
+		const content = JSON.parse(readFileSync(filePath, "utf-8"));
+		const extras = content?.extras && typeof content.extras === "object"
+			? content.extras as Record<string, string>
+			: null;
+		const vars = content?.vars && typeof content.vars === "object"
+			? content.vars as Record<string, string>
+			: null;
+		const themeExport = content?.export && typeof content.export === "object"
+			? content.export as Record<string, string>
+			: null;
+		return extras || vars || themeExport ? { extras, vars, themeExport } : null;
+	} catch {
+		return null;
+	}
+}
+
+function resolveThemeSourcePath(theme: any): string {
+	return typeof theme?.sourcePath === "string"
+		? theme.sourcePath
+		: typeof theme?.definition?.sourcePath === "string"
+			? theme.definition.sourcePath
+			: "";
+}
+
 function addThemeDir(searchDirs: Set<string>, dir: string): void {
 	if (existsSync(dir)) searchDirs.add(dir);
 }
@@ -125,16 +152,8 @@ function discoverThemeExtras(themeName: string): ThemeDiscovery | null {
 				try {
 					const content = JSON.parse(readFileSync(filePath, "utf-8"));
 					if (content?.name === themeName) {
-						const extras = content?.extras && typeof content.extras === "object"
-							? content.extras as Record<string, string>
-							: null;
-						const vars = content?.vars && typeof content.vars === "object"
-							? content.vars as Record<string, string>
-							: null;
-						const themeExport = content?.export && typeof content.export === "object"
-							? content.export as Record<string, string>
-							: null;
-						if (extras || vars || themeExport) return { extras, vars, themeExport };
+						const result = readThemeDiscoveryFromPath(filePath);
+						if (result) return result;
 					}
 				} catch {}
 			}
@@ -161,13 +180,15 @@ function resolveThemeName(theme: any): string | null {
 
 export function setFullTheme(theme: any, force = false): void {
 	const themeName = resolveThemeName(theme);
-	if (!themeName) return;
+	const sourcePath = resolveThemeSourcePath(theme);
+	if (!themeName && !sourcePath) return;
 
+	const cacheKey = sourcePath || themeName;
 	// Only re-scan if theme changed, unless caller is syncing after a theme reload.
-	if (!force && themeName === cachedThemeName && (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null)) return;
+	if (!force && cacheKey === cachedThemeName && (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null)) return;
 
-	cachedThemeName = themeName;
-	const result = discoverThemeExtras(themeName);
+	cachedThemeName = cacheKey;
+	const result = readThemeDiscoveryFromPath(sourcePath) ?? (themeName ? discoverThemeExtras(themeName) : null);
 	cachedExtras = result?.extras ?? null;
 	cachedVars = result?.vars ?? null;
 	cachedThemeExport = result?.themeExport ?? null;
@@ -190,4 +211,41 @@ export function getThemeExtra(_theme: any, key: string): string {
 		return cachedExtras[key];
 	}
 	return HARDCODED_DEFAULTS[key] ?? "";
+}
+
+function ensureThemeExportLoaded(theme: any): void {
+	if (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null || cachedThemeName !== null) return;
+	const themeName = resolveThemeName(theme);
+	const sourcePath = resolveThemeSourcePath(theme);
+	if (!themeName && !sourcePath) return;
+	cachedThemeName = sourcePath || themeName;
+	const result = readThemeDiscoveryFromPath(sourcePath) ?? (themeName ? discoverThemeExtras(themeName) : null);
+	cachedExtras = result?.extras ?? null;
+	cachedVars = result?.vars ?? null;
+	cachedThemeExport = result?.themeExport ?? null;
+}
+
+function isHexColor(value: string): boolean {
+	return /^#?[0-9a-fA-F]{3}$/.test(value) || /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
+}
+
+function resolveThemeExportColor(key: string): string {
+	if (!cachedThemeExport) return "";
+	const value = cachedThemeExport[key];
+	if (typeof value !== "string" || !value) return "";
+	const resolved = cachedVars && typeof cachedVars[value] === "string" ? cachedVars[value] : value;
+	return isHexColor(resolved) ? resolved : "";
+}
+
+export function getThemePageBackground(theme: any): string {
+	ensureThemeExportLoaded(theme);
+	const directBg = cachedVars && typeof cachedVars.bg === "string" ? cachedVars.bg : "";
+	if (isHexColor(directBg)) return directBg;
+	return resolveThemeExportColor("pageBg");
+}
+
+export function getThemeVarBackground(theme: any, varName: string): string {
+	ensureThemeExportLoaded(theme);
+	const value = cachedVars && typeof cachedVars[varName] === "string" ? cachedVars[varName] : "";
+	return isHexColor(value) ? value : "";
 }
