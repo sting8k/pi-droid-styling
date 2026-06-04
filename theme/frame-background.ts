@@ -16,16 +16,18 @@ function isImageRenderLine(line: string): boolean {
 export function resolveFrameBackgroundAnsi(theme: any): string {
 	const pageBg = getThemePageBackground(theme);
 	const result = pageBg ? bgHexAnsi(theme, pageBg) : "";
-	writeFrameBackgroundDebug({
-		type: "resolve",
-		pid: process.pid,
-		at: new Date().toISOString(),
-		themeName: typeof theme?.name === "string" ? theme.name : "",
-		sourcePath: typeof theme?.sourcePath === "string" ? theme.sourcePath : "",
-		colorMode: readThemeColorMode(theme),
-		pageBg,
-		result,
-	});
+	if (isFrameBackgroundDebugEnabled()) {
+		writeFrameBackgroundDebug({
+			type: "resolve",
+			pid: process.pid,
+			at: new Date().toISOString(),
+			themeName: typeof theme?.name === "string" ? theme.name : "",
+			sourcePath: typeof theme?.sourcePath === "string" ? theme.sourcePath : "",
+			colorMode: readThemeColorMode(theme),
+			pageBg,
+			result,
+		});
+	}
 	return result;
 }
 

@@ -9,7 +9,7 @@ type ApplyLineResetsFunction = (lines: string[]) => string[];
 type TuiLike = {
 	applyLineResets?: ApplyLineResetsFunction;
 	terminal?: TerminalLike;
-	[PATCHED]?: ApplyLineResetsFunction | boolean;
+	[PATCHED]?: FrameBackgroundApplyLineResetsPatch | ApplyLineResetsFunction | boolean;
 };
 
 type TerminalWriteFunction = (data: string) => unknown;
@@ -19,6 +19,11 @@ type TerminalLike = {
 	rows?: number;
 	write?: TerminalWriteFunction;
 	[WRITE_PATCHED]?: FrameBackgroundWritePatch;
+};
+
+type FrameBackgroundApplyLineResetsPatch = {
+	theme: any;
+	wrapper: ApplyLineResetsFunction;
 };
 
 type FrameBackgroundWritePatch = {
@@ -62,20 +67,27 @@ export function installRenderFrameBackground(tui: TuiLike, theme: any): void {
 	if (process.env.PI_DROID_RENDER_FRAME_BG === "0") return;
 	if (!tui || typeof tui.applyLineResets !== "function") return;
 	installFrameBackgroundClearWriter(tui, theme);
-	const patched = tui[PATCHED];
-	if (typeof patched === "function" && tui.applyLineResets === patched) return;
-	if (patched === true && tui.applyLineResets.name === "droidFrameBackgroundApplyLineResets") return;
+	const existingPatch = tui[PATCHED];
+	if (existingPatch && typeof existingPatch === "object" && tui.applyLineResets === existingPatch.wrapper) {
+		existingPatch.theme = theme;
+		return;
+	}
+	if (typeof existingPatch === "function" && tui.applyLineResets === existingPatch) return;
+	if (existingPatch === true && tui.applyLineResets.name === "droidFrameBackgroundApplyLineResets") return;
 
 	const originalApplyLineResets = tui.applyLineResets.bind(tui);
-	const droidFrameBackgroundApplyLineResets = function droidFrameBackgroundApplyLineResets(lines: string[]): string[] {
-		const bgAnsi = resolveFrameBackgroundAnsi(theme);
-		if (!bgAnsi) return originalApplyLineResets(lines);
-		const frameLines = padFrameRows(lines, readRows(tui));
-		const resetLines = originalApplyLineResets(frameLines);
-		profileCount("render.frameBackground.row", resetLines.length);
-		return paintFrameBackgroundLines(resetLines, bgAnsi, readColumns(tui));
+	const patch: FrameBackgroundApplyLineResetsPatch = {
+		theme,
+		wrapper: function droidFrameBackgroundApplyLineResets(lines: string[]): string[] {
+			const bgAnsi = resolveFrameBackgroundAnsi(patch.theme);
+			if (!bgAnsi) return originalApplyLineResets(lines);
+			const frameLines = padFrameRows(lines, readRows(tui));
+			const resetLines = originalApplyLineResets(frameLines);
+			profileCount("render.frameBackground.row", resetLines.length);
+			return paintFrameBackgroundLines(resetLines, bgAnsi, readColumns(tui));
+		},
 	};
 
-	tui[PATCHED] = droidFrameBackgroundApplyLineResets;
-	tui.applyLineResets = droidFrameBackgroundApplyLineResets;
+	tui[PATCHED] = patch;
+	tui.applyLineResets = patch.wrapper;
 }
