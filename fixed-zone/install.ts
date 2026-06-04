@@ -27,6 +27,7 @@ interface FixedUserZoneState {
 }
 
 const STATE = Symbol.for("pi-droid-styling.fixed-user-zone.state");
+export const FIXED_ZONE_SCROLL_FRAME_MS = 20;
 const FIXED_ZONE_CHILD_INDEXES = [3, 4, 5, 6, 7] as const;
 
 function isRenderable(value: unknown): value is RenderableLike {
@@ -82,6 +83,8 @@ export function installFixedUserZone(
 
 	const compositor = new TerminalSplitCompositor(tui, hidden, {
 		onCopySelection: options.onCopySelection,
+		requestScrollRender: options.requestScrollRender,
+		scrollFrameMs: options.scrollFrameMs,
 		sidebar: options.sidebar,
 	});
 	let disposed = false;

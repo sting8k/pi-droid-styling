@@ -43,6 +43,8 @@ function isRenderable(value: unknown): value is RenderableLike {
 
 export interface TerminalSplitOptions {
 	onCopySelection?: (text: string) => void;
+	requestScrollRender?: () => void;
+	scrollFrameMs?: number;
 	sidebar?: {
 		enabled: boolean;
 		getInfo?: FixedZoneSidebarInfoProvider;
@@ -84,6 +86,12 @@ const WHEEL_SCROLL_BASE_LINES = 1;
 const WHEEL_SCROLL_MAX_LINES = 4;
 const WHEEL_SCROLL_BURST_MS = 90;
 const WHEEL_SCROLL_RESET_MS = 160;
+const WHEEL_SCROLL_MAX_PENDING_LINES = WHEEL_SCROLL_MAX_LINES * 2;
+const WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES = 3;
+const WHEEL_SCROLL_MEDIUM_STEP_LINES = 2;
+const WHEEL_SCROLL_FAST_STEP_PENDING_LINES = 5;
+const WHEEL_SCROLL_FAST_STEP_LINES = 4;
+const DEFAULT_SCROLL_FRAME_MS = 20;
 const SCROLLBAR_GLYPH = "█";
 const SCROLLBAR_TRACK_COLOR = "borderMuted";
 const SCROLLBAR_THUMB_COLOR = "dim";
@@ -277,6 +285,8 @@ export class TerminalSplitCompositor {
 	private lastWheelAt = 0;
 	private lastWheelDirection = 0;
 	private wheelBurst = 0;
+	private smoothScrollPendingDelta = 0;
+	private smoothScrollTimer: ReturnType<typeof setTimeout> | undefined;
 	private sidebarActive = false;
 	private sidebarRows: string[] = [];
 	private sidebarRowsCache: SidebarRowsCache | undefined;
@@ -345,6 +355,7 @@ export class TerminalSplitCompositor {
 		this.lastWheelAt = 0;
 		this.lastWheelDirection = 0;
 		this.wheelBurst = 0;
+		this.clearSmoothWheelScroll();
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -861,11 +872,79 @@ export class TerminalSplitCompositor {
 		this.clearSelection();
 		this.markScrollbarInteraction();
 		this.scrollOffset = next;
-		this.tui.requestRender();
+		if (this.options.requestScrollRender) this.options.requestScrollRender();
+		else this.tui.requestRender();
 		return true;
 	}
 
+	private getSmoothScrollFrameMs(): number {
+		const frameMs = this.options.scrollFrameMs;
+		if (typeof frameMs !== "number" || !Number.isFinite(frameMs) || frameMs < 0) return DEFAULT_SCROLL_FRAME_MS;
+		return Math.floor(frameMs);
+	}
+
+	private clearSmoothWheelScroll(): void {
+		this.smoothScrollPendingDelta = 0;
+		if (!this.smoothScrollTimer) return;
+		clearTimeout(this.smoothScrollTimer);
+		this.smoothScrollTimer = undefined;
+	}
+
+	private scheduleSmoothWheelScrollStep(): void {
+		if (this.smoothScrollTimer || this.smoothScrollPendingDelta === 0) return;
+		this.smoothScrollTimer = setTimeout(() => {
+			this.smoothScrollTimer = undefined;
+			this.consumeSmoothWheelScrollStep();
+		}, this.getSmoothScrollFrameMs());
+	}
+
+	private getSmoothWheelStepMagnitude(pendingMagnitude: number): number {
+		if (pendingMagnitude >= WHEEL_SCROLL_FAST_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_FAST_STEP_LINES, pendingMagnitude);
+		}
+		if (pendingMagnitude >= WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_MEDIUM_STEP_LINES, pendingMagnitude);
+		}
+		return 1;
+	}
+
+	private consumeSmoothWheelScrollStep(): void {
+		if (this.disposed || this.smoothScrollPendingDelta === 0) {
+			this.clearSmoothWheelScroll();
+			return;
+		}
+
+		const pendingMagnitude = Math.abs(this.smoothScrollPendingDelta);
+		const stepMagnitude = this.getSmoothWheelStepMagnitude(pendingMagnitude);
+		const step = this.smoothScrollPendingDelta > 0 ? stepMagnitude : -stepMagnitude;
+		this.smoothScrollPendingDelta -= step;
+		const moved = this.setScrollOffset(this.scrollOffset + step, "smoothWheel");
+		profileSample("fixed.input.smoothWheel.step", stepMagnitude);
+		profileSample("fixed.input.smoothWheel.pending", Math.abs(this.smoothScrollPendingDelta));
+		if (!moved) {
+			this.clearSmoothWheelScroll();
+			return;
+		}
+		this.scheduleSmoothWheelScrollStep();
+	}
+
+	private smoothWheelScrollBy(delta: number): void {
+		profileCount("fixed.input.smoothWheel.calls");
+		profileSample("fixed.input.smoothWheel.delta", delta);
+		if (delta === 0) return;
+
+		if (this.smoothScrollPendingDelta !== 0 && Math.sign(delta) !== Math.sign(this.smoothScrollPendingDelta)) {
+			this.smoothScrollPendingDelta = 0;
+		}
+
+		const pending = this.smoothScrollPendingDelta + delta;
+		this.smoothScrollPendingDelta = Math.max(-WHEEL_SCROLL_MAX_PENDING_LINES, Math.min(WHEEL_SCROLL_MAX_PENDING_LINES, pending));
+		profileSample("fixed.input.smoothWheel.pending", Math.abs(this.smoothScrollPendingDelta));
+		if (!this.smoothScrollTimer) this.consumeSmoothWheelScrollStep();
+	}
+
 	private scrollBy(delta: number): void {
+		this.clearSmoothWheelScroll();
 		profileCount("fixed.input.scrollBy.calls");
 		profileSample("fixed.input.scrollBy.delta", delta);
 		this.setScrollOffset(this.scrollOffset + delta, "scrollBy");
@@ -892,11 +971,13 @@ export class TerminalSplitCompositor {
 
 	private jumpToTop(): void {
 		profileCount("fixed.input.jumpTop.calls");
+		this.clearSmoothWheelScroll();
 		this.setScrollOffset(this.getMaxScrollOffset(), "jumpTop");
 	}
 
 	private jumpToBottom(): void {
 		profileCount("fixed.input.jumpBottom.calls");
+		this.clearSmoothWheelScroll();
 		this.setScrollOffset(0, "jumpBottom");
 	}
 
@@ -914,6 +995,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private setScrollFromScrollbarRow(row: number, geometry: ScrollbarGeometry, dragOffset: number, reason: string): void {
+		this.clearSmoothWheelScroll();
 		const maxThumbTop = Math.max(0, geometry.trackRows - geometry.thumbRows);
 		const thumbTop = Math.max(0, Math.min(maxThumbTop, row - 1 - dragOffset));
 		const start = maxThumbTop <= 0 ? 0 : Math.round((thumbTop / maxThumbTop) * geometry.maxStart);
@@ -964,7 +1046,7 @@ export class TerminalSplitCompositor {
 		const wheelDirection = mouseScrollDirection(packet);
 		if (wheelDirection !== 0) {
 			profileCount("fixed.input.mouseScroll.calls");
-			this.scrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
+			this.smoothWheelScrollBy(this.getAcceleratedWheelScrollDelta(wheelDirection));
 			return;
 		}
 

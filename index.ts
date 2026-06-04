@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AssistantMessageComponent, copyToClipboard, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
-import { installFixedUserZone } from "./fixed-zone/install.js";
+import { FIXED_ZONE_SCROLL_FRAME_MS, installFixedUserZone } from "./fixed-zone/install.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
 import { getPiVersion } from "./core/pi-version.js";
@@ -18,7 +18,7 @@ import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
 import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
 import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
-import { installRenderThrottle } from "./performance/render-throttle.js";
+import { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
 import { installRenderWidthGuard } from "./performance/render-width-guard.js";
 import { getThemeVar, setFullTheme } from "./theme/theme-extras.js";
 import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
@@ -182,6 +182,8 @@ export default function (pi: ExtensionAPI) {
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				onCopySelection: copyToClipboard,
+				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
+				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
 				sidebar: {
 					enabled: false,
 					theme: {
