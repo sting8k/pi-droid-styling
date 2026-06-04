@@ -89,6 +89,8 @@ const WHEEL_SCROLL_RESET_MS = 160;
 const WHEEL_SCROLL_MAX_PENDING_LINES = WHEEL_SCROLL_MAX_LINES * 2;
 const WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES = 3;
 const WHEEL_SCROLL_MEDIUM_STEP_LINES = 2;
+const WHEEL_SCROLL_LARGE_STEP_PENDING_LINES = 4;
+const WHEEL_SCROLL_LARGE_STEP_LINES = 3;
 const WHEEL_SCROLL_FAST_STEP_PENDING_LINES = 5;
 const WHEEL_SCROLL_FAST_STEP_LINES = 4;
 const DEFAULT_SCROLL_FRAME_MS = 20;
@@ -883,11 +885,15 @@ export class TerminalSplitCompositor {
 		return Math.floor(frameMs);
 	}
 
-	private clearSmoothWheelScroll(): void {
-		this.smoothScrollPendingDelta = 0;
+	private clearSmoothWheelScrollTimer(): void {
 		if (!this.smoothScrollTimer) return;
 		clearTimeout(this.smoothScrollTimer);
 		this.smoothScrollTimer = undefined;
+	}
+
+	private clearSmoothWheelScroll(): void {
+		this.smoothScrollPendingDelta = 0;
+		this.clearSmoothWheelScrollTimer();
 	}
 
 	private scheduleSmoothWheelScrollStep(): void {
@@ -901,6 +907,9 @@ export class TerminalSplitCompositor {
 	private getSmoothWheelStepMagnitude(pendingMagnitude: number): number {
 		if (pendingMagnitude >= WHEEL_SCROLL_FAST_STEP_PENDING_LINES) {
 			return Math.min(WHEEL_SCROLL_FAST_STEP_LINES, pendingMagnitude);
+		}
+		if (pendingMagnitude >= WHEEL_SCROLL_LARGE_STEP_PENDING_LINES) {
+			return Math.min(WHEEL_SCROLL_LARGE_STEP_LINES, pendingMagnitude);
 		}
 		if (pendingMagnitude >= WHEEL_SCROLL_MEDIUM_STEP_PENDING_LINES) {
 			return Math.min(WHEEL_SCROLL_MEDIUM_STEP_LINES, pendingMagnitude);
@@ -940,7 +949,8 @@ export class TerminalSplitCompositor {
 		const pending = this.smoothScrollPendingDelta + delta;
 		this.smoothScrollPendingDelta = Math.max(-WHEEL_SCROLL_MAX_PENDING_LINES, Math.min(WHEEL_SCROLL_MAX_PENDING_LINES, pending));
 		profileSample("fixed.input.smoothWheel.pending", Math.abs(this.smoothScrollPendingDelta));
-		if (!this.smoothScrollTimer) this.consumeSmoothWheelScrollStep();
+		this.clearSmoothWheelScrollTimer();
+		this.consumeSmoothWheelScrollStep();
 	}
 
 	private scrollBy(delta: number): void {
