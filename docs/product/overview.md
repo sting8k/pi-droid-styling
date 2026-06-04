@@ -15,7 +15,7 @@ The extension provides:
 - Terminal background synchronization with the active theme when supported.
 - Render hot-path patches for streaming assistant output and noisy tool output.
 - Opt-in render profiling for request/render/repaint/update/git metrics without changing UI behavior when disabled.
-- Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it, including mouse drag selection, double-click word selection, triple-click line selection, release-to-copy feedback, and OSC 52 clipboard propagation for terminal proxies in the fixed-zone view.
+- Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it, including mouse drag selection, double-click word selection, triple-click line selection, fixed-zone-local bottom notice feedback, and OSC 52 clipboard propagation for terminal proxies in the fixed-zone view.
 - Optional fixed user zone right sidebar for session id/name, cwd, current branch, modified files, and Pi version metadata on wide terminals.
 
 ## Configuration

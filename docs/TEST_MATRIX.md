@@ -24,6 +24,7 @@ This markdown file is a human-readable fallback for the initial brownfield basel
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | H-001 | Harness docs describe the existing TypeScript Pi UI styling extension accurately | no | no | no | yes | implemented | `srcwalk review --limit 10`, `srcwalk overview --scope . --depth 2`, `scripts/bin/harness-cli query matrix`, docs placeholder/upstream grep checks |
 | US-008 | Fixed-zone selection supports drag range, double-click word, triple-click line, release-to-copy feedback, and OSC 52 clipboard propagation for terminal proxies | no | yes | no | pending | implemented | `srcwalk review --scope .`; scoped TypeScript no-emit for `index.ts`, fixed-zone install/split/selection; `git diff --check`; `PI_DROID_PROFILE_BENCH_ROOT_LINES=6000 PI_DROID_PROFILE_BENCH_ITERATIONS=30 npm run profile:render`; manual jump/browser OSC 52 smoke pending |
+| US-009 | Fixed-zone notices render in a reserved themed bottom footer row and copy feedback uses that local surface | yes | yes | no | pending | implemented | Pending validation for notice render smoke, scoped TypeScript no-emit, render profile, and srcwalk review; manual Pi themed pill smoke pending |
 
 ## Evidence Rules
 

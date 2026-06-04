@@ -7,6 +7,7 @@ import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine }
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
 import { FixedZoneSelection, SELECTION_MULTI_CLICK_MS, stripAnsi, type SelectionActivity, type SelectionPoint, type SelectionRegion } from "./selection.js";
+import { defaultFixedZoneNoticeTtlMs, fixedZoneNoticeKey, renderFixedZoneNoticeFooter, type FixedZoneNotice, type FixedZoneNoticeKind, type FixedZoneNoticeTheme } from "./notice.js";
 
 interface TerminalLike {
 	write(data: string): void;
@@ -44,11 +45,13 @@ function isRenderable(value: unknown): value is RenderableLike {
 
 export interface SelectionCopyContext {
 	emitOsc52Clipboard(): boolean;
+	showNotice(kind: FixedZoneNoticeKind, message: string, ttlMs?: number): void;
 }
 
 export interface TerminalSplitOptions {
 	onCopySelection?: (text: string, context: SelectionCopyContext) => void;
 	requestScrollRender?: () => void;
+	theme?: FixedZoneNoticeTheme;
 	scrollFrameMs?: number;
 	sidebar?: {
 		enabled: boolean;
@@ -176,6 +179,27 @@ function applyContentInsetToCluster(cluster: FixedZoneCluster, width: number): F
 	return result;
 }
 
+function isBlankVisualLine(line: string): boolean {
+	return stripAnsi(line).trim().length === 0;
+}
+
+function trimTrailingSpacerLine(cluster: FixedZoneCluster): FixedZoneCluster {
+	const lastRow = cluster.lines.length;
+	if (lastRow === 0 || cluster.cursor?.row === lastRow) return cluster;
+	if (!isBlankVisualLine(cluster.lines[lastRow - 1] ?? "")) return cluster;
+	return { lines: cluster.lines.slice(0, -1), cursor: cluster.cursor };
+}
+
+function limitClusterRows(cluster: FixedZoneCluster, maxRows: number): FixedZoneCluster {
+	if (maxRows <= 0) return { lines: [] };
+	if (cluster.lines.length <= maxRows) return cluster;
+	const start = cluster.lines.length - maxRows;
+	const cursor = cluster.cursor && cluster.cursor.row > start
+		? { row: cluster.cursor.row - start, col: cluster.cursor.col }
+		: undefined;
+	return { lines: cluster.lines.slice(start), cursor };
+}
+
 const SGR_MOUSE_EVENT_PATTERN = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
 const TRAILING_SGR_MOUSE_EVENT_PREFIX_PATTERN = /\x1b\[<\d*(?:;\d*(?:;\d*)?)?$/;
 
@@ -265,6 +289,8 @@ export class TerminalSplitCompositor {
 	private readonly selection = new FixedZoneSelection();
 	private selectionCopyTimer: ReturnType<typeof setTimeout> | undefined;
 	private selectionClearTimer: ReturnType<typeof setTimeout> | undefined;
+	private notice: FixedZoneNotice | null = null;
+	private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingMouseInput = "";
 	private lastWheelAt = 0;
 	private lastWheelDirection = 0;
@@ -291,6 +317,36 @@ export class TerminalSplitCompositor {
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
+	}
+
+	showNotice(kind: FixedZoneNoticeKind, message: string, ttlMs = defaultFixedZoneNoticeTtlMs(kind)): void {
+		this.clearNoticeTimer();
+		this.notice = { kind, message };
+		profileCount(`fixed.notice.show.${kind}`);
+		profileSample("fixed.notice.message.chars", message.length);
+		this.clusterCache = undefined;
+		this.resetClusterPaintCache();
+		this.tui.requestRender();
+		this.noticeTimer = setTimeout(() => {
+			this.noticeTimer = undefined;
+			if (this.disposed) return;
+			this.clearNotice();
+		}, Math.max(0, Math.floor(ttlMs)));
+	}
+
+	private clearNotice(): void {
+		this.clearNoticeTimer();
+		if (!this.notice) return;
+		this.notice = null;
+		this.clusterCache = undefined;
+		this.resetClusterPaintCache();
+		this.tui.requestRender();
+	}
+
+	private clearNoticeTimer(): void {
+		if (!this.noticeTimer) return;
+		clearTimeout(this.noticeTimer);
+		this.noticeTimer = undefined;
 	}
 
 	install(): void {
@@ -341,6 +397,7 @@ export class TerminalSplitCompositor {
 		this.wheelBurst = 0;
 		this.clearSmoothWheelScroll();
 		this.clearPendingSelectionTimers();
+		this.clearNoticeTimer();
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -490,13 +547,28 @@ export class TerminalSplitCompositor {
 		return Math.max(0, rawRows - MIN_SCROLLABLE_ROWS);
 	}
 
+	private renderNoticeFooter(width: number): string {
+		return padTuiContentLine(renderFixedZoneNoticeFooter(this.notice, getTuiContentInnerWidth(width), this.options.theme), width);
+	}
+
 	private renderCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
 		const start = profileNow();
 		this.renderingCluster = true;
 		try {
-			const cluster = renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), this.getMaxClusterRows(rawRows), this.getClusterOptions());
+			const maxClusterRows = this.getMaxClusterRows(rawRows);
+			const footerRows = maxClusterRows > 0 ? 1 : 0;
+			const contentRows = Math.max(0, maxClusterRows - footerRows);
+			const renderContentRows = contentRows > 0 ? contentRows + footerRows : 0;
+			const renderedCluster = renderContentRows > 0
+				? renderFixedUserZoneCluster(this.hiddenRenderables, getTuiContentInnerWidth(width), renderContentRows, this.getClusterOptions())
+				: { lines: [] };
+			const cluster = footerRows > 0
+				? limitClusterRows(trimTrailingSpacerLine(renderedCluster), contentRows)
+				: renderedCluster;
 			const insetCluster = applyContentInsetToCluster(cluster, width);
+			if (footerRows > 0) insetCluster.lines.push(this.renderNoticeFooter(width));
 			profileSample("fixed.cluster.rows.count", insetCluster.lines.length);
+			profileSample("fixed.notice.footer.rows.count", footerRows);
 			return insetCluster;
 		} finally {
 			this.renderingCluster = false;
@@ -509,7 +581,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private getClusterStateKey(): string {
-		return this.scrollOffset > 0 ? "scrolled" : "bottom";
+		return `${this.scrollOffset > 0 ? "scrolled" : "bottom"}:${fixedZoneNoticeKey(this.notice)}`;
 	}
 
 	private refreshCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {
@@ -1174,6 +1246,7 @@ export class TerminalSplitCompositor {
 		profileSample("fixed.input.selection.copy.chars", text.length);
 		this.options.onCopySelection?.(text, {
 			emitOsc52Clipboard: () => this.emitOsc52Clipboard(text),
+			showNotice: (kind, message, ttlMs) => this.showNotice(kind, message, ttlMs),
 		});
 	}
 

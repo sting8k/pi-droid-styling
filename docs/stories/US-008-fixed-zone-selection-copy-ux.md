@@ -23,7 +23,7 @@ When `fixedUserZone` is enabled, mouse selection in the fixed-zone scrollable/ro
 
 - Selection state and text/highlight helpers live in a dedicated fixed-zone selection module instead of being embedded in `terminal-split.ts`.
 - Existing drag-to-copy behavior remains scoped to the clicked root/sidebar region.
-- Releasing a non-empty selection copies it, emits an OSC 52 clipboard sequence for terminal proxies such as jump, clears the highlight, and emits a minimal copied notification.
+- Releasing a non-empty selection copies it, emits an OSC 52 clipboard sequence for terminal proxies such as jump, clears the highlight, and emits fixed-zone-local copied feedback.
 - Double-click selects the visual word under the pointer before release-copy.
 - Triple-click selects the visual line under the pointer before release-copy.
 - Root/sidebar boundaries and existing scroll/sidebar behavior remain unchanged.
@@ -35,7 +35,7 @@ When `fixedUserZone` is enabled, mouse selection in the fixed-zone scrollable/ro
 - API: extends fixed-zone internal selection behavior; clipboard still uses Pi core `copyToClipboard` and emits best-effort OSC 52 through the active terminal so browser/terminal proxies can receive selection copies.
 - Tables: none.
 - Domain rules: selection works over rendered visual lines, not raw logical message content.
-- UI surfaces: fixed user zone scrollable root, optional right sidebar, Pi notification feedback.
+- UI surfaces: fixed user zone scrollable root, optional right sidebar, fixed-zone-local notice footer feedback.
 
 ## Validation
 
@@ -59,5 +59,6 @@ No harness policy change expected. This story records a normal-lane UX refinemen
 - Focused selection runtime smoke: drag range, double-click word, triple-click line, and empty-space word miss passed (`selection smoke ok`).
 - `npm run profile:render`: passed.
 - OSC 52 terminal-proxy patch validation: `srcwalk review --scope .`, scoped TypeScript no-emit for `index.ts fixed-zone/install.ts fixed-zone/terminal-split.ts fixed-zone/selection.ts`, `git diff --check`, and `PI_DROID_PROFILE_BENCH_ROOT_LINES=6000 PI_DROID_PROFILE_BENCH_ITERATIONS=30 npm run profile:render` passed.
+- Jump clipboard regression fix: `isRemoteClipboardSession()` now treats `TERM_PROGRAM=jump` as requiring OSC 52 after host `copyToClipboard()` succeeds, because jump sessions are local PTYs rather than SSH/MOSH sessions.
 - `semantic_review` working tree: passed for changed files.
 - Manual Pi smoke still pending for real terminal mouse packets, jump/browser OSC 52 clipboard propagation, and notification UX.

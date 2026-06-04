@@ -25,7 +25,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
 - Footer stats including token speed and compact session context.
-- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above, with mouse selection/copy support in the fixed-zone view, including OSC 52 clipboard propagation for terminal proxies.
+- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above, with mouse selection/copy support, themed bottom-row feedback, and OSC 52 clipboard propagation for terminal proxies.
 - Reload/session-safe patches to avoid stacked padding or spacing.
 
 ## Config

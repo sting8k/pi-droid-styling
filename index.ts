@@ -3,6 +3,7 @@ import { AssistantMessageComponent, copyToClipboard, InteractiveMode, ToolExecut
 
 import { BoxEditor } from "./editor/box-editor.js";
 import { FIXED_ZONE_SCROLL_FRAME_MS, installFixedUserZone } from "./fixed-zone/install.js";
+import { createFixedZoneTheme } from "./fixed-zone/theme.js";
 import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 import { createGitBranchFetcher } from "./core/git-status.js";
 import { getPiVersion } from "./core/pi-version.js";
@@ -39,7 +40,9 @@ let terminalSignalHandlersInstalled = false;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 
 function isRemoteClipboardSession(env = process.env): boolean {
-	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION);
+	// jump's browser terminal receives clipboard writes through OSC 52, but
+	// jump sessions are local PTYs, not necessarily SSH/MOSH sessions.
+	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION || env.TERM_PROGRAM === "jump");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -183,40 +186,27 @@ export default function (pi: ExtensionAPI) {
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
-			const notifySelectionCopy = (message: string, type: "info" | "warning") => {
-				try {
-					sessionUi.notify(message, type);
-				} catch {
-					profileCount("fixed.input.selection.copyNotify.error");
-				}
-			};
+			const fixedZoneTheme = createFixedZoneTheme(sessionUi.theme);
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				onCopySelection: (text, clipboard) => {
 					void copyToClipboard(text).then(
 						() => {
 							if (isRemoteClipboardSession()) clipboard.emitOsc52Clipboard();
-							notifySelectionCopy("Copied selection", "info");
+							clipboard.showNotice("success", "Selected text copied to clipboard");
 						},
 						() => {
 							const osc52Emitted = clipboard.emitOsc52Clipboard();
-							notifySelectionCopy(osc52Emitted ? "Copied selection" : "Copy failed", osc52Emitted ? "info" : "warning");
+							clipboard.showNotice(osc52Emitted ? "success" : "warning", osc52Emitted ? "Selected text copied to clipboard" : "Copy failed");
 						},
 					);
 				},
 				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
+				theme: fixedZoneTheme,
 				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
 				sidebar: {
 					enabled: false,
-					theme: {
-						fg: (color: string, text: string) => {
-							try {
-								return typeof sessionUi.theme?.fg === "function" ? sessionUi.theme.fg(color as any, text) : text;
-							} catch {
-								return text;
-							}
-						},
-					},
+					theme: fixedZoneTheme,
 					onActiveChange: (active) => { fixedZoneSidebarActive = active; },
 					getInfo: () => {
 						const git = fetchBranch();
