@@ -26,7 +26,7 @@ import { applyTerminalBg, restoreTerminalBg } from "./theme/terminal-bg.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
-import { getRandomWorkingMessage, SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "./tool-tags/loader-accent.js";
+import { createWorkingLoaderController, workingStateForAssistantMessage, type WorkingLoaderController } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
 import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
@@ -57,16 +57,33 @@ export default function (pi: ExtensionAPI) {
 
 	let currentThinkingLevel: string | undefined;
 	const assistantSpeedTracker = createAssistantSpeedTracker();
+	let workingLoaderController: WorkingLoaderController | undefined;
+	const runningToolCalls = new Set<string>();
 
 	const isStaleContextError = (error: unknown): boolean =>
 		error instanceof Error && error.message.includes("stale after session replacement or reload");
 
+	pi.on("before_agent_start", () => {
+		workingLoaderController?.setState("working");
+	});
+
+	pi.on("agent_start", () => {
+		runningToolCalls.clear();
+		workingLoaderController?.start("working");
+	});
+
 	pi.on("message_start", (event) => {
 		assistantSpeedTracker.handleMessageStart(event.message);
+		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
+			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+		}
 	});
 
 	pi.on("message_update", (event) => {
 		assistantSpeedTracker.handleMessageUpdate(event.message);
+		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
+			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+		}
 	});
 
 	pi.on("thinking_level_select", (event) => {
@@ -77,6 +94,22 @@ export default function (pi: ExtensionAPI) {
 		assistantSpeedTracker.handleMessageEnd(event.message);
 	});
 
+	pi.on("tool_execution_start", (event) => {
+		runningToolCalls.add(event.toolCallId);
+		workingLoaderController?.setState("running");
+	});
+
+	pi.on("tool_execution_end", (event) => {
+		runningToolCalls.delete(event.toolCallId);
+		// Keep the current label until the next live state begins.
+		// For example, a completed tool stays "Cooking" until assistant streaming resumes.
+	});
+
+	pi.on("agent_end", () => {
+		runningToolCalls.clear();
+		workingLoaderController?.stop();
+	});
+
 	pi.on("session_shutdown", (_event, ctx) => {
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
@@ -84,6 +117,9 @@ export default function (pi: ExtensionAPI) {
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		setAssistantUpdateRenderRequester(undefined);
+		workingLoaderController?.dispose();
+		workingLoaderController = undefined;
+		runningToolCalls.clear();
 		try {
 			ctx.ui.setEditorComponent(undefined);
 		} catch {
@@ -98,6 +134,9 @@ export default function (pi: ExtensionAPI) {
 		setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		assistantSpeedTracker.resetSession();
+		workingLoaderController?.dispose();
+		workingLoaderController = undefined;
+		runningToolCalls.clear();
 		try {
 			currentThinkingLevel = pi.getThinkingLevel();
 		} catch (error) {
@@ -108,12 +147,8 @@ export default function (pi: ExtensionAPI) {
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		if (config.customWorkingMessage) {
-			const workingMessage = getRandomWorkingMessage() ?? "Working...";
-			sessionUi.setWorkingMessage("");
-			sessionUi.setWorkingIndicator({
-				frames: SPINNER_FRAMES.map((frame) => sessionUi.theme.fg("accent", `${frame} ${workingMessage}`)),
-				intervalMs: SPINNER_INTERVAL_MS,
-			});
+			workingLoaderController = createWorkingLoaderController(sessionUi);
+			workingLoaderController.configure();
 		} else {
 			sessionUi.setWorkingMessage();
 			sessionUi.setWorkingIndicator();

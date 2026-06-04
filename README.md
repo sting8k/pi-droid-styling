@@ -71,7 +71,7 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 
 - Works with the active Pi theme; it does not force a theme.
 - Compatible color schemes: https://github.com/sting8k/pi-themes
-- `customWorkingMessage` is off by default to keep Pi core loader behavior stable.
+- `customWorkingMessage` is off by default; when enabled it keeps Pi's loader layout but uses themed `Working` / `Thinking` / `Answering` / `Cooking` states.
 
 ## License
 
