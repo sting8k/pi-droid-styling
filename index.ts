@@ -18,10 +18,12 @@ import { installAssistantStreamingMarkdownCache } from "./messages/streaming-mar
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
 import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
 import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
+import { installRenderFrameBackground } from "./performance/render-frame-background.js";
 import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
 import { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
 import { installRenderWidthGuard } from "./performance/render-width-guard.js";
 import { setFullTheme } from "./theme/theme-extras.js";
+import { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
 import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
@@ -32,9 +34,12 @@ import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js"
 import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
+import { installPiTasksWidgetStyling } from "./widgets/pi-tasks-widget.js";
 
 let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
 let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
+let restoreTerminalBackgroundForCurrentSession: (() => void) | undefined;
+let disposePiTasksWidgetStylingForCurrentSession: (() => void) | undefined;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 
 function isRemoteClipboardSession(env = process.env): boolean {
@@ -112,11 +117,15 @@ export default function (pi: ExtensionAPI) {
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
 		syncThemeExtrasForCurrentSession = undefined;
+		restoreTerminalBackgroundForCurrentSession?.();
+		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		setAssistantUpdateRenderRequester(undefined);
 		workingLoaderController?.dispose();
 		workingLoaderController = undefined;
+		disposePiTasksWidgetStylingForCurrentSession?.();
+		disposePiTasksWidgetStylingForCurrentSession = undefined;
 		runningToolCalls.clear();
 		try {
 			ctx.ui.setEditorComponent(undefined);
@@ -142,6 +151,10 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = loadConfig();
+		disposePiTasksWidgetStylingForCurrentSession?.();
+		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi);
+		restoreTerminalBackgroundForCurrentSession?.();
+		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
 		if (config.customWorkingMessage) {
@@ -198,6 +211,9 @@ export default function (pi: ExtensionAPI) {
 		setToolSpacingTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
+			const uiTheme = (sessionUi.theme ?? theme) as any;
+			restoreTerminalBackgroundForCurrentSession?.();
+			restoreTerminalBackgroundForCurrentSession = applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
 			installRenderThrottle(tui as any);
 			setAssistantUpdateRenderRequester(() => tui.requestRender());
 			virtualizeChatContainer(tui as any);
@@ -206,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
-			const fixedZoneTheme = createFixedZoneTheme(sessionUi.theme);
+			const fixedZoneTheme = createFixedZoneTheme(uiTheme);
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				onCopySelection: (text, clipboard) => {
@@ -245,10 +261,11 @@ export default function (pi: ExtensionAPI) {
 				},
 			});
 			installRenderWidthGuard(tui as any);
+			installRenderFrameBackground(tui as any, uiTheme);
 			installRenderPhysicalSync(tui as any);
 			installRenderFrameDebug(tui as any);
 			return new BoxEditor(
-				tui, theme, kb, sessionUi.theme ?? theme, sessionCwd,
+				tui, theme, kb, uiTheme, sessionCwd,
 				() => {
 					try {
 						return ctx.getContextUsage();

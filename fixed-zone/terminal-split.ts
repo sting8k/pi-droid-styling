@@ -3,6 +3,7 @@ import { profileCount, profileDuration, profileNow, profileSample, profileTextBy
 import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
+import { paintFrameBackgroundLine, paintFrameBackgroundSegment } from "../theme/frame-background.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -51,7 +52,7 @@ export interface SelectionCopyContext {
 export interface TerminalSplitOptions {
 	onCopySelection?: (text: string, context: SelectionCopyContext) => void;
 	requestScrollRender?: () => void;
-	theme?: FixedZoneNoticeTheme;
+	theme?: FixedZoneNoticeTheme & { frameBgAnsi?: () => string };
 	scrollFrameMs?: number;
 	sidebar?: {
 		enabled: boolean;
@@ -130,10 +131,6 @@ function moveCursor(row: number, col: number): string {
 
 function clearLine(): string {
 	return "\x1b[2K";
-}
-
-function clearLineRight(): string {
-	return "\x1b[K";
 }
 
 function saveCursor(): string {
@@ -541,6 +538,22 @@ export class TerminalSplitCompositor {
 	private composeWithSidebar(content: string, layout: FixedZoneSidebarLayout, sidebarRows: string[], rowIndex: number): string {
 		if (!layout.active) return fitLine(content, layout.contentWidth);
 		return `${padLine(content, layout.contentWidth)}${sidebarRows[rowIndex] ?? ""}`;
+	}
+
+	private frameBgAnsi(): string {
+		try {
+			return this.options.theme?.frameBgAnsi?.() ?? "";
+		} catch {
+			return "";
+		}
+	}
+
+	private paintFrameRow(line: string, targetWidth = this.getRawColumns()): string {
+		return paintFrameBackgroundLine(line, this.frameBgAnsi(), targetWidth);
+	}
+
+	private paintFrameSegment(text: string): string {
+		return paintFrameBackgroundSegment(text, this.frameBgAnsi());
 	}
 
 	private getMaxClusterRows(rawRows = this.getRawRows()): number {
@@ -1396,11 +1409,10 @@ export class TerminalSplitCompositor {
 
 		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
 		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
-		const clearTail = this.getSidebarLayout(this.getRawColumns()).active ? "" : clearLineRight();
 		let output = saveCursor();
 		for (let index = 0; index < geometry.trackRows; index++) {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;
-			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + (isThumb ? thumbGlyph : trackGlyph) + clearTail;
+			output += moveCursor(index + 1, geometry.col) + RESET_TERMINAL_SEGMENT + this.paintFrameSegment(isThumb ? thumbGlyph : trackGlyph);
 		}
 		const painted = output + restoreCursor();
 		profileCount("fixed.scrollbar.paint");
@@ -1419,7 +1431,7 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const blankSidebarRow = " ".repeat(layout.sidebarWidth);
-			const paintRows = Array.from({ length: rawRows }, (_value, index) => sidebarRows[index] ?? blankSidebarRow);
+			const paintRows = Array.from({ length: rawRows }, (_value, index) => this.paintFrameRow(sidebarRows[index] ?? blankSidebarRow, layout.sidebarWidth));
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}`;
 			if (this.lastPaintedSidebarKey === paintKey && sameStringList(this.lastPaintedSidebarRows, paintRows)) {
 				profileCount("fixed.sidebar.paint.skipUnchanged");
@@ -1449,7 +1461,7 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const startRow = rawRows - cluster.lines.length + 1;
-			const paintRows = cluster.lines.map((line, index) => this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1));
+			const paintRows = cluster.lines.map((line, index) => this.paintFrameRow(this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1), this.getRawColumns()));
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
 			const cursorPaint = cluster.cursor
 				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
@@ -1465,8 +1477,9 @@ export class TerminalSplitCompositor {
 			this.lastPaintedClusterKey = paintKey;
 			this.lastPaintedClusterRows = paintRows;
 			let output = saveCursor();
+			const frameBg = this.frameBgAnsi();
 			paintRows.forEach((line, index) => {
-				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + clearLine() + line;
+				output += moveCursor(startRow + index, 1) + RESET_TERMINAL_SEGMENT + frameBg + clearLine() + line;
 			});
 			const painted = cursorPaint ? output + cursorPaint : output + restoreCursor();
 			profileCount("fixed.cluster.paint.full");

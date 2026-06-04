@@ -6,7 +6,7 @@ import { relative, resolve } from "node:path";
 import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
 import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
-import { getThemeExtra, getThemeVarBackground } from "../theme/theme-extras.js";
+import { getThemeExtra, getThemePageBackground, getThemeVarBackground } from "../theme/theme-extras.js";
 import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
 
 export function isExpanded(options: ToolRenderResultOptions): boolean {
@@ -242,14 +242,21 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 const RESET_INTENSITY = "\x1b[22m";
 
 function themeBg(theme: any, bgName: string, text: string): string {
-	// Try vars first (e.g., toolSuccessBg in theme vars)
+	// Tool boxes sit on the page surface; status is carried by border/title colors.
+	// Prefer pageBg so boxed tool calls do not create a second card-colored slab.
+	const pageBg = getThemePageBackground(theme);
+	if (pageBg) {
+		const bgAnsi = bgHexAnsi(theme, pageBg);
+		if (bgAnsi) return wrapAnsiBackground(text, bgAnsi);
+	}
+
+	// Fallback to status bg vars if pageBg cannot be resolved.
 	const varBg = getThemeVarBackground(theme, bgName);
 	if (varBg) {
 		const bgAnsi = bgHexAnsi(theme, varBg);
 		if (bgAnsi) return wrapAnsiBackground(text, bgAnsi);
 	}
 
-	// Try theme.getBgAnsi (export tokens like pageBg/cardBg/infoBg)
 	try {
 		if (typeof theme?.getBgAnsi === "function") {
 			const bgAnsi = String(theme.getBgAnsi(bgName) ?? "");
@@ -257,7 +264,6 @@ function themeBg(theme: any, bgName: string, text: string): string {
 		}
 	} catch {}
 
-	// Fallback to theme.bg
 	try {
 		return typeof theme?.bg === "function" ? theme.bg(bgName, text) : text;
 	} catch {

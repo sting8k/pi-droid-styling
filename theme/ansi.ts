@@ -20,7 +20,7 @@ export function isHexColor(hex: string): boolean {
 	const cleaned = hex.replace("#", "");
 	return cleaned.length === 3
 		? /^[0-9a-fA-F]{3}$/.test(cleaned)
-		: cleaned.length === 6 && /^[0-9a-fA-F]{6}$/.test(cleaned);
+		: (cleaned.length === 6 || cleaned.length === 8) && /^[0-9a-fA-F]+$/.test(cleaned);
 }
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -31,7 +31,7 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 		const b = Number.parseInt(cleaned[2]! + cleaned[2], 16);
 		return { r, g, b };
 	}
-	if (cleaned.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+	if ((cleaned.length !== 6 && cleaned.length !== 8) || !/^[0-9a-fA-F]+$/.test(cleaned)) {
 		return { r: 0, g: 0, b: 0 };
 	}
 	const r = Number.parseInt(cleaned.slice(0, 2), 16);
@@ -100,6 +100,7 @@ function rgbTo256(r: number, g: number, b: number): number {
 }
 
 const fgEscapeCache = new Map<string, string>();
+const bgEscapeCache = new Map<string, string>();
 
 function getFgEscape(theme: any, hex: string): { prefix: string; suffix: string } {
 	const mode = typeof theme?.getColorMode === "function" ? theme.getColorMode() : "truecolor";
@@ -118,10 +119,113 @@ function getFgEscape(theme: any, hex: string): { prefix: string; suffix: string 
 	return { prefix: cached, suffix: "\x1b[39m" };
 }
 
+function getBgEscape(theme: any, hex: string): { prefix: string; suffix: string } {
+	const mode = typeof theme?.getColorMode === "function" ? theme.getColorMode() : "truecolor";
+	const cacheKey = `${mode}:${hex}`;
+	let cached = bgEscapeCache.get(cacheKey);
+	if (!cached) {
+		const { r, g, b } = hexToRgb(hex);
+		if (mode === "256color") {
+			const idx = rgbTo256(r, g, b);
+			cached = `\x1b[48;5;${idx}m`;
+		} else {
+			cached = `\x1b[48;2;${r};${g};${b}m`;
+		}
+		bgEscapeCache.set(cacheKey, cached);
+	}
+	return { prefix: cached, suffix: RESET_BACKGROUND };
+}
+
+export const RESET_BACKGROUND = "\x1b[49m";
+export const ERASE_TO_END_OF_LINE = "\x1b[K";
+export const ERASE_LINE = "\x1b[2K";
+
 export function fgHex(theme: any, hex: string, text: string): string {
 	if (!isHexColor(hex)) return text;
 	const { prefix, suffix } = getFgEscape(theme, hex);
 	return `${prefix}${text}${suffix}`;
+}
+
+export function bgHexAnsi(theme: any, hex: string): string {
+	if (!isHexColor(hex)) return "";
+	return getBgEscape(theme, hex).prefix;
+}
+
+export function bgHex(theme: any, hex: string, text: string): string {
+	if (!isHexColor(hex)) return text;
+	const { prefix, suffix } = getBgEscape(theme, hex);
+	return `${prefix}${text}${suffix}`;
+}
+
+function sgrColorParameterEnd(codes: string[], index: number): number {
+	const code = Number(codes[index]);
+	if (code !== 38 && code !== 48) return index;
+	const mode = Number(codes[index + 1]);
+	if (mode === 2) return Math.min(codes.length - 1, index + 4);
+	if (mode === 5) return Math.min(codes.length - 1, index + 2);
+	return index;
+}
+
+type BackgroundAction = "none" | "reset" | "set";
+
+function isBasicBackgroundCode(code: number): boolean {
+	return (code >= 40 && code <= 47) || (code >= 100 && code <= 107);
+}
+
+function finalBackgroundAction(rawCodes: string): BackgroundAction {
+	const codes = rawCodes.split(";").filter(Boolean);
+	if (codes.length === 0) return "reset";
+	let action: BackgroundAction = "none";
+	for (let i = 0; i < codes.length; i++) {
+		const code = Number(codes[i]);
+		if (code === 0 || code === 49) {
+			action = "reset";
+			continue;
+		}
+		if (code === 48) {
+			action = "set";
+			i = sgrColorParameterEnd(codes, i);
+			continue;
+		}
+		if (code === 38) {
+			i = sgrColorParameterEnd(codes, i);
+			continue;
+		}
+		if (isBasicBackgroundCode(code)) action = "set";
+	}
+	return action;
+}
+
+function removeStandaloneBackgroundReset(rawCodes: string): string {
+	const codes = rawCodes.split(";").filter(Boolean);
+	if (codes.length === 0) return "0";
+
+	const rebuilt: string[] = [];
+	for (let i = 0; i < codes.length; i++) {
+		const code = Number(codes[i]);
+		if (code === 49) continue;
+		const end = sgrColorParameterEnd(codes, i);
+		for (let j = i; j <= end; j++) rebuilt.push(codes[j]!);
+		i = end;
+	}
+	return rebuilt.join(";");
+}
+
+export function keepAnsiBackgroundAcrossResets(text: string, bgAnsi: string): string {
+	if (!text) return text;
+	return text.replace(/\x1b\[([0-9;]*)m/g, (sequence, rawCodes) => {
+		const codes = String(rawCodes ?? "");
+		if (finalBackgroundAction(codes) !== "reset") return sequence;
+		const rebuilt = removeStandaloneBackgroundReset(codes);
+		return `${rebuilt ? `\x1b[${rebuilt}m` : ""}${bgAnsi}`;
+	});
+}
+
+export function wrapAnsiBackground(text: string, bgAnsi: string, options: { fillToEnd?: boolean } = {}): string {
+	if (!bgAnsi || bgAnsi === RESET_BACKGROUND) return text;
+	const body = keepAnsiBackgroundAcrossResets(text, bgAnsi);
+	const fill = options.fillToEnd ? `${bgAnsi}${ERASE_TO_END_OF_LINE}` : "";
+	return `${bgAnsi}${body}${fill}${RESET_BACKGROUND}`;
 }
 
 // ------------------------------------------------------------

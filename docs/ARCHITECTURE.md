@@ -31,10 +31,10 @@ tool-tags/
   Tool call renderers, badges, elapsed metrics, and tool-output formatting
 
 theme/
-  ANSI helpers and theme discovery/extras; terminal defaults are not mutated
+  ANSI helpers, theme discovery/extras, shared frame background row painting, and platform-gated OSC 11 terminal background sync
 
 performance/
-  Debounce, throttle, and virtualization patches for render hot paths
+  Debounce, throttle, virtualization, root frame background, and physical-sync patches for render hot paths
 
 fixed-zone/
   Opt-in terminal compositor for the true fixed user zone
@@ -55,7 +55,7 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 3. Patch installers must be idempotent because sessions and extensions can reload.
    Terminal compositor patches must also restore `terminal.write`, `terminal.rows`, `tui.render`, scroll regions, and input listeners on dispose.
 4. Tool rendering belongs in `tool-tags/` until that domain grows enough to justify subfolders.
-5. Theme and ANSI behavior belongs in `theme/`; component-level background painting belongs in the owning renderer; performance wrappers belong in `performance/`.
+5. Theme and ANSI behavior belongs in `theme/`; row-level background painting uses the shared theme painter; OSC 11 terminal background sync is platform-gated there; component/fixed-zone ownership decides where rows are emitted; performance wrappers belong in `performance/`.
 6. Runtime providers used by UI components should be cheap on render paths and cache background work when needed.
 
 ## Dependency Direction

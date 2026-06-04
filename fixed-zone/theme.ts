@@ -1,5 +1,6 @@
 import type { FixedZoneNoticeTheme } from "./notice.js";
 import type { FixedZoneSidebarTheme } from "./sidebar.js";
+import { resolveFrameBackgroundAnsi } from "../theme/frame-background.js";
 
 type HostThemeLike = {
 	fg?: (color: any, text: string) => string;
@@ -8,7 +9,7 @@ type HostThemeLike = {
 	inverse?: (text: string) => string;
 };
 
-export type FixedZoneTheme = FixedZoneNoticeTheme & FixedZoneSidebarTheme;
+export type FixedZoneTheme = FixedZoneNoticeTheme & FixedZoneSidebarTheme & { frameBgAnsi?: () => string };
 
 function inverse(text: string): string {
 	return `\x1b[7m${text}\x1b[27m`;
@@ -44,5 +45,6 @@ export function createFixedZoneTheme(theme: HostThemeLike | undefined): FixedZon
 				return inverse(text);
 			}
 		},
+		frameBgAnsi: () => resolveFrameBackgroundAnsi(theme),
 	};
 }

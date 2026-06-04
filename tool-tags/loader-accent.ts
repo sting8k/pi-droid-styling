@@ -22,7 +22,7 @@ export const SPINNER_FRAMES = ["⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", 
 export const SPINNER_INTERVAL_MS = 80;
 export const WORKING_MESSAGE_INTERVAL_MS = 400;
 
-const WORKING_SPINNER_COLORS = ["accent", "mdLink", "bashMode", "success", "toolTitle", "mdLink"];
+const WORKING_SPINNER_COLORS = ["accent"];
 const WORKING_STATE_LABELS: Record<WorkingLoaderState, string> = {
 	working: "Working",
 	thinking: "Thinking",
@@ -49,7 +49,7 @@ function colorForStep(step: number): string {
 	return WORKING_SPINNER_COLORS[frameIndex % WORKING_SPINNER_COLORS.length] ?? "accent";
 }
 export function renderWorkingMessage(state: WorkingLoaderState, step: number, theme?: WorkingLoaderTheme): string {
-	return themeFg(theme, "accent", `${WORKING_STATE_LABELS[state]}${dotsForStep(step)}`);
+	return themeFg(theme, "muted", `${WORKING_STATE_LABELS[state]}${dotsForStep(step)}`);
 }
 
 export function createWorkingIndicatorFrames(theme?: WorkingLoaderTheme): string[] {

@@ -11,8 +11,8 @@ The extension provides:
 - Assistant and user message prefixes with cleaner spacing.
 - Compact tool call tags with badges, elapsed time, dimmed output support, and specialized renderers for common tools.
 - Footer stats including assistant token/word speed and compact session context.
-- Active-theme integration without forcing a specific theme or mutating terminal default colors.
-- Explicit component-level background painting for extension-owned surfaces such as tool boxes and fixed-zone notices.
+- Active-theme integration without forcing a specific theme; non-Windows hosts may sync terminal background with OSC 11 to cover terminal-owned padding/remainder areas.
+- Explicit root-frame and component-level background painting for the active theme page background, tool boxes, and fixed-zone notices.
 - Render hot-path patches for streaming assistant output and noisy tool output.
 - Opt-in render profiling for request/render/repaint/update/git metrics without changing UI behavior when disabled.
 - Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it, including mouse drag selection, double-click word selection, triple-click line selection, fixed-zone-local bottom notice feedback, and OSC 52 clipboard propagation for terminal proxies in the fixed-zone view.
@@ -30,16 +30,18 @@ Current options:
   "maxExpandedLines": 50,
   "dimToolOutput": false,
   "customWorkingMessage": false,
-  "fixedUserZone": false
+  "fixedUserZone": false,
+  "forceOSC11": false
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
+`forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
 
 ## Compatibility Expectations
 
-- The extension should use the active Pi theme rather than overriding terminal profile defaults.
+- The extension should use explicit frame/component rendering for terminal cells and keep OSC 11 disabled on Windows/WSL/Windows Terminal unless `forceOSC11` is enabled.
 - Patch installers should be reload/session safe and avoid stacked patches.
 - Performance patches should preserve final message/tool correctness while coalescing partial updates.
 - Profiling should be opt-in and should emit aggregate JSONL summaries rather than per-render logs.

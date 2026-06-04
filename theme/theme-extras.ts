@@ -247,5 +247,6 @@ export function getThemePageBackground(theme: any): string {
 export function getThemeVarBackground(theme: any, varName: string): string {
 	ensureThemeExportLoaded(theme);
 	const value = cachedVars && typeof cachedVars[varName] === "string" ? cachedVars[varName] : "";
-	return isHexColor(value) ? value : "";
+	const resolved = cachedVars && value && typeof cachedVars[value] === "string" ? cachedVars[value] : value;
+	return isHexColor(resolved) ? resolved : "";
 }

@@ -8,6 +8,7 @@ export interface DroidStylingConfig {
 	dimToolOutput: boolean;
 	customWorkingMessage: boolean;
 	fixedUserZone: boolean;
+	forceOSC11: boolean;
 }
 
 const DEFAULTS: DroidStylingConfig = {
@@ -16,6 +17,7 @@ const DEFAULTS: DroidStylingConfig = {
 	dimToolOutput: false,
 	customWorkingMessage: false,
 	fixedUserZone: false,
+	forceOSC11: false,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
@@ -47,6 +49,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
+		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 	};
 }
 
