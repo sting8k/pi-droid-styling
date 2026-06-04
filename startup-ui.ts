@@ -11,6 +11,8 @@ const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
+const TOOLS_PANEL_MIN_WIDTH = 64;
+const CORE_TOOL_SOURCE_LABEL = "core";
 const MESSAGE_TEXT_INDENT = "   ";
 const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
@@ -45,6 +47,16 @@ type SystemContextItem = {
 	path: string;
 	words: number;
 	lines: number;
+};
+
+type AvailableTool = {
+	source: string;
+	name: string;
+};
+
+type ToolGroup = {
+	source: string;
+	tools: string[];
 };
 
 class ExpandableText extends Text {
@@ -107,6 +119,79 @@ function startupBodyWidth(width: number): number {
 	return Math.max(1, width - safeVisibleWidth(MESSAGE_TEXT_INDENT));
 }
 
+function normalizeToolNames(names: unknown): string[] {
+	return Array.isArray(names) ? names.filter((name) => typeof name === "string" && name.length > 0) : [];
+}
+
+function stripKnownExtension(name: string): string {
+	return name.replace(/\.(?:mjs|cjs|js|jsx|ts|tsx)$/i, "");
+}
+
+function compactSourcePathLabel(path: string): string {
+	const trimmed = path.trim();
+	if (!trimmed) return "";
+	const synthetic = /^<([^:>]+)(?::[^>]*)?>$/.exec(trimmed);
+	if (synthetic?.[1]) return synthetic[1];
+	const segments = trimmed.replace(/\\/g, "/").split("/").filter((segment) => segment.length > 0 && segment !== "." && segment !== "~");
+	const last = segments.at(-1) ?? trimmed;
+	if (/^index\.(?:mjs|cjs|js|jsx|ts|tsx)$/i.test(last) && segments.length > 1) return segments[segments.length - 2]!;
+	return stripKnownExtension(last);
+}
+
+function compactPackageSourceLabel(source: string): string {
+	if (source.startsWith("npm:")) return source.slice("npm:".length) || source;
+	if (source.startsWith("git:")) return compactSourcePathLabel(source.replace(/\.git(?:#.*)?$/i, "")) || source;
+	return source;
+}
+
+function toolSourceLabel(toolInfo: any): string {
+	const sourceInfo = toolInfo?.sourceInfo;
+	if (!sourceInfo || typeof sourceInfo !== "object") return CORE_TOOL_SOURCE_LABEL;
+	const source = typeof sourceInfo.source === "string" ? sourceInfo.source : "";
+	if (source === "builtin") return CORE_TOOL_SOURCE_LABEL;
+	if (source === "sdk") return "sdk";
+	if (source.startsWith("npm:") || source.startsWith("git:")) return compactPackageSourceLabel(source);
+	const baseDir = typeof sourceInfo.baseDir === "string" ? sourceInfo.baseDir : "";
+	if (baseDir) return compactSourcePathLabel(baseDir) || source || "extension";
+	const path = typeof sourceInfo.path === "string" ? sourceInfo.path : "";
+	if (path) return compactSourcePathLabel(path) || source || "extension";
+	return source || "extension";
+}
+
+function getAvailableTools(session: any): AvailableTool[] {
+	const hasActiveTools = typeof session?.getActiveToolNames === "function";
+	const activeNames = normalizeToolNames(hasActiveTools ? session.getActiveToolNames() : undefined);
+	const configuredTools = typeof session?.getAllTools === "function" ? session.getAllTools() : [];
+	const allTools = Array.isArray(configuredTools) ? configuredTools : [];
+	if (allTools.length > 0) {
+		const activeSet = new Set(activeNames);
+		return allTools
+			.filter((tool: any) => typeof tool?.name === "string" && (!hasActiveTools || activeSet.has(tool.name)))
+			.map((tool: any) => ({ source: toolSourceLabel(tool), name: tool.name }));
+	}
+	return activeNames.map((name) => ({ source: CORE_TOOL_SOURCE_LABEL, name }));
+}
+
+function groupAvailableTools(tools: AvailableTool[]): ToolGroup[] {
+	const groups = new Map<string, Set<string>>();
+	for (const tool of tools) {
+		const source = tool.source.trim() || "extension";
+		const name = tool.name.trim();
+		if (!name) continue;
+		const names = groups.get(source) ?? new Set<string>();
+		names.add(name);
+		groups.set(source, names);
+	}
+
+	return [...groups.entries()]
+		.map(([source, names]) => ({ source, tools: [...names].sort((a, b) => a.localeCompare(b)) }))
+		.sort((a, b) => {
+			if (a.source === CORE_TOOL_SOURCE_LABEL) return -1;
+			if (b.source === CORE_TOOL_SOURCE_LABEL) return 1;
+			return a.source.localeCompare(b.source);
+		});
+}
+
 function renderPanelBorder(theme: ThemeLike, left: string, right: string, panelWidth: number): string {
 	return theme.fg("dim", `${left}${"─".repeat(panelWidth + STARTUP_PANEL_SIDE_PADDING * 2)}${right}`);
 }
@@ -117,6 +202,49 @@ function renderPanelLine(theme: ThemeLike, content: string, panelWidth: number):
 	return `${theme.fg("dim", "│")}${sidePadding}${content}${padding}${sidePadding}${theme.fg("dim", "│")}`;
 }
 
+function renderToolsPanel(theme: ThemeLike, tools: AvailableTool[], minTotalWidth = 0): string[] {
+	const groups = groupAvailableTools(tools);
+	if (groups.length === 0) return [];
+
+	const titleLine = theme.bold(theme.fg("accent", "Available Tools"));
+	const outerWidth = STARTUP_PANEL_SIDE_PADDING * 2 + 2;
+	const sourceHeader = "Source";
+	const countHeader = "Count";
+	const toolsHeader = "Tools";
+	const countWidth = Math.max(countHeader.length, ...groups.map((group) => String(group.tools.length).length));
+	const columnDivider = ` ${theme.fg("muted", "|")} `;
+	const columnDividerWidth = safeVisibleWidth(columnDivider);
+	const panelWidth = Math.max(TOOLS_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine));
+	const availableTextWidth = Math.max(sourceHeader.length + toolsHeader.length, panelWidth - countWidth - columnDividerWidth * 2);
+	const maxSourceWidth = Math.max(sourceHeader.length, ...groups.map((group) => safeVisibleWidth(group.source)));
+	const sourceWidth = Math.min(maxSourceWidth, Math.max(sourceHeader.length, Math.floor(availableTextWidth * 0.28)));
+	const toolsWidth = Math.max(toolsHeader.length, availableTextWidth - sourceWidth);
+
+	const header = `${theme.fg("text", sourceHeader.padEnd(sourceWidth))}${columnDivider}${theme.fg("text", countHeader.padStart(countWidth))}${columnDivider}${theme.fg("text", toolsHeader.padEnd(toolsWidth))}`;
+	const separator = `${theme.fg("dim", "─".repeat(sourceWidth))}${columnDivider}${theme.fg("dim", "─".repeat(countWidth))}${columnDivider}${theme.fg("dim", "─".repeat(toolsWidth))}`;
+	const lines = [
+		renderPanelBorder(theme, "┌", "┐", panelWidth),
+		renderPanelLine(theme, titleLine, panelWidth),
+		renderPanelLine(theme, header, panelWidth),
+		renderPanelLine(theme, separator, panelWidth),
+	];
+
+	for (const group of groups) {
+		const count = String(group.tools.length);
+		const toolList = safeTruncateToWidth(group.tools.join(", "), toolsWidth, "...", true);
+		const source = safeTruncateToWidth(group.source, sourceWidth, "...", true);
+		const countPadding = " ".repeat(Math.max(0, countWidth - count.length));
+		lines.push(renderPanelLine(
+			theme,
+			`${theme.fg("text", source)}${columnDivider}${countPadding}${theme.bold(theme.fg("success", count))}${columnDivider}${theme.fg("text", toolList)}`,
+			panelWidth,
+		));
+	}
+
+	lines.push(renderPanelBorder(theme, "└", "┘", panelWidth));
+	return lines;
+}
+
 function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], minTotalWidth = 0): string[] {
 	const sortedItems = [...items].sort((a, b) => a.priority - b.priority);
 	const titleLabel = "System & Context";
@@ -124,7 +252,7 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 	const outerWidth = STARTUP_PANEL_SIDE_PADDING * 2 + 2;
 
 	if (sortedItems.length === 0) {
-		const message = theme.fg("dim", "No system or context files loaded");
+		const message = theme.fg("text", "No system or context files loaded");
 		const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine), safeVisibleWidth(message));
 		return [
 			renderPanelBorder(theme, "┌", "┐", panelWidth),
@@ -141,11 +269,10 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 	const columnDivider = ` ${theme.fg("muted", "|")} `;
 	const columnDividerWidth = safeVisibleWidth(columnDivider);
 	const metricWidth = Math.max(SYSTEM_CONTEXT_METRIC_WIDTH, metricLabel.length, ...sortedItems.map((item) => `${item.words}/${item.lines}`.length));
-	let pathWidth = Math.max(pathHeader.length, ...sortedItems.map((item) => safeVisibleWidth(item.path)));
-	const baseRowWidth = typeWidth + columnDividerWidth + pathWidth + columnDividerWidth + metricWidth;
-	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine), baseRowWidth);
-	pathWidth += panelWidth - baseRowWidth;
-	const header = `${theme.fg("muted", typeHeader.padEnd(typeWidth))}${columnDivider}${theme.fg("muted", pathHeader.padEnd(pathWidth))}${columnDivider}${theme.fg("muted", metricLabel.padStart(metricWidth))}`;
+	const fixedColumnsWidth = typeWidth + columnDividerWidth + columnDividerWidth + metricWidth;
+	const panelWidth = Math.max(SYSTEM_CONTEXT_PANEL_MIN_WIDTH, minTotalWidth - outerWidth, safeVisibleWidth(titleLine));
+	const pathWidth = Math.max(pathHeader.length, panelWidth - fixedColumnsWidth);
+	const header = `${theme.fg("text", typeHeader.padEnd(typeWidth))}${columnDivider}${theme.fg("text", pathHeader.padEnd(pathWidth))}${columnDivider}${theme.fg("text", metricLabel.padStart(metricWidth))}`;
 	const separator = `${theme.fg("dim", "─".repeat(typeWidth))}${columnDivider}${theme.fg("dim", "─".repeat(pathWidth))}${columnDivider}${theme.fg("dim", "─".repeat(metricWidth))}`;
 	const lines = [
 		renderPanelBorder(theme, "┌", "┐", panelWidth),
@@ -157,11 +284,11 @@ function renderSystemContextPanel(theme: ThemeLike, items: SystemContextItem[], 
 	for (const item of sortedItems) {
 		const metric = `${item.words}/${item.lines}`;
 		const typePadding = " ".repeat(Math.max(0, typeWidth - safeVisibleWidth(item.kind)));
-		const pathPadding = " ".repeat(Math.max(0, pathWidth - safeVisibleWidth(item.path)));
+		const path = safeTruncateToWidth(item.path, pathWidth, "...", true);
 		const metricPadding = " ".repeat(Math.max(0, metricWidth - safeVisibleWidth(metric)));
 		lines.push(renderPanelLine(
 			theme,
-			`${theme.fg("dim", item.kind)}${typePadding}${columnDivider}${theme.fg("dim", item.path)}${pathPadding}${columnDivider}${metricPadding}${theme.fg("dim", metric)}`,
+			`${theme.fg("text", item.kind)}${typePadding}${columnDivider}${theme.fg("text", path)}${columnDivider}${metricPadding}${theme.fg("text", metric)}`,
 			panelWidth,
 		));
 	}
@@ -177,7 +304,7 @@ function renderResourceChip(theme: ThemeLike, row: ResourceRow, highlighted: boo
 	return content;
 }
 
-function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContextItems: SystemContextItem[], expanded: boolean): string {
+function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContextItems: SystemContextItem[], tools: AvailableTool[], expanded: boolean): string {
 	const primaryLabel = systemContextItems.some((item) => item.kind === "system") ? "system" : rows[0]?.label;
 	const total = rows
 		.map((row) => renderResourceChip(theme, row, row.label === primaryLabel))
@@ -186,7 +313,13 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	if (!expanded) return summary;
 
 	const panelBodyWidth = Math.max(1, safeVisibleWidth(summary) - safeVisibleWidth(MESSAGE_TEXT_INDENT));
-	return [summary, "", ...indentStartupLines(renderSystemContextPanel(theme, systemContextItems, panelBodyWidth))].join("\n");
+	const toolPanel = renderToolsPanel(theme, tools, panelBodyWidth);
+	return [
+		summary,
+		"",
+		...indentStartupLines(renderSystemContextPanel(theme, systemContextItems, panelBodyWidth)),
+		...(toolPanel.length > 0 ? ["", ...indentStartupLines(toolPanel)] : []),
+	].join("\n");
 }
 
 function compactHeader(theme: ThemeLike, width: number): string {
@@ -275,6 +408,7 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 			}));
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		const scopedModels = this.session.scopedModels ?? [];
+		const availableTools = getAvailableTools(this.session);
 		const cwd = typeof this.sessionManager?.getCwd === "function" ? this.sessionManager.getCwd() : process.cwd();
 		const agentDir = getAgentDir();
 		const systemPrompt = this.session.resourceLoader.getSystemPrompt?.();
@@ -331,6 +465,7 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 			{ label: "append", items: systemContextItems.filter((item) => item.kind === "append").map((item) => item.path) },
 			{ label: "context", items: systemContextItems.filter((item) => item.kind === "context").map((item) => item.path) },
 			{ label: "models", items: scopedModels.map((scoped: any) => `${scoped.model.provider}/${scoped.model.id}`) },
+			{ label: "tools", items: availableTools.map((tool) => tool.name) },
 			{ label: "skills", items: skills.map((skill: any) => skill.name) },
 			{ label: "prompts", items: templates.map((template: any) => `/${template.name}`) },
 			{ label: "extensions", items: this.getCompactExtensionLabels(extensions) },
@@ -344,8 +479,8 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 				? this.getStartupExpansionState()
 				: Boolean(this.options?.verbose);
 			this.chatContainer.addChild(new ExpandableText(
-				() => renderResourceTable(theme, rows, systemContextItems, false),
-				() => renderResourceTable(theme, rows, systemContextItems, true),
+				() => renderResourceTable(theme, rows, systemContextItems, availableTools, false),
+				() => renderResourceTable(theme, rows, systemContextItems, availableTools, true),
 				expanded,
 				0,
 				0,

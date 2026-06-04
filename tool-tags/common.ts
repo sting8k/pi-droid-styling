@@ -284,19 +284,22 @@ function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, tex
 	return typeof theme?.fg === "function" ? theme.fg(fallbackColor, text) : text;
 }
 
-export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+function formatBoxedStatusIcon(theme: any, isError?: boolean): string {
 	const icon = isError ? "✗" : "✓";
-	const rawTitle = `➔ ${name} ${icon}`;
-	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	return typeof theme?.fg === "function" ? theme.fg(isError ? "error" : "success", icon) : icon;
+}
+
+export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+	const rawTitle = `➔ ${name}`;
+	const coloredTitle = `${colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle)} ${formatBoxedStatusIcon(theme, isError)}`;
 	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 	return `${title} ${boxText(theme, "|")}`;
 }
 
 function formatCompactBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
-	const icon = isError ? "✗" : "✓";
 	const paddedName = padVisibleRight(name, COMPACT_TOOL_NAME_WIDTH);
-	const rawTitle = `➔ ${paddedName} ${icon}`;
-	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	const rawTitle = `➔ ${paddedName}`;
+	const coloredTitle = `${colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle)} ${formatBoxedStatusIcon(theme, isError)}`;
 	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 	return `${title} ${boxText(theme, "|")}`;
 }

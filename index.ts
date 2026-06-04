@@ -157,13 +157,8 @@ export default function (pi: ExtensionAPI) {
 		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
-		if (config.customWorkingMessage) {
-			workingLoaderController = createWorkingLoaderController(sessionUi);
-			workingLoaderController.configure();
-		} else {
-			sessionUi.setWorkingMessage();
-			sessionUi.setWorkingIndicator();
-		}
+		workingLoaderController = createWorkingLoaderController(sessionUi, config.customWorkingMessage);
+		workingLoaderController.configure();
 
 		// Treat `alwaysExpanded` as the session-start preference only.
 		// Ctrl+o remains authoritative after the session is initialized.

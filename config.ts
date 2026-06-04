@@ -2,20 +2,29 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs
 import { dirname, join } from "path";
 import { homedir } from "os";
 
+export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
+
 export interface DroidStylingConfig {
 	alwaysExpanded: boolean;
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
-	customWorkingMessage: boolean;
+	customWorkingMessage: CustomWorkingMessageConfig;
 	fixedUserZone: boolean;
 	forceOSC11: boolean;
 }
+
+const DEFAULT_CUSTOM_WORKING_MESSAGE: CustomWorkingMessageConfig = {
+	working: "Working",
+	thinking: "Thinking",
+	answering: "Answering",
+	running: "Cooking",
+};
 
 const DEFAULTS: DroidStylingConfig = {
 	alwaysExpanded: false,
 	maxExpandedLines: 50,
 	dimToolOutput: false,
-	customWorkingMessage: false,
+	customWorkingMessage: DEFAULT_CUSTOM_WORKING_MESSAGE,
 	fixedUserZone: false,
 	forceOSC11: false,
 };
@@ -24,10 +33,22 @@ const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
 const MAX_EXPANDED_LINES_LIMIT = 1000;
 const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll", "fixedUserZoneSidebar"] as const;
 
-let cached: DroidStylingConfig = { ...DEFAULTS };
+let cached: DroidStylingConfig = defaultConfig();
 let cachedMtimeMs = -1;
 let lastStatAt = 0;
 const STAT_INTERVAL_MS = 1000;
+
+function defaultCustomWorkingMessage(): CustomWorkingMessageConfig {
+	return { ...DEFAULT_CUSTOM_WORKING_MESSAGE };
+}
+
+function defaultConfig(): DroidStylingConfig {
+	return { ...DEFAULTS, customWorkingMessage: defaultCustomWorkingMessage() };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function booleanOrDefault(value: unknown, fallback: boolean): boolean {
 	return typeof value === "boolean" ? value : fallback;
@@ -40,14 +61,44 @@ function maxExpandedLinesOrDefault(value: unknown): number {
 	return Math.min(normalized, MAX_EXPANDED_LINES_LIMIT);
 }
 
+function customWorkingMessageOrDefault(value: unknown): CustomWorkingMessageConfig {
+	const labels = defaultCustomWorkingMessage();
+	if (!isRecord(value)) return labels;
+	for (const key of Object.keys(labels) as Array<keyof CustomWorkingMessageConfig>) {
+		const label = value[key];
+		if (typeof label === "string" && label.trim().length > 0) labels[key] = label;
+	}
+	return labels;
+}
+
+function defaultValueForKey(key: keyof DroidStylingConfig): unknown {
+	return key === "customWorkingMessage" ? defaultCustomWorkingMessage() : DEFAULTS[key];
+}
+
+function backfillCustomWorkingMessage(config: Record<string, unknown>): boolean {
+	const value = config.customWorkingMessage;
+	if (!isRecord(value)) {
+		config.customWorkingMessage = defaultCustomWorkingMessage();
+		return true;
+	}
+	let changed = false;
+	for (const key of Object.keys(DEFAULT_CUSTOM_WORKING_MESSAGE) as Array<keyof CustomWorkingMessageConfig>) {
+		const label = value[key];
+		if (typeof label === "string" && label.trim().length > 0) continue;
+		value[key] = DEFAULT_CUSTOM_WORKING_MESSAGE[key];
+		changed = true;
+	}
+	return changed;
+}
+
 function normalizeConfig(raw: unknown): DroidStylingConfig {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULTS };
+	if (!isRecord(raw)) return defaultConfig();
 	const config = raw as Record<string, unknown>;
 	return {
 		alwaysExpanded: booleanOrDefault(config.alwaysExpanded, DEFAULTS.alwaysExpanded),
 		maxExpandedLines: maxExpandedLinesOrDefault(config.maxExpandedLines),
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
-		customWorkingMessage: booleanOrDefault(config.customWorkingMessage, DEFAULTS.customWorkingMessage),
+		customWorkingMessage: customWorkingMessageOrDefault(config.customWorkingMessage),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 	};
@@ -57,14 +108,14 @@ function scaffoldIfMissing(): void {
 	if (existsSync(CONFIG_PATH)) return;
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2) + "\n", "utf-8");
+		writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig(), null, 2) + "\n", "utf-8");
 	} catch {
-		// ignore — read path will fall back to DEFAULTS
+		// ignore — read path will fall back to normalized defaults
 	}
 }
 
 function backfillMissingDefaults(raw: unknown): void {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+	if (!isRecord(raw)) return;
 	const config = raw as Record<string, unknown>;
 	let changed = false;
 	for (const key of DEPRECATED_CONFIG_KEYS) {
@@ -72,16 +123,17 @@ function backfillMissingDefaults(raw: unknown): void {
 		delete config[key];
 		changed = true;
 	}
-	for (const [key, value] of Object.entries(DEFAULTS) as Array<[keyof DroidStylingConfig, boolean | number]>) {
+	for (const key of Object.keys(DEFAULTS) as Array<keyof DroidStylingConfig>) {
 		if (key in config) continue;
-		config[key] = value;
+		config[key] = defaultValueForKey(key);
 		changed = true;
 	}
+	if (backfillCustomWorkingMessage(config)) changed = true;
 	if (!changed) return;
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
 	} catch {
-		// ignore — read path will keep using normalized DEFAULTS
+		// ignore — read path will keep using normalized defaults
 	}
 }
 
@@ -98,7 +150,7 @@ export function loadConfig(): DroidStylingConfig {
 		try {
 			mtimeMs = statSync(CONFIG_PATH).mtimeMs;
 		} catch {
-			cached = { ...DEFAULTS };
+			cached = defaultConfig();
 			cachedMtimeMs = -1;
 			return cached;
 		}
@@ -111,7 +163,7 @@ export function loadConfig(): DroidStylingConfig {
 		cached = normalizeConfig(raw);
 		backfillMissingDefaults(raw);
 	} catch {
-		cached = { ...DEFAULTS };
+		cached = defaultConfig();
 	}
 	return cached;
 }

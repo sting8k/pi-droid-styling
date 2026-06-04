@@ -29,13 +29,20 @@ Current options:
   "alwaysExpanded": false,
   "maxExpandedLines": 50,
   "dimToolOutput": false,
-  "customWorkingMessage": false,
+  "customWorkingMessage": {
+    "working": "Working",
+    "thinking": "Thinking",
+    "answering": "Answering",
+    "running": "Cooking"
+  },
   "fixedUserZone": false,
   "forceOSC11": false
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
+`customWorkingMessage` is on by default and accepts `working`, `thinking`, `answering`, and `running` strings for themed loader labels.
+Legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 `forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
 

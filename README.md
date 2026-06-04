@@ -37,7 +37,12 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "alwaysExpanded": false,
   "maxExpandedLines": 50,
   "dimToolOutput": false,
-  "customWorkingMessage": false,
+  "customWorkingMessage": {
+    "working": "Working",
+    "thinking": "Thinking",
+    "answering": "Answering",
+    "running": "Cooking"
+  },
   "fixedUserZone": false,
   "forceOSC11": false
 }
@@ -73,7 +78,8 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 
 - Works with the active Pi theme; it paints TUI cells explicitly and uses OSC 11 terminal background sync on non-Windows hosts to cover terminal-owned padding/remainder areas. Windows/WSL/Windows Terminal skip OSC 11 unless `forceOSC11` is enabled.
 - Compatible color schemes: https://github.com/sting8k/pi-themes
-- `customWorkingMessage` is off by default; when enabled it keeps Pi's loader layout but uses themed `Working` / `Thinking` / `Answering` / `Cooking` states.
+- `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
+- Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
 
 ## License
 
