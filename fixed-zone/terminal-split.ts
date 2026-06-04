@@ -353,7 +353,7 @@ export class TerminalSplitCompositor {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-		this.clearViewportForInitialRender();
+		this.clearViewport();
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -415,7 +415,7 @@ export class TerminalSplitCompositor {
 		}
 		this.writeRaw(DISABLE_MOUSE);
 		this.scrollRegionBottom = 0;
-		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())));
+		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())) + CLEAR_VIEWPORT);
 		this.tui.requestRender(true);
 	}
 
@@ -430,9 +430,7 @@ export class TerminalSplitCompositor {
 		this.writeRaw(DISABLE_AUTOWRAP + data + ENABLE_AUTOWRAP);
 	}
 
-	private clearViewportForInitialRender(): void {
-		const previousLines = (this.tui as TuiLike & { previousLines?: unknown }).previousLines;
-		if (Array.isArray(previousLines) && previousLines.length > 0) return;
+	private clearViewport(): void {
 		this.writeRaw(CLEAR_VIEWPORT);
 	}
 
