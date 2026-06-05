@@ -50,7 +50,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
-`userZoneStyle` selects a built-in presentation preset for the user input zone in both normal and fixed modes. Supported values are `droid`, `compact`, and `minimal`; theme files keep using the existing extras/color format.
+`userZoneStyle` selects a built-in presentation preset for the user input zone in both normal and fixed modes. Supported values are `droid` and `gemini`; theme files keep using the existing extras/color format. `droid` is the default boxed layout, while `gemini` uses a Gemini-like status/input/footer layout with compact `provider model · level` model info before the unchanged token stats on the top row, branch status on the right, an always-visible divider before the status row using the same theme border color as tool-call boxes, a borderless `❯` input row with Gemini-style half-line background padding, fixed-zone shortcut hints right-aligned on the footer/status row, and dim wrapped workspace/status footer values without labels, sandbox, or quota columns.
 `fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
 `forceOSC11` is off by default on Windows/WSL/Windows Terminal. Set it to `true` only if you want to test OSC 11 terminal background sync there.
 

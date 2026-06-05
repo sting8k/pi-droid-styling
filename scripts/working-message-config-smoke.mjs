@@ -87,10 +87,25 @@ async function runConfigSmoke(name, initialJson, validate) {
 }
 
 async function runLoaderSmoke() {
-	const { renderWorkingMessage } = await importBuilt("tool-tags/loader-accent.js");
+	const { createWorkingLoaderController, renderWorkingMessage } = await importBuilt("tool-tags/loader-accent.js");
 	const labels = { working: "Doing", thinking: "Pondering", answering: "Replying", running: "Executing" };
 	assert(renderWorkingMessage("running", 0, undefined, labels) === "Executing.", "custom running render failed");
 	assert(renderWorkingMessage("thinking", 1, undefined, labels) === "Pondering..", "custom thinking render failed");
+
+	const renderedMessages = [];
+	const ui = {
+		setWorkingMessage(message) { renderedMessages.push(message); },
+		setWorkingIndicator() {},
+	};
+	const controller = createWorkingLoaderController(ui, labels);
+	controller.configure();
+	assert(renderedMessages.at(-1) === "Doing.", "configure should render initial working label");
+	controller.start("thinking");
+	assert(renderedMessages.at(-1) === "Pondering.", "start should render requested thinking label");
+	controller.setState("running");
+	assert(renderedMessages.at(-1) === "Executing.", "setState should render running label");
+	controller.stop();
+	controller.dispose();
 	console.log("loader render smoke ok");
 }
 

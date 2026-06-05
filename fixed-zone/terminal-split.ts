@@ -591,6 +591,7 @@ export class TerminalSplitCompositor {
 		return {
 			scrollHint: this.scrollOffset > 0 ? style.jumpBottomHint : style.jumpTopHint,
 			hintRightInset: style.scrollHintRightInset,
+			scrollHintPlacement: style.scrollHintPlacement,
 		};
 	}
 

@@ -562,10 +562,11 @@ export function formatBoxedWallTime(result: AgentToolResult<any> | undefined): s
 	return `${(elapsedMs / 1000).toFixed(2)}s`;
 }
 
-function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
-	const elapsedPart = `${theme.fg("text", "◷")} ${theme.fg("dim", formatBoxedWallTime(result))}`;
+export function formatBoxedFooterFromValues(theme: any, elapsedMs: number | undefined, output: string, extraParts: string[] = [], fixedColumns = false): string {
+	const wall = elapsedMs === undefined ? "--" : `${(elapsedMs / 1000).toFixed(2)}s`;
+	const elapsedPart = `${theme.fg("text", "◷")} ${theme.fg("dim", wall)}`;
 	const extraPartList = extraParts.filter(Boolean).map((part) => theme.fg("dim", part));
-	const wordsPart = theme.fg("dim", formatBoxedWords(getTextOutput(result)));
+	const wordsPart = theme.fg("dim", formatBoxedWords(output));
 	const parts = fixedColumns
 		? [
 			padVisibleRight(elapsedPart, COMPACT_FOOTER_ELAPSED_WIDTH),
@@ -574,6 +575,10 @@ function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undef
 		]
 		: [elapsedPart, ...extraPartList, wordsPart];
 	return parts.join(theme.fg("dim", " · "));
+}
+
+function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
+	return formatBoxedFooterFromValues(theme, getElapsedMs(result), getTextOutput(result), extraParts, fixedColumns);
 }
 
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {

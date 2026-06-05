@@ -12,6 +12,11 @@ normal
 
 Users can select a built-in user-zone presentation preset with `userZoneStyle`. The selected style applies to the BoxEditor/user input area in both normal and `fixedUserZone` modes, and also styles fixed-zone-only shell affordances when `fixedUserZone` is enabled. Theme JSON format remains unchanged: themes continue to customize colors through the existing `extras` keys and semantic theme tokens, not arbitrary layout or glyph configuration.
 
+The supported preset set is intentionally small:
+
+- `droid` is the default boxed user-zone layout.
+- `gemini` is a Gemini-like status/input/footer layout. Its top status row keeps droid runtime stats without the `[stat]` or `Tokens:` labels, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, and moves git branch/status to the right. It renders an always-visible horizontal divider before the status row using the same theme border token as tool-call boxes. Its input row is borderless, keeps the droid `❯` prompt icon, and uses Gemini-style half-line background padding rather than full blank padding rows. Its footer renders dim wrapped workspace/status values without column labels and does not render sandbox or quota columns.
+
 ## Relevant Product Docs
 
 - `README.md`
@@ -23,41 +28,43 @@ Users can select a built-in user-zone presentation preset with `userZoneStyle`. 
 ## Acceptance Criteria
 
 - `userZoneStyle` defaults to `"droid"` and is scaffolded/backfilled in `~/.pi/agent/pi-droid-styling.json`.
-- Supported styles are a small code-defined preset set rather than independent layout booleans.
-- Invalid or non-string `userZoneStyle` values normalize to the default style.
+- Supported styles are the code-defined preset set `droid` and `gemini`; invalid or non-string values normalize to `droid`.
 - The default `droid` style preserves the existing BoxEditor/user zone layout and fixed-zone shell affordances.
-- Non-default styles change user-zone presentation in normal mode because BoxEditor consumes the resolved style directly.
-- When `fixedUserZone` is enabled, the same resolved style is also passed into fixed-zone composition for visual shell affordances such as scroll hints and scrollbar visibility/colors.
+- The `gemini` style changes user-zone presentation in normal mode because BoxEditor consumes the resolved style directly.
+- The `gemini` style renders a top status row without `[stat]` or `Tokens:`, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, puts git branch/status on the right of that row, renders an always-visible divider before the status row using the same theme border token as tool-call boxes, keeps a borderless `❯` input row with Gemini-style half-line background padding and without full blank padding rows, and renders dim wrapped workspace/status footer values without column labels.
+- The `gemini` style does not render sandbox or quota columns.
+- When `fixedUserZone` is enabled, the same resolved style is also passed into fixed-zone composition for visual shell affordances such as scroll hints and scrollbar visibility/colors; gemini scroll hints are right-aligned on the footer/status row instead of the input row.
 - Theme format does not change; colors continue to come from the active Pi theme and existing theme extras/semantic tokens.
 - `index.ts` remains lifecycle wiring only: it loads config, resolves one style object, and passes it into editor/fixed-zone installers.
 
 ## Design Notes
 
 - Commands: `npm run test:user-zone-style`.
-- Queries: semantic search for config, BoxEditor constructor/render flow, and fixed-zone compositor options.
-- API: new user config key `userZoneStyle`; built-in style names are code-defined.
+- Queries: semantic search for config, BoxEditor constructor/render flow, fixed-zone compositor options, and working loader ownership.
+- API: `userZoneStyle`; built-in style names are code-defined.
 - Tables: none.
 - Domain rules: `fixedUserZone` remains terminal scroll isolation; `userZoneStyle` is visual presentation; theme extras remain skin/colors.
-- UI surfaces: BoxEditor input/status area in all modes, fixed-zone scroll hint and scrollbar affordances when fixed mode is active.
+- UI surfaces: BoxEditor input/status/footer area in all modes, fixed-zone footer/status scroll hint and scrollbar affordances when fixed mode is active.
+- Loader row ownership stays with Pi/working-message UI; the gemini preset keeps its divider inside BoxEditor without loader-state wiring.
 
 ## Validation
 
 | Layer | Expected proof |
 | --- | --- |
-| Unit | Focused smoke for default scaffold, valid style preservation, invalid fallback/backfill, style resolver identity, BoxEditor render row differences, and fixed-zone style options. |
+| Unit | Focused smoke for default scaffold, valid gemini preservation, invalid fallback/backfill, style resolver identity, BoxEditor droid/gemini render markers and omissions, and fixed-zone style options. |
 | Integration | Focused TypeScript compile for config, user-zone style module, BoxEditor, fixed-zone installer/compositor, and index; `git diff --check`; semantic review. |
-| E2E | Manual Pi smoke recommended for all presets in fixed and non-fixed modes. |
+| E2E | Manual Pi smoke recommended for both presets in fixed and non-fixed modes. |
 | Platform | Terminal visual/manual smoke still recommended because fixed-zone shell uses compositor painting. |
 | Release | Harness trace records changed files and verification. |
 
 ## Harness Delta
 
-Added US-017 normal-lane story and reusable `npm run test:user-zone-style` smoke coverage for future style-preset changes.
+US-017 now documents the narrowed preset set (`droid`, `gemini`) and reusable `npm run test:user-zone-style` smoke coverage for future style-preset changes.
 
 ## Evidence
 
-- `npm run test:user-zone-style` passed: focused TypeScript compile, default scaffold/backfill, valid style preservation, invalid/non-string fallback, inherited-key guard, style resolver checks, BoxEditor row-shape smoke for `droid`/`compact`/`minimal`, and fixed-zone scrollbar style smoke.
-- `npm run test:working-message` passed after config surface changed.
+- `npm run test:user-zone-style` passed: focused TypeScript compile, default scaffold/backfill, valid `gemini` preservation, invalid/non-string fallback, inherited-key guard, style resolver checks, BoxEditor render smoke for `droid`/`gemini`, compact gemini model visual, single accent thinking-level color, unchanged token stat formatting, always-visible tool-border-colored divider behavior, gemini branch/status/input/footer markers, sandbox/quota omissions, and fixed-zone scrollbar/footer-hint affordance smoke.
+- `npm run test:working-message` passed after the config/style surface changed.
 - `npm run test:theme-extras` passed to confirm existing theme extras/color format remains valid.
 - `PI_DROID_PROFILE_BENCH_ITERATIONS=20 PI_DROID_PROFILE_BENCH_ROOT_LINES=120 npm run profile:render` passed.
 - `git diff --check` passed.

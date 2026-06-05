@@ -7,7 +7,7 @@
 The extension provides:
 
 - Compact startup header and loaded resources display.
-- Boxed editor with selectable `userZoneStyle` presets for project, host, model, context, git, footer status, and input presentation.
+- Boxed editor with selectable `userZoneStyle` presets for project, model, context, git, footer status, and input presentation.
 - Assistant and user message prefixes with cleaner spacing.
 - Compact tool call tags with badges, elapsed time, dimmed output support, and specialized renderers for common tools.
 - Footer stats including assistant token/word speed and compact session context.
@@ -44,7 +44,7 @@ Current options:
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 `customWorkingMessage` is on by default and accepts `working`, `thinking`, `answering`, and `running` strings for themed loader labels.
 Legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
-`userZoneStyle` accepts `droid`, `compact`, or `minimal` and changes built-in user-zone presentation in both normal and fixed modes; themes keep the same extras/color format.
+`userZoneStyle` accepts `droid` or `gemini` and changes built-in user-zone presentation in both normal and fixed modes; themes keep the same extras/color format. `droid` is the default boxed layout. `gemini` renders compact `provider model · level` model info before unchanged token stats on the top status row with branch status on the right, renders an always-visible divider before the status row using the same theme border color as tool-call boxes, keeps a borderless droid prompt row with `❯` and Gemini-style half-line background padding, right-aligns fixed-zone shortcut hints on the footer/status row, and renders dim wrapped workspace/status footer values without labels, sandbox, or quota columns.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 `forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
 

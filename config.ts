@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
-import { DEFAULT_USER_ZONE_STYLE, normalizeUserZoneStyleName, type UserZoneStyleName } from "./user-zone/designs.js";
+import { DEFAULT_USER_ZONE_STYLE, isUserZoneStyleName, normalizeUserZoneStyleName, type UserZoneStyleName } from "./user-zone/designs.js";
 
 export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
 
@@ -95,9 +95,14 @@ function backfillCustomWorkingMessage(config: Record<string, unknown>): boolean 
 }
 
 function backfillUserZoneStyle(config: Record<string, unknown>): boolean {
-	const normalized = normalizeUserZoneStyleName(config.userZoneStyle);
-	if (config.userZoneStyle === normalized) return false;
-	config.userZoneStyle = normalized;
+	const value = config.userZoneStyle;
+	if (value === undefined) {
+		config.userZoneStyle = DEFAULT_USER_ZONE_STYLE;
+		return true;
+	}
+	if (isUserZoneStyleName(value)) return false;
+	if (typeof value === "string" && value.trim().length > 0) return false;
+	config.userZoneStyle = DEFAULT_USER_ZONE_STYLE;
 	return true;
 }
 

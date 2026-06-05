@@ -1,10 +1,11 @@
-export const USER_ZONE_STYLE_NAMES = ["droid", "compact", "minimal"] as const;
+export const USER_ZONE_STYLE_NAMES = ["droid", "gemini"] as const;
 
 export type UserZoneStyleName = typeof USER_ZONE_STYLE_NAMES[number];
 
 type UserZoneStyleNameSet = Record<UserZoneStyleName, true>;
 
 export interface UserZoneEditorStyle {
+	layout: "droid" | "gemini";
 	panelPaddingX: number;
 	prompt: string;
 	promptColor: string;
@@ -22,12 +23,17 @@ export interface UserZoneEditorStyle {
 	dividerBold: boolean;
 	showTrailingBlankLine: boolean;
 	slashBorderColor: string;
+	inputBackgroundColor: string;
+	inputHalfLinePadding: boolean;
+	footerLabelColor: string;
+	footerValueColor: string;
 }
 
 export interface UserZoneFixedStyle {
 	jumpTopHint: string;
 	jumpBottomHint: string;
 	scrollHintRightInset: number;
+	scrollHintPlacement: "cursor" | "lastLine";
 	showScrollbar: boolean;
 	scrollbarGlyph: string;
 	scrollbarTrackColor: string;
@@ -43,8 +49,7 @@ export interface UserZoneStyle {
 
 const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
 	droid: true,
-	compact: true,
-	minimal: true,
+	gemini: true,
 };
 
 export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "droid";
@@ -53,6 +58,7 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 	droid: {
 		name: "droid",
 		editor: {
+			layout: "droid",
 			panelPaddingX: 2,
 			prompt: "❯",
 			promptColor: "accent",
@@ -70,11 +76,16 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			dividerBold: true,
 			showTrailingBlankLine: true,
 			slashBorderColor: "border",
+			inputBackgroundColor: "selectedBg",
+			inputHalfLinePadding: false,
+			footerLabelColor: "dim",
+			footerValueColor: "muted",
 		},
 		fixed: {
 			jumpTopHint: "^Shift T TOP",
 			jumpBottomHint: "^Shift G BOT",
 			scrollHintRightInset: 2,
+			scrollHintPlacement: "cursor",
 			showScrollbar: true,
 			scrollbarGlyph: "█",
 			scrollbarTrackColor: "borderMuted",
@@ -82,68 +93,42 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			scrollbarThumbActiveColor: "muted",
 		},
 	},
-	compact: {
-		name: "compact",
+	gemini: {
+		name: "gemini",
 		editor: {
+			layout: "gemini",
 			panelPaddingX: 1,
-			prompt: "›",
+			prompt: "❯",
 			promptColor: "accent",
 			promptBold: true,
-			promptGap: 1,
-			showHostBorder: false,
-			hostBorderFill: "─",
-			hostPrefixColor: "accent",
-			hostBorderColor: "borderMuted",
-			showMetadataRow: true,
-			showRuntimeRow: true,
-			showDivider: false,
-			dividerChar: "─",
-			dividerColor: "borderMuted",
-			dividerBold: false,
-			showTrailingBlankLine: false,
-			slashBorderColor: "borderMuted",
-		},
-		fixed: {
-			jumpTopHint: "^T TOP",
-			jumpBottomHint: "^G BOT",
-			scrollHintRightInset: 1,
-			showScrollbar: true,
-			scrollbarGlyph: "▌",
-			scrollbarTrackColor: "borderMuted",
-			scrollbarThumbColor: "muted",
-			scrollbarThumbActiveColor: "accent",
-		},
-	},
-	minimal: {
-		name: "minimal",
-		editor: {
-			panelPaddingX: 1,
-			prompt: "›",
-			promptColor: "accent",
-			promptBold: false,
-			promptGap: 1,
+			promptGap: 2,
 			showHostBorder: false,
 			hostBorderFill: "",
 			hostPrefixColor: "accent",
 			hostBorderColor: "borderMuted",
 			showMetadataRow: false,
-			showRuntimeRow: false,
-			showDivider: false,
-			dividerChar: "",
-			dividerColor: "borderMuted",
-			dividerBold: false,
+			showRuntimeRow: true,
+			showDivider: true,
+			dividerChar: "─",
+			dividerColor: "border",
+			dividerBold: true,
 			showTrailingBlankLine: false,
 			slashBorderColor: "borderMuted",
+			inputBackgroundColor: "selectedBg",
+			inputHalfLinePadding: true,
+			footerLabelColor: "dim",
+			footerValueColor: "dim",
 		},
 		fixed: {
-			jumpTopHint: "",
-			jumpBottomHint: "",
-			scrollHintRightInset: 0,
-			showScrollbar: false,
-			scrollbarGlyph: "▌",
+			jumpTopHint: "^Shift T TOP",
+			jumpBottomHint: "^Shift G BOT",
+			scrollHintRightInset: 2,
+			scrollHintPlacement: "lastLine",
+			showScrollbar: true,
+			scrollbarGlyph: "█",
 			scrollbarTrackColor: "borderMuted",
-			scrollbarThumbColor: "muted",
-			scrollbarThumbActiveColor: "accent",
+			scrollbarThumbColor: "dim",
+			scrollbarThumbActiveColor: "muted",
 		},
 	},
 };
