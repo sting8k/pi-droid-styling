@@ -107,8 +107,6 @@ const SCROLLBAR_VISIBLE_MS = 2500;
 const SCROLLBAR_HIT_COLUMNS = 3;
 // Leave the physical last column blank; exact-width glyph writes can leave terminals in a pending-wrap state.
 const SCROLLBAR_WRAP_GUARD_COLUMNS = 1;
-const JUMP_BOTTOM_INPUT = "\x07";
-const JUMP_TOP_INPUT = "\x14";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
 const DISABLE_AUTOWRAP = "\x1b[?7l";
@@ -246,11 +244,11 @@ function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 }
 
 function isJumpBottomInput(data: string): boolean {
-	return data === JUMP_BOTTOM_INPUT || matchesKey(data, "ctrl+alt+g");
+	return matchesKey(data, "ctrl+alt+g");
 }
 
 function isJumpTopInput(data: string): boolean {
-	return data === JUMP_TOP_INPUT || matchesKey(data, "ctrl+alt+t");
+	return matchesKey(data, "ctrl+alt+t");
 }
 
 export class TerminalSplitCompositor {
@@ -379,6 +377,14 @@ export class TerminalSplitCompositor {
 		}
 		if (isJumpTopInput(current)) {
 			this.jumpToTop();
+			return { consume: true };
+		}
+		if (matchesKey(current, "pageDown")) {
+			this.pageScroll(1);
+			return { consume: true };
+		}
+		if (matchesKey(current, "pageUp")) {
+			this.pageScroll(-1);
 			return { consume: true };
 		}
 		return current === data ? undefined : { data: current };
@@ -1058,6 +1064,13 @@ export class TerminalSplitCompositor {
 		profileCount("fixed.input.jumpBottom.calls");
 		this.clearSmoothWheelScroll();
 		this.setScrollOffset(0, "jumpBottom");
+	}
+
+	private pageScroll(direction: 1 | -1): void {
+		profileCount("fixed.input.pageScroll.calls");
+		const step = Math.max(1, this.getScrollableRows());
+		profileSample("fixed.input.pageScroll.step", step);
+		this.scrollBy(direction * step);
 	}
 
 	private scrollbarGeometryForPacket(packet: SgrMousePacket): ScrollbarGeometry | null {
