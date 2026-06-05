@@ -17,7 +17,7 @@ The supported preset set is intentionally small:
 - `gemini` is the default Gemini-like status/input/footer layout. Its top status row keeps droid runtime stats without the `[stat]` or `Tokens:` labels, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, and moves git branch/status to the right. It renders an always-visible horizontal divider before the status row using the same theme border token as tool-call boxes. Its input row is borderless, keeps the droid `❯` prompt icon, and uses Gemini-style half-line background padding rather than full blank padding rows. Its footer renders dim wrapped workspace/status values without column labels and does not render sandbox or quota columns.
 - `droid` remains available as the boxed legacy user-zone layout.
 
-`inputBox.style` supports `auto`, `halfblock`, and `line`. The default `auto` keeps each preset's default input-frame behavior; for the Gemini preset, that means half-block padding normally and a line frame when `NO_COLOR` is set. Explicit `halfblock` or `line` applies the same frame renderer to both `gemini` and `droid`.
+`inputBox.style` supports `auto`, `halfblock`, and `line`. The default `auto` keeps each preset's default input-frame behavior; for the Gemini preset, that means half-block padding normally and a line frame when `NO_COLOR` is set. Explicit `line` renders the Gemini line frame for `gemini`, while `droid` treats `line` as its native boxed/default input presentation rather than adding a separate Gemini-style line frame.
 
 ## Relevant Product Docs
 
@@ -33,7 +33,7 @@ The supported preset set is intentionally small:
 - Supported styles are the code-defined preset set `droid` and `gemini`; invalid or non-string values normalize to `droid`.
 - The `droid` style preserves the existing BoxEditor/user zone layout and fixed-zone shell affordances when selected explicitly or used as the invalid-value fallback.
 - `inputBox.style` defaults to `"auto"`, is scaffolded/backfilled under `inputBox`, accepts only `auto`, `halfblock`, and `line`, and invalid values normalize/backfill to `auto`.
-- Explicit `inputBox.style` values apply to the active preset instead of being Gemini-only; `auto` keeps the active preset default.
+- Explicit `inputBox.style` values apply to the active preset instead of being Gemini-only; `auto` keeps the active preset default, and `line` keeps droid's native/default input presentation.
 - The `gemini` style changes user-zone presentation in normal mode because BoxEditor consumes the resolved style directly.
 - The `gemini` style renders a top status row without `[stat]` or `Tokens:`, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, puts git branch/status on the right of that row, renders an always-visible divider before the status row using the same theme border token as tool-call boxes, keeps a borderless `❯` input row with Gemini-style half-line background padding and without full blank padding rows, and renders dim wrapped workspace/status footer values without column labels.
 - The `gemini` style does not render sandbox or quota columns.
@@ -55,7 +55,7 @@ The supported preset set is intentionally small:
 
 | Layer | Expected proof |
 | --- | --- |
-| Unit | Focused smoke for default gemini scaffold, valid gemini preservation, invalid droid fallback/backfill, `inputBox.style` scaffold/backfill, style resolver identity, BoxEditor droid/gemini render markers and omissions, explicit droid/gemini input-frame overrides, and fixed-zone style options. |
+| Unit | Focused smoke for default gemini scaffold, valid gemini preservation, invalid droid fallback/backfill, `inputBox.style` scaffold/backfill, style resolver identity, BoxEditor droid/gemini render markers and omissions, explicit gemini line-frame override, droid native line semantics, droid halfblock override, and fixed-zone style options. |
 | Integration | Focused TypeScript compile for config, user-zone style module, BoxEditor, fixed-zone installer/compositor, and index; `git diff --check`; semantic review. |
 | E2E | Manual Pi smoke recommended for both presets in fixed and non-fixed modes. |
 | Platform | Terminal visual/manual smoke still recommended because fixed-zone shell uses compositor painting. |

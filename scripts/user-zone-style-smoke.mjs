@@ -257,9 +257,8 @@ async function runBoxEditorSmoke() {
 	assert(geminiLine[2]?.includes("─") && geminiLine[2]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render top line border");
 	assert(geminiLine[4]?.includes("─") && geminiLine[4]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render bottom line border");
 	assert(!rawGeminiLine[3]?.includes(INPUT_BACKGROUND_ANSI), "explicit gemini line input row should not use selected input background");
-	assert(droidLine.length === 8, `explicit droid line input style should add two frame rows, got ${droidLine.length}`);
-	assert(droidLine[4]?.includes("━") && droidLine[4]?.replace(/━/g, "").trim() === "", "explicit droid line input style should render top line border");
-	assert(droidLine[6]?.includes("━") && droidLine[6]?.replace(/━/g, "").trim() === "", "explicit droid line input style should render bottom line border");
+	assert(droidLine.length === droid.length, `explicit droid line input style should keep default row count, got ${droidLine.length}`);
+	assert(JSON.stringify(droidLine) === JSON.stringify(droid), "explicit droid line input style should keep the native droid input presentation");
 	assert(droidHalfblock.length === 8, `explicit droid halfblock input style should add two frame rows, got ${droidHalfblock.length}`);
 	assert(droidHalfblock[4]?.includes("▄") && droidHalfblock[4]?.replace(/▄/g, "").trim() === "", "explicit droid halfblock input style should render top half-line padding");
 	assert(droidHalfblock[6]?.includes("▀") && droidHalfblock[6]?.replace(/▀/g, "").trim() === "", "explicit droid halfblock input style should render bottom half-line padding");

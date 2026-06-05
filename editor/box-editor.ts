@@ -593,10 +593,12 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private resolveInputFrame(): ResolvedInputFrame {
+		const presetFrame = this.userZoneStyle.editor.inputFrame;
 		const frame = this.inputBoxStyle && this.inputBoxStyle !== "auto"
 			? this.inputBoxStyle
-			: this.userZoneStyle.editor.inputFrame;
+			: presetFrame;
 
+		if (frame === "line" && this.userZoneStyle.name === "droid") return "none";
 		if (frame === "line" || frame === "halfblock" || frame === "none") return frame;
 		return process.env.NO_COLOR ? "line" : "halfblock";
 	}
