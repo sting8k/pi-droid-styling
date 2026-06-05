@@ -244,11 +244,11 @@ function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 }
 
 function isJumpBottomInput(data: string): boolean {
-	return matchesKey(data, "ctrl+alt+g");
+	return matchesKey(data, "ctrl+alt+g") || matchesKey(data, "end");
 }
 
 function isJumpTopInput(data: string): boolean {
-	return matchesKey(data, "ctrl+alt+t");
+	return matchesKey(data, "ctrl+alt+t") || matchesKey(data, "home");
 }
 
 export class TerminalSplitCompositor {
@@ -380,11 +380,11 @@ export class TerminalSplitCompositor {
 			return { consume: true };
 		}
 		if (matchesKey(current, "pageDown")) {
-			this.pageScroll(1);
+			this.pageScroll(-1);
 			return { consume: true };
 		}
 		if (matchesKey(current, "pageUp")) {
-			this.pageScroll(-1);
+			this.pageScroll(1);
 			return { consume: true };
 		}
 		return current === data ? undefined : { data: current };

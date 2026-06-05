@@ -280,7 +280,7 @@ async function runFixedZoneSmoke() {
 	const { TerminalSplitCompositor } = await importBuilt("fixed-zone/terminal-split.js");
 	const { resolveUserZoneStyle } = await importBuilt("user-zone/designs.js");
 
-	function run(styleName) {
+	function runInputs(styleName, inputs) {
 		let rawRows = 18;
 		let output = "";
 		const terminal = {
@@ -309,16 +309,40 @@ async function runFixedZoneSmoke() {
 		const compositor = new TerminalSplitCompositor(tui, hidden, { userZoneStyle: resolveUserZoneStyle(styleName) });
 		compositor.install();
 		tui.doRender();
-		output = "";
-		compositor.handleInput("\x1b[<64;10;5M");
+		const outputs = [];
+		for (const input of inputs) {
+			output = "";
+			compositor.handleInput(input);
+			outputs.push(output);
+		}
 		compositor.dispose();
-		return output;
+		return outputs;
+	}
+
+	function run(styleName) {
+		return runInputs(styleName, ["\x1b[<64;10;5M"])[0] ?? "";
+	}
+
+	function rootIndexes(output) {
+		return Array.from(stripAnsi(output).matchAll(/root (\d+)/g), (match) => Number(match[1]));
 	}
 
 	assert(run("droid").includes("█"), "droid fixed-zone scrollbar glyph was not painted after scroll");
 	const geminiFixedZone = run("gemini");
 	assert(geminiFixedZone.includes("█"), "gemini fixed-zone should keep scrollbar affordance");
 	assert(geminiFixedZone.includes("^Alt"), "gemini fixed-zone should surface shortcut hint on the status row");
+
+	const [pageUpOutput, pageDownOutput] = runInputs("gemini", ["\x1b[5~", "\x1b[6~"]);
+	const pageUpRoots = rootIndexes(pageUpOutput ?? "");
+	const pageDownRoots = rootIndexes(pageDownOutput ?? "");
+	assert(pageUpRoots.length > 0 && pageDownRoots.length > 0, "fixed-zone page scroll should rerender root lines");
+	assert((pageUpRoots[0] ?? 0) < (pageDownRoots[0] ?? 0), "PageUp should scroll toward older root lines and PageDown should return toward newer root lines");
+
+	const [homeOutput, endOutput] = runInputs("gemini", ["\x1b[H", "\x1b[F"]);
+	const homeRoots = rootIndexes(homeOutput ?? "");
+	const endRoots = rootIndexes(endOutput ?? "");
+	assert(homeRoots[0] === 0, "Home should jump to the oldest fixed-zone root line");
+	assert(endRoots.includes(79), "End should jump back to the newest fixed-zone root line");
 
 	const directGeminiCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
