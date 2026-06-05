@@ -293,6 +293,7 @@ export default function (pi: ExtensionAPI) {
 				getFooterStatusLine,
 				() => fixedZoneSidebarActive ? "sidebar" : "footer",
 				userZoneStyle,
+				config.inputBox.style,
 			);
 		});
 	});

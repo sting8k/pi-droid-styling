@@ -35,6 +35,9 @@ type ModelInfoProvider = () => {
 	thinkingLevel?: string;
 } | undefined;
 
+type InputBoxStyleOverride = "auto" | "halfblock" | "line";
+type ResolvedInputFrame = "none" | "halfblock" | "line";
+
 type BranchInfo = {
 	branch: string;
 	insertions?: number;
@@ -138,6 +141,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getFooterStatus?: FooterStatusProvider,
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
+		private readonly inputBoxStyle?: InputBoxStyleOverride,
 	) {
 		super(tui, theme, kb);
 	}
@@ -588,29 +592,31 @@ export class BoxEditor extends CustomEditor {
 		return style.dividerBold ? this.bold(divider) : divider;
 	}
 
-	private resolveGeminiInputFrame(): "none" | "half-block" | "line-border" {
-		const frame = this.userZoneStyle.editor.inputFrame;
-		if (frame !== "auto") return frame;
-		return process.env.NO_COLOR ? "line-border" : "half-block";
+	private resolveInputFrame(): ResolvedInputFrame {
+		const frame = this.inputBoxStyle && this.inputBoxStyle !== "auto"
+			? this.inputBoxStyle
+			: this.userZoneStyle.editor.inputFrame;
+
+		if (frame === "line" || frame === "halfblock" || frame === "none") return frame;
+		return process.env.NO_COLOR ? "line" : "halfblock";
 	}
 
-	private renderGeminiInputLineBorder(width: number): string {
+	private renderInputLineBorder(width: number): string {
 		const style = this.userZoneStyle.editor;
 		return this.styleBackgroundAsFg(style.inputBackgroundColor, (style.dividerChar || "─").repeat(Math.max(1, width)));
 	}
 
-	private renderGeminiInputBox(inputLines: string[], width: number): string[] {
+	private renderInputBoxFrame(inputLines: string[], width: number): string[] {
 		const style = this.userZoneStyle.editor;
-		const inputFrame = this.resolveGeminiInputFrame();
-		if (inputFrame === "line-border") {
-			const border = this.renderGeminiInputLineBorder(width);
+		const inputFrame = this.resolveInputFrame();
+		if (inputFrame === "line") {
+			const border = this.renderInputLineBorder(width);
 			return [border, ...inputLines.map((line) => this.pad(line, width)), border];
 		}
+		if (inputFrame === "none") return inputLines;
 
 		const renderLine = (line: string) => this.bg(style.inputBackgroundColor, this.pad(line, width));
 		const inputRows = inputLines.map(renderLine);
-		if (inputFrame !== "half-block") return inputRows;
-
 		const topPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
 		const bottomPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));
 		return [topPadding, ...inputRows, bottomPadding];
@@ -672,7 +678,7 @@ export class BoxEditor extends CustomEditor {
 		if (editorStyle.showMetadataRow) lines.push(this.renderPanelLine(this.renderTopRow(contentInnerWidth), width));
 		if (editorStyle.showRuntimeRow) lines.push(this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width));
 		if (editorStyle.showDivider) lines.push(this.renderDivider(width));
-		lines.push(...inputLines);
+		lines.push(...this.renderInputBoxFrame(inputLines, width));
 		if (editorStyle.showTrailingBlankLine) lines.push(this.renderPanelLine("", width));
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
@@ -681,7 +687,7 @@ export class BoxEditor extends CustomEditor {
 		const lines: string[] = [];
 		if (this.userZoneStyle.editor.showDivider) lines.push(this.renderGeminiDivider(width));
 		if (this.userZoneStyle.editor.showRuntimeRow) lines.push(this.renderPanelLine(this.renderGeminiStatusRow(contentInnerWidth), width));
-		lines.push(...this.renderGeminiInputBox(inputLines, width));
+		lines.push(...this.renderInputBoxFrame(inputLines, width));
 		lines.push(...this.renderGeminiFooter(width, contentInnerWidth));
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}

@@ -24,7 +24,7 @@ export interface UserZoneEditorStyle {
 	showTrailingBlankLine: boolean;
 	slashBorderColor: string;
 	inputBackgroundColor: string;
-	inputFrame: "auto" | "none" | "half-block" | "line-border";
+	inputFrame: "auto" | "none" | "halfblock" | "line";
 	footerLabelColor: string;
 	footerValueColor: string;
 }
