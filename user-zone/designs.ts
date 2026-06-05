@@ -122,7 +122,7 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 		fixed: {
 			jumpTopHint: "^Shift T TOP",
 			jumpBottomHint: "^Shift G BOT",
-			scrollHintRightInset: 2,
+			scrollHintRightInset: 0,
 			scrollHintPlacement: "lastLine",
 			showScrollbar: true,
 			scrollbarGlyph: "█",

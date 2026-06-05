@@ -140,6 +140,8 @@ async function runStyleResolverSmoke() {
 	assert(styles.resolveUserZoneStyle("gemini").editor.prompt === "❯", "gemini style did not keep droid prompt icon");
 	assert(styles.resolveUserZoneStyle("gemini").editor.inputHalfLinePadding === true, "gemini style should use half-line input padding");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.showScrollbar === true, "gemini fixed-zone should keep scrollbar affordance");
+	assert(styles.resolveUserZoneStyle("droid").fixed.scrollHintRightInset === 2, "droid fixed-zone should preserve cursor hint inset");
+	assert(styles.resolveUserZoneStyle("gemini").fixed.scrollHintRightInset === 0, "gemini fixed-zone should not leave trailing hint inset");
 	assert(styles.resolveUserZoneStyle("unknown").name === "droid", "unknown style did not resolve to droid");
 	assert(styles.resolveUserZoneStyle("toString").name === "droid", "inherited object key did not resolve to droid");
 	console.log("style resolver smoke ok");
@@ -306,10 +308,11 @@ async function runFixedZoneSmoke() {
 			"workspace".padEnd(width),
 		],
 	}], 60, 4, { scrollHint: "^Shift T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
-	const workspaceOnlyFooter = stripAnsi(workspaceOnlyCluster.lines[1] ?? "").trimEnd();
+	const workspaceOnlyFooter = stripAnsi(workspaceOnlyCluster.lines[1] ?? "");
 	const workspaceEnd = workspaceOnlyFooter.indexOf("workspace") + "workspace".length;
 	const hintStart = workspaceOnlyFooter.indexOf("[^Shift T TOP]");
 	assert(hintStart > workspaceEnd + 2, "gemini shortcut hint should stay right-aligned when footer status is empty");
+	assert(workspaceOnlyFooter.endsWith("[^Shift T TOP]"), "gemini shortcut hint should not leave trailing spacing");
 	console.log("fixed-zone style smoke ok");
 }
 
