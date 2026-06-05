@@ -588,11 +588,28 @@ export class BoxEditor extends CustomEditor {
 		return style.dividerBold ? this.bold(divider) : divider;
 	}
 
+	private resolveGeminiInputFrame(): "none" | "half-block" | "line-border" {
+		const frame = this.userZoneStyle.editor.inputFrame;
+		if (frame !== "auto") return frame;
+		return process.env.NO_COLOR ? "line-border" : "half-block";
+	}
+
+	private renderGeminiInputLineBorder(width: number): string {
+		const style = this.userZoneStyle.editor;
+		return this.styleBackgroundAsFg(style.inputBackgroundColor, (style.dividerChar || "─").repeat(Math.max(1, width)));
+	}
+
 	private renderGeminiInputBox(inputLines: string[], width: number): string[] {
 		const style = this.userZoneStyle.editor;
+		const inputFrame = this.resolveGeminiInputFrame();
+		if (inputFrame === "line-border") {
+			const border = this.renderGeminiInputLineBorder(width);
+			return [border, ...inputLines.map((line) => this.pad(line, width)), border];
+		}
+
 		const renderLine = (line: string) => this.bg(style.inputBackgroundColor, this.pad(line, width));
 		const inputRows = inputLines.map(renderLine);
-		if (!style.inputHalfLinePadding) return inputRows;
+		if (inputFrame !== "half-block") return inputRows;
 
 		const topPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
 		const bottomPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));

@@ -24,7 +24,7 @@ export interface UserZoneEditorStyle {
 	showTrailingBlankLine: boolean;
 	slashBorderColor: string;
 	inputBackgroundColor: string;
-	inputHalfLinePadding: boolean;
+	inputFrame: "auto" | "none" | "half-block" | "line-border";
 	footerLabelColor: string;
 	footerValueColor: string;
 }
@@ -78,7 +78,7 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			showTrailingBlankLine: true,
 			slashBorderColor: "border",
 			inputBackgroundColor: "selectedBg",
-			inputHalfLinePadding: false,
+			inputFrame: "none",
 			footerLabelColor: "dim",
 			footerValueColor: "muted",
 		},
@@ -116,7 +116,7 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			showTrailingBlankLine: false,
 			slashBorderColor: "borderMuted",
 			inputBackgroundColor: "selectedBg",
-			inputHalfLinePadding: true,
+			inputFrame: "auto",
 			footerLabelColor: "dim",
 			footerValueColor: "dim",
 		},
