@@ -12,6 +12,7 @@ import { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } fro
 import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
 import { installFinishedRenderCache } from "./performance/finished-render-cache.js";
 import { loadConfig } from "./config.js";
+import { resolveUserZoneStyle } from "./user-zone/designs.js";
 import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
 import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
@@ -151,19 +152,15 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = loadConfig();
+		const userZoneStyle = resolveUserZoneStyle(config.userZoneStyle);
 		disposePiTasksWidgetStylingForCurrentSession?.();
 		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi);
 		restoreTerminalBackgroundForCurrentSession?.();
 		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
-		if (config.customWorkingMessage) {
-			workingLoaderController = createWorkingLoaderController(sessionUi);
-			workingLoaderController.configure();
-		} else {
-			sessionUi.setWorkingMessage();
-			sessionUi.setWorkingIndicator();
-		}
+		workingLoaderController = createWorkingLoaderController(sessionUi, config.customWorkingMessage);
+		workingLoaderController.configure();
 
 		// Treat `alwaysExpanded` as the session-start preference only.
 		// Ctrl+o remains authoritative after the session is initialized.
@@ -240,6 +237,7 @@ export default function (pi: ExtensionAPI) {
 				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
 				theme: fixedZoneTheme,
 				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
+				userZoneStyle,
 				sidebar: {
 					enabled: false,
 					theme: fixedZoneTheme,
@@ -294,6 +292,7 @@ export default function (pi: ExtensionAPI) {
 				() => assistantSpeedTracker.getWordsPerSecond(),
 				getFooterStatusLine,
 				() => fixedZoneSidebarActive ? "sidebar" : "footer",
+				userZoneStyle,
 			);
 		});
 	});

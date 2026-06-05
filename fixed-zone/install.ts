@@ -86,6 +86,7 @@ export function installFixedUserZone(
 		requestScrollRender: options.requestScrollRender,
 		scrollFrameMs: options.scrollFrameMs,
 		theme: options.theme,
+		userZoneStyle: options.userZoneStyle,
 		sidebar: options.sidebar,
 	});
 	let disposed = false;

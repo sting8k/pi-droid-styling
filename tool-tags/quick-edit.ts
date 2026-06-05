@@ -9,7 +9,7 @@ import {
 	countDiffStats,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { formatBoxedWords, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
+import { formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
 
 const RESULT_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.result.patched");
 const CALL_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.call.patched");
@@ -135,9 +135,7 @@ function getQuickEditElapsedMs(context: QuickEditRenderContext): number | undefi
 }
 
 function formatQuickEditFooter(theme: any, context: QuickEditRenderContext, output = ""): string {
-	const elapsedMs = getQuickEditElapsedMs(context);
-	const wall = elapsedMs === undefined ? "--" : `${(elapsedMs / 1000).toFixed(2)}s`;
-	return theme.fg("toolOutput", `[◷ ${wall} · ${formatBoxedWords(output)}]`);
+	return formatBoxedFooterFromValues(theme, getQuickEditElapsedMs(context), output);
 }
 
 function renderQuickEditResult(

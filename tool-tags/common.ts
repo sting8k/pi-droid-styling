@@ -284,19 +284,22 @@ function colorFromExtra(theme: any, extraKey: string, fallbackColor: string, tex
 	return typeof theme?.fg === "function" ? theme.fg(fallbackColor, text) : text;
 }
 
-export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+function formatBoxedStatusIcon(theme: any, isError?: boolean): string {
 	const icon = isError ? "✗" : "✓";
-	const rawTitle = `➔ ${name} ${icon}`;
-	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	return typeof theme?.fg === "function" ? theme.fg(isError ? "error" : "success", icon) : icon;
+}
+
+export function formatBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
+	const rawTitle = `➔ ${name}`;
+	const coloredTitle = `${colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle)} ${formatBoxedStatusIcon(theme, isError)}`;
 	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 	return `${title} ${boxText(theme, "|")}`;
 }
 
 function formatCompactBoxedToolTitle(theme: any, name: string, isError?: boolean): string {
-	const icon = isError ? "✗" : "✓";
 	const paddedName = padVisibleRight(name, COMPACT_TOOL_NAME_WIDTH);
-	const rawTitle = `➔ ${paddedName} ${icon}`;
-	const coloredTitle = colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle);
+	const rawTitle = `➔ ${paddedName}`;
+	const coloredTitle = `${colorFromExtra(theme, "bashPromptColor", "bashMode", rawTitle)} ${formatBoxedStatusIcon(theme, isError)}`;
 	const title = typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 	return `${title} ${boxText(theme, "|")}`;
 }
@@ -559,10 +562,11 @@ export function formatBoxedWallTime(result: AgentToolResult<any> | undefined): s
 	return `${(elapsedMs / 1000).toFixed(2)}s`;
 }
 
-function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
-	const elapsedPart = `${theme.fg("text", "◷")} ${theme.fg("dim", formatBoxedWallTime(result))}`;
+export function formatBoxedFooterFromValues(theme: any, elapsedMs: number | undefined, output: string, extraParts: string[] = [], fixedColumns = false): string {
+	const wall = elapsedMs === undefined ? "--" : `${(elapsedMs / 1000).toFixed(2)}s`;
+	const elapsedPart = `${theme.fg("text", "◷")} ${theme.fg("dim", wall)}`;
 	const extraPartList = extraParts.filter(Boolean).map((part) => theme.fg("dim", part));
-	const wordsPart = theme.fg("dim", formatBoxedWords(getTextOutput(result)));
+	const wordsPart = theme.fg("dim", formatBoxedWords(output));
 	const parts = fixedColumns
 		? [
 			padVisibleRight(elapsedPart, COMPACT_FOOTER_ELAPSED_WIDTH),
@@ -571,6 +575,10 @@ function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undef
 		]
 		: [elapsedPart, ...extraPartList, wordsPart];
 	return parts.join(theme.fg("dim", " · "));
+}
+
+function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
+	return formatBoxedFooterFromValues(theme, getElapsedMs(result), getTextOutput(result), extraParts, fixedColumns);
 }
 
 export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {

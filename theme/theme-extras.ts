@@ -35,28 +35,33 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 	gitDeletionColor: "#f85149",
 };
 
-let cachedExtras: Record<string, string> | null = null;
+let cachedExtras: Record<string, string | boolean> | null = null;
 let cachedVars: Record<string, string> | null = null;
+let cachedColors: Record<string, string> | null = null;
 let cachedThemeExport: Record<string, string> | null = null;
 let cachedThemeName: string | null = null;
 
 type ThemeDiscovery = {
-	extras: Record<string, string> | null;
+	extras: Record<string, string | boolean> | null;
 	vars: Record<string, string> | null;
+	colors: Record<string, string> | null;
 	themeExport: Record<string, string> | null;
 };
 
 function themeDiscoveryFromContent(content: any): ThemeDiscovery | null {
 	const extras = content?.extras && typeof content.extras === "object"
-		? content.extras as Record<string, string>
+		? content.extras as Record<string, string | boolean>
 		: null;
 	const vars = content?.vars && typeof content.vars === "object"
 		? content.vars as Record<string, string>
 		: null;
+	const colors = content?.colors && typeof content.colors === "object"
+		? content.colors as Record<string, string>
+		: null;
 	const themeExport = content?.export && typeof content.export === "object"
 		? content.export as Record<string, string>
 		: null;
-	return extras || vars || themeExport ? { extras, vars, themeExport } : null;
+	return extras || vars || colors || themeExport ? { extras, vars, colors, themeExport } : null;
 }
 
 function readThemeDiscoveryFromPath(filePath: string): ThemeDiscovery | null {
@@ -189,36 +194,39 @@ export function setFullTheme(theme: any, force = false): void {
 
 	const cacheKey = sourcePath || themeName;
 	// Only re-scan if theme changed, unless caller is syncing after a theme reload.
-	if (!force && cacheKey === cachedThemeName && (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null)) return;
+	if (!force && cacheKey === cachedThemeName && (cachedExtras !== null || cachedVars !== null || cachedColors !== null || cachedThemeExport !== null)) return;
 
 	cachedThemeName = cacheKey;
 	const result = readThemeDiscoveryFromPath(sourcePath) ?? (themeName ? discoverThemeExtras(themeName) : null);
 	cachedExtras = result?.extras ?? null;
 	cachedVars = result?.vars ?? null;
+	cachedColors = result?.colors ?? null;
 	cachedThemeExport = result?.themeExport ?? null;
 }
 
 export function getThemeExtra(_theme: any, key: string): string {
 	// If extras haven't been loaded yet, try resolving from theme or settings
-	if (cachedExtras === null && cachedVars === null && cachedThemeExport === null && cachedThemeName === null) {
+	if (cachedExtras === null && cachedVars === null && cachedColors === null && cachedThemeExport === null && cachedThemeName === null) {
 		const themeName = resolveThemeName(_theme);
 		if (themeName) {
 			cachedThemeName = themeName;
 			const result = discoverThemeExtras(themeName);
 			cachedExtras = result?.extras ?? null;
 			cachedVars = result?.vars ?? null;
+			cachedColors = result?.colors ?? null;
 			cachedThemeExport = result?.themeExport ?? null;
 		}
 	}
 
-	if (cachedExtras && typeof cachedExtras[key] === "string") {
-		return cachedExtras[key];
+	const extraValue = cachedExtras?.[key];
+	if (typeof extraValue === "string" || typeof extraValue === "boolean") {
+		return resolveThemeExtraValue(key, String(extraValue));
 	}
-	return HARDCODED_DEFAULTS[key] ?? "";
+	return resolveThemeExtraValue(key, HARDCODED_DEFAULTS[key] ?? "");
 }
 
 function ensureThemeExportLoaded(theme: any): void {
-	if (cachedExtras !== null || cachedVars !== null || cachedThemeExport !== null || cachedThemeName !== null) return;
+	if (cachedExtras !== null || cachedVars !== null || cachedColors !== null || cachedThemeExport !== null || cachedThemeName !== null) return;
 	const themeName = resolveThemeName(theme);
 	const sourcePath = resolveThemeSourcePath(theme);
 	if (!themeName && !sourcePath) return;
@@ -226,11 +234,39 @@ function ensureThemeExportLoaded(theme: any): void {
 	const result = readThemeDiscoveryFromPath(sourcePath) ?? (themeName ? discoverThemeExtras(themeName) : null);
 	cachedExtras = result?.extras ?? null;
 	cachedVars = result?.vars ?? null;
+	cachedColors = result?.colors ?? null;
 	cachedThemeExport = result?.themeExport ?? null;
 }
 
 function isHexColor(value: string): boolean {
 	return /^#?[0-9a-fA-F]{3}$/.test(value) || /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
+}
+
+function readThemeToken(name: string): string {
+	const varValue = cachedVars && typeof cachedVars[name] === "string" ? cachedVars[name] : "";
+	if (varValue) return varValue;
+	return cachedColors && typeof cachedColors[name] === "string" ? cachedColors[name] : "";
+}
+
+function resolveThemeColorToken(value: string): string {
+	let resolved = value;
+	const seen = new Set<string>();
+	for (let depth = 0; depth < 8; depth++) {
+		if (!resolved) return "";
+		if (isHexColor(resolved)) return resolved;
+		if (seen.has(resolved)) return "";
+		seen.add(resolved);
+
+		const next = readThemeToken(resolved);
+		if (!next) return "";
+		resolved = next;
+	}
+	return "";
+}
+
+function resolveThemeExtraValue(key: string, value: string): string {
+	if (!key.endsWith("Color")) return value;
+	return resolveThemeColorToken(value) || value;
 }
 
 function resolveThemeExportColor(key: string): string {

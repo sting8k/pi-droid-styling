@@ -5,6 +5,7 @@ import { homedir, hostname, userInfo } from "node:os";
 import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
+import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 
 type SlashAutocompleteItem = {
 	value?: string;
@@ -65,6 +66,46 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+function isHexColor(value: string): boolean {
+	return /^#?[0-9a-fA-F]{3}$/.test(value) || /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
+}
+
+function backgroundAnsiToForegroundAnsi(ansi: string): string {
+	return ansi.replace(/\x1b\[([0-9;]*)m/g, (_sequence, rawCodes: string) => {
+		const codes = rawCodes.split(";").filter((code) => code.length > 0);
+		if (codes.length === 0) return "\x1b[0m";
+
+		const rebuilt: string[] = [];
+		for (let i = 0; i < codes.length; i++) {
+			const code = codes[i]!;
+			const numeric = Number(code);
+			if (numeric === 38 || numeric === 48) {
+				rebuilt.push(numeric === 48 ? "38" : code);
+				const mode = codes[i + 1];
+				const parameterCount = mode === "2" ? 4 : mode === "5" ? 2 : 0;
+				for (let j = 1; j <= parameterCount && i + j < codes.length; j++) rebuilt.push(codes[i + j]!);
+				i += parameterCount;
+				continue;
+			}
+			if (numeric === 49) {
+				rebuilt.push("39");
+				continue;
+			}
+			if (numeric >= 40 && numeric <= 47) {
+				rebuilt.push(String(numeric - 10));
+				continue;
+			}
+			if (numeric >= 100 && numeric <= 107) {
+				rebuilt.push(String(numeric - 10));
+				continue;
+			}
+			rebuilt.push(code);
+		}
+
+		return `\x1b[${rebuilt.join(";")}m`;
+	});
+}
+
 function firstCodePoint(text: string): string {
 	const next = text[Symbol.iterator]().next();
 	return next.done ? "" : next.value;
@@ -83,8 +124,6 @@ function currentUserHost(): string {
 	return `${user}@${host}`;
 }
 
-const PANEL_PADDING_X = 2;
-
 export class BoxEditor extends CustomEditor {
 	constructor(
 		tui: any,
@@ -98,12 +137,36 @@ export class BoxEditor extends CustomEditor {
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
 		private readonly getFooterStatus?: FooterStatusProvider,
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
+		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 	) {
 		super(tui, theme, kb);
 	}
 
 	private color(hex: string, text: string): string {
 		return this.fullTheme ? fgHex(this.fullTheme, hex, text) : text;
+	}
+
+	private styleFg(color: string, text: string): string {
+		return isHexColor(color) ? this.color(color, text) : this.tone(color, text);
+	}
+
+	private styleBackgroundAsFg(color: string, text: string): string {
+		if (isHexColor(color)) return this.color(color, text);
+		try {
+			if (typeof this.fullTheme?.getBgAnsi === "function") {
+				const bgAnsi = this.fullTheme.getBgAnsi(color);
+				if (typeof bgAnsi === "string" && bgAnsi.length > 0) {
+					return `${backgroundAnsiToForegroundAnsi(bgAnsi)}${text}\x1b[39m`;
+				}
+			}
+		} catch {
+			// Fall through to fg styling when a theme lacks a background token.
+		}
+		return this.styleFg(color, text);
+	}
+
+	private themeExtraColor(key: string, fallback: string): string {
+		return getThemeExtra(this.fullTheme, key) || fallback;
 	}
 
 	private metadataInSidebar(): boolean {
@@ -275,6 +338,11 @@ export class BoxEditor extends CustomEditor {
 		return `${truncated}${" ".repeat(Math.max(0, width - safeVisibleWidth(truncated)))}`;
 	}
 
+	private padLeft(content: string, width: number): string {
+		const truncated = safeVisibleWidth(content) > width ? safeTruncateToWidth(content, width, "") : content;
+		return `${" ".repeat(Math.max(0, width - safeVisibleWidth(truncated)))}${truncated}`;
+	}
+
 	private formatCompactTokens(count: number): string {
 		if (count < 1000) return count.toString();
 		if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -304,7 +372,7 @@ export class BoxEditor extends CustomEditor {
 		return `${full}${empty}`;
 	}
 
-	private formatTokenMeter(): string | null {
+	private formatTokenMeter(showLabel = true): string | null {
 		const usage = this.contextUsage();
 		if (!usage || usage.percent === null) return null;
 
@@ -315,7 +383,8 @@ export class BoxEditor extends CustomEditor {
 		const detail = tokenCount
 			? `${this.tone("muted", tokenCount)} ${this.tone("bashMode", "●")} ${this.tone("muted", usageText)}`
 			: this.tone("muted", usageText);
-		return `${this.tone("dim", "Tokens:")}  ${this.formatTokenBar(usage.percent)} ${detail}`;
+		const meter = `${this.formatTokenBar(usage.percent)} ${detail}`;
+		return showLabel ? `${this.tone("dim", "Tokens:")}  ${meter}` : meter;
 	}
 
 	private formatResponseSpeedBadge(): string | null {
@@ -339,6 +408,29 @@ export class BoxEditor extends CustomEditor {
 		};
 	}
 
+	private formatGeminiModelBadge(): { plain: string; rendered: string } | null {
+		const info = this.getModelInfo?.();
+		if (!info || !info.id) return null;
+
+		const provider = typeof info.provider === "string" && info.provider.trim().length > 0
+			? info.provider.trim().toLowerCase()
+			: "";
+		const id = String(info.id).trim();
+		if (!id) return null;
+		const level = info.reasoning && typeof info.thinkingLevel === "string" && info.thinkingLevel.trim().length > 0
+			? info.thinkingLevel.trim()
+			: "";
+
+		const plain = `${provider ? `${provider} ` : ""}${id}${level ? ` · ${level}` : ""}`;
+		const rendered = [
+			provider ? `${this.tone("dim", provider)} ` : "",
+			this.tone("muted", id),
+			level ? `${this.tone("muted", " · ")}${this.tone("accent", level)}` : "",
+		].join("");
+
+		return { plain, rendered };
+	}
+
 	private formatCwd(): string {
 		const home = homedir().replace(/\\/g, "/");
 		const normalized = (this.sessionCwd || process.cwd()).replace(/\\/g, "/");
@@ -350,7 +442,8 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private panelContentWidth(width: number): number {
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
+		const paddingX = this.userZoneStyle.editor.panelPaddingX;
+		const sidePadding = Math.min(paddingX, Math.floor(Math.max(0, width - 1) / 2));
 		return Math.max(1, width - sidePadding * 2);
 	}
 
@@ -376,20 +469,27 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private renderPanelLine(content: string, width: number): string {
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
+		const paddingX = this.userZoneStyle.editor.panelPaddingX;
+		const sidePadding = Math.min(paddingX, Math.floor(Math.max(0, width - 1) / 2));
 		const sidePad = " ".repeat(sidePadding);
 		const contentWidth = Math.max(1, width - sidePadding * 2);
 		return `${sidePad}${this.pad(content, contentWidth)}${sidePad}`;
 	}
 
 	private renderTopBorder(width: number): string {
-		const prefix = this.tone("accent", `== [${currentUserHost()}] == `);
+		const style = this.userZoneStyle.editor;
+		const borderColor = this.themeExtraColor("inputBorderColor", style.hostBorderColor);
+		const prefix = this.styleFg(style.hostPrefixColor, `== [${currentUserHost()}] == `);
 		const remaining = Math.max(0, width - safeVisibleWidth(prefix));
-		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
+		const fill = style.hostBorderFill || " ";
+		return `${prefix}${this.styleFg(borderColor, fill.repeat(remaining))}`;
 	}
 
-	private renderBoldDivider(width: number): string {
-		return this.bold(this.tone("border", "━".repeat(Math.max(1, width))));
+	private renderDivider(width: number): string {
+		const style = this.userZoneStyle.editor;
+		const dividerColor = this.themeExtraColor("inputBorderColor", style.dividerColor);
+		const divider = this.styleFg(dividerColor, (style.dividerChar || " ").repeat(Math.max(1, width)));
+		return style.dividerBold ? this.bold(divider) : divider;
 	}
 
 	private formatCellLabel(label: string): string {
@@ -441,20 +541,18 @@ export class BoxEditor extends CustomEditor {
 		return rendered.length > 0 ? rendered : [`${this.focused ? CURSOR_MARKER : ""}\x1b[7m \x1b[27m`];
 	}
 
-	private renderRuntimeRow(width: number): string {
+	private formatRuntimeParts(showTokenLabel = true): string[] {
 		const bullet = this.tone("bashMode", "●");
-		const tokenMeter = this.formatTokenMeter();
+		const tokenMeter = this.formatTokenMeter(showTokenLabel);
 		const speedBadge = this.formatResponseSpeedBadge();
-		const usageParts = [
+		return [
 			tokenMeter,
 			speedBadge ? `${bullet} ${this.tone("muted", speedBadge)}` : null,
-		].filter(Boolean);
-		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
-		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
-		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
-		if (!rightPlain) return this.pad(left, width);
+		].filter((part): part is string => Boolean(part));
+	}
 
-		const right = this.tone("dim", rightPlain);
+	private renderSplitRow(left: string, right: string, rightPlain: string, width: number): string {
+		if (!rightPlain) return this.pad(left, width);
 		const rightWidth = safeVisibleWidth(rightPlain);
 		const availableLeft = Math.max(1, width - rightWidth - 2);
 		const trimmedLeft = safeVisibleWidth(left) > availableLeft ? safeTruncateToWidth(left, availableLeft, "…") : left;
@@ -462,11 +560,122 @@ export class BoxEditor extends CustomEditor {
 		return this.pad(`${trimmedLeft}${gap}${right}`, width);
 	}
 
+	private renderRuntimeRow(width: number): string {
+		const usageParts = this.formatRuntimeParts();
+		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
+		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
+		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
+		const right = this.tone("dim", rightPlain);
+		return this.renderSplitRow(left, right, rightPlain, width);
+	}
+
+	private renderGeminiStatusRow(width: number): string {
+		const runtime = this.formatRuntimeParts(false).join("  ");
+		const model = this.formatGeminiModelBadge();
+		const sep = this.tone("borderMuted", "│");
+		const left = [model?.rendered, runtime]
+			.filter((part): part is string => Boolean(part && stripAnsi(part).trim().length > 0))
+			.join(` ${sep} `);
+		const branch = this.metadataInSidebar() ? null : this.formatBranchBadge();
+		const rightPlain = branch?.plain ?? "";
+		const right = branch?.rendered ?? "";
+		return this.renderSplitRow(left, right, rightPlain, width);
+	}
+
+	private renderGeminiDivider(width: number): string {
+		const style = this.userZoneStyle.editor;
+		const divider = this.styleFg(style.dividerColor || "border", "─".repeat(Math.max(1, width)));
+		return style.dividerBold ? this.bold(divider) : divider;
+	}
+
+	private renderGeminiInputBox(inputLines: string[], width: number): string[] {
+		const style = this.userZoneStyle.editor;
+		const renderLine = (line: string) => this.bg(style.inputBackgroundColor, this.pad(line, width));
+		const inputRows = inputLines.map(renderLine);
+		if (!style.inputHalfLinePadding) return inputRows;
+
+		const topPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
+		const bottomPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));
+		return [topPadding, ...inputRows, bottomPadding];
+	}
+
+	private renderGeminiFooter(width: number, contentWidth: number): string[] {
+		const style = this.userZoneStyle.editor;
+		const footerStatus = this.metadataInSidebar() ? "" : normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
+		const items = [
+			{ value: this.formatCwd(), weight: 2 },
+			{ value: footerStatus, weight: 1 },
+		].filter((item) => item.value.length > 0);
+		if (items.length === 0) return [];
+
+		const gap = "   ";
+		const gapWidth = safeVisibleWidth(gap);
+		const available = Math.max(1, contentWidth - gapWidth * (items.length - 1));
+		const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+		let remaining = available;
+		const widths = items.map((item, index) => {
+			const last = index === items.length - 1;
+			const columnWidth = last ? remaining : Math.max(1, Math.floor((available * item.weight) / totalWeight));
+			remaining -= columnWidth;
+			return columnWidth;
+		});
+		const wrappedColumns = items.map((item, index) => {
+			const columnWidth = widths[index] ?? 1;
+			const wrapped = safeWrapTextWithAnsi(item.value, columnWidth);
+			return wrapped.length > 0 ? wrapped : [""];
+		});
+		const rowCount = Math.max(...wrappedColumns.map((column) => column.length));
+		const rows: string[] = [];
+		for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+			const parts = wrappedColumns.map((column, columnIndex) => {
+				const value = column[rowIndex] ?? "";
+				const colored = value ? this.tone(style.footerValueColor, value) : "";
+				const columnWidth = widths[columnIndex] ?? 1;
+				return columnIndex === wrappedColumns.length - 1 && wrappedColumns.length > 1
+					? this.padLeft(colored, columnWidth)
+					: this.pad(colored, columnWidth);
+			});
+			rows.push(this.renderPanelLine(parts.join(gap), width));
+		}
+		return rows;
+	}
+
+	private appendAutocomplete(lines: string[], autocompleteLines: string[], width: number): string[] {
+		const slashBorderColor = this.themeExtraColor("inputBorderColor", this.userZoneStyle.editor.slashBorderColor);
+		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.styleFg(slashBorderColor, value));
+		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
+		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - safeVisibleWidth(line)))}`);
+		return [...lines, ...paddedAutocomplete];
+	}
+
+	private renderDroidLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
+		const editorStyle = this.userZoneStyle.editor;
+		const lines: string[] = [];
+		if (editorStyle.showHostBorder) lines.push(this.renderTopBorder(width));
+		if (editorStyle.showMetadataRow) lines.push(this.renderPanelLine(this.renderTopRow(contentInnerWidth), width));
+		if (editorStyle.showRuntimeRow) lines.push(this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width));
+		if (editorStyle.showDivider) lines.push(this.renderDivider(width));
+		lines.push(...inputLines);
+		if (editorStyle.showTrailingBlankLine) lines.push(this.renderPanelLine("", width));
+		return this.appendAutocomplete(lines, autocompleteLines, width);
+	}
+
+	private renderGeminiLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
+		const lines: string[] = [];
+		if (this.userZoneStyle.editor.showDivider) lines.push(this.renderGeminiDivider(width));
+		if (this.userZoneStyle.editor.showRuntimeRow) lines.push(this.renderPanelLine(this.renderGeminiStatusRow(contentInnerWidth), width));
+		lines.push(...this.renderGeminiInputBox(inputLines, width));
+		lines.push(...this.renderGeminiFooter(width, contentInnerWidth));
+		return this.appendAutocomplete(lines, autocompleteLines, width);
+	}
+
 	render(width: number): string[] {
+		const editorStyle = this.userZoneStyle.editor;
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const prompt = this.bold(this.tone("accent", "❯"));
-		const promptPrefix = `${prompt}  `;
+		const promptText = this.styleFg(this.themeExtraColor("bashPromptColor", editorStyle.promptColor), editorStyle.prompt);
+		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
+		const promptPrefix = `${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
 		const prefixWidth = safeVisibleWidth(promptPrefix);
 		const inputInnerWidth = contentInnerWidth;
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
@@ -483,19 +692,8 @@ export class BoxEditor extends CustomEditor {
 			return this.renderPanelLine(`${prefix}${this.pad(line, available)}`, width);
 		});
 
-		const lines = [
-			this.renderTopBorder(width),
-			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width),
-			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width),
-			this.renderBoldDivider(width),
-			...inputLines,
-			this.renderPanelLine("", width),
-		];
-
-		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.tone("border", value));
-		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
-
-		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - safeVisibleWidth(line)))}`);
-		return [...lines, ...paddedAutocomplete];
+		return editorStyle.layout === "gemini"
+			? this.renderGeminiLayout(inputLines, autocompleteLines, width, contentInnerWidth)
+			: this.renderDroidLayout(inputLines, autocompleteLines, width, contentInnerWidth);
 	}
 }

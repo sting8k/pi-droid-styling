@@ -1,4 +1,5 @@
 export type WorkingLoaderState = "working" | "thinking" | "answering" | "running";
+export type WorkingLoaderMessages = Record<WorkingLoaderState, string>;
 
 export interface WorkingLoaderTheme {
 	fg?(color: string, text: string): string;
@@ -23,7 +24,7 @@ export const SPINNER_INTERVAL_MS = 80;
 export const WORKING_MESSAGE_INTERVAL_MS = 400;
 
 const WORKING_SPINNER_COLORS = ["accent"];
-const WORKING_STATE_LABELS: Record<WorkingLoaderState, string> = {
+const WORKING_STATE_LABELS: WorkingLoaderMessages = {
 	working: "Working",
 	thinking: "Thinking",
 	answering: "Answering",
@@ -48,8 +49,13 @@ function colorForStep(step: number): string {
 	const frameIndex = Math.max(0, Math.floor(step)) % SPINNER_FRAMES.length;
 	return WORKING_SPINNER_COLORS[frameIndex % WORKING_SPINNER_COLORS.length] ?? "accent";
 }
-export function renderWorkingMessage(state: WorkingLoaderState, step: number, theme?: WorkingLoaderTheme): string {
-	return themeFg(theme, "muted", `${WORKING_STATE_LABELS[state]}${dotsForStep(step)}`);
+export function renderWorkingMessage(
+	state: WorkingLoaderState,
+	step: number,
+	theme?: WorkingLoaderTheme,
+	messages: WorkingLoaderMessages = WORKING_STATE_LABELS,
+): string {
+	return themeFg(theme, "muted", `${messages[state] ?? WORKING_STATE_LABELS[state]}${dotsForStep(step)}`);
 }
 
 export function createWorkingIndicatorFrames(theme?: WorkingLoaderTheme): string[] {
@@ -69,13 +75,13 @@ export function workingStateForAssistantMessage(message: unknown): WorkingLoader
 	return hasAnswerText ? "answering" : "thinking";
 }
 
-export function createWorkingLoaderController(ui: WorkingLoaderUi): WorkingLoaderController {
+export function createWorkingLoaderController(ui: WorkingLoaderUi, messages?: WorkingLoaderMessages): WorkingLoaderController {
 	let state: WorkingLoaderState = "working";
 	let step = 0;
 	let timer: ReturnType<typeof setInterval> | undefined;
 
 	const render = () => {
-		ui.setWorkingMessage(renderWorkingMessage(state, step, ui.theme));
+		ui.setWorkingMessage(renderWorkingMessage(state, step, ui.theme, messages));
 	};
 
 	const clearTimer = () => {

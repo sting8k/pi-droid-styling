@@ -19,7 +19,11 @@
     "dev:clean": "rm -rf node_modules",
     "profile:render": "node scripts/render-profile-bench.mjs",
     "trace:pi": "node scripts/pi-trace.mjs",
-    "debug:render-log": "node scripts/render-frame-log-summary.mjs"
+    "debug:render-log": "node scripts/render-frame-log-summary.mjs",
+    "test:working-message": "node scripts/working-message-config-smoke.mjs",
+    "test:startup-resources": "node scripts/startup-resources-smoke.mjs",
+    "test:theme-extras": "node scripts/theme-extras-smoke.mjs",
+    "test:user-zone-style": "node scripts/user-zone-style-smoke.mjs"
   },
   "pi": {
     "extensions": [
