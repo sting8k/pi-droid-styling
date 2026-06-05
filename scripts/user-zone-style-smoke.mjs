@@ -138,7 +138,7 @@ async function runStyleResolverSmoke() {
 	assert(styles.resolveUserZoneStyle("droid").editor.showHostBorder === true, "droid style did not preserve host border");
 	assert(styles.resolveUserZoneStyle("gemini").editor.layout === "gemini", "gemini style did not select gemini layout");
 	assert(styles.resolveUserZoneStyle("gemini").editor.prompt === "❯", "gemini style did not keep droid prompt icon");
-	assert(styles.resolveUserZoneStyle("gemini").editor.inputHalfLinePadding === true, "gemini style should use half-line input padding");
+	assert(styles.resolveUserZoneStyle("gemini").editor.inputFrame === "auto", "gemini style should auto-select input framing");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.showScrollbar === true, "gemini fixed-zone should keep scrollbar affordance");
 	assert(styles.resolveUserZoneStyle("droid").fixed.scrollHintRightInset === 2, "droid fixed-zone should preserve cursor hint inset");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.scrollHintRightInset === 0, "gemini fixed-zone should not leave trailing hint inset");
@@ -188,30 +188,46 @@ async function runBoxEditorSmoke() {
 	const speed = () => 42;
 	const footer = () => "ready";
 
-	const renderStyle = (styleName, raw = false, width = 88, footerProvider = footer) => {
-		const editor = new BoxEditor(
-			tui,
-			makeTheme(),
-			keybindings,
-			makeTheme(),
-			"/tmp/pi-droid-style-smoke",
-			usage,
-			model,
-			branch,
-			speed,
-			footerProvider,
-			() => "footer",
-			resolveUserZoneStyle(styleName),
-		);
-		editor.setText("hello");
-		const rendered = editor.render(width);
-		return raw ? rendered : rendered.map(stripAnsi);
+	const renderStyle = (styleName, raw = false, width = 88, footerProvider = footer, options = {}) => {
+		const previousNoColor = process.env.NO_COLOR;
+		if (options.noColor) process.env.NO_COLOR = "1";
+		else delete process.env.NO_COLOR;
+
+		try {
+			const editor = new BoxEditor(
+				tui,
+				makeTheme(),
+				keybindings,
+				makeTheme(),
+				"/tmp/pi-droid-style-smoke",
+				usage,
+				model,
+				branch,
+				speed,
+				footerProvider,
+				() => "footer",
+				resolveUserZoneStyle(styleName),
+				options.inputBoxStyle,
+			);
+			editor.setText("hello");
+			const rendered = editor.render(width);
+			return raw ? rendered : rendered.map(stripAnsi);
+		} finally {
+			if (previousNoColor === undefined) delete process.env.NO_COLOR;
+			else process.env.NO_COLOR = previousNoColor;
+		}
 	};
 
 	const droid = renderStyle("droid");
 	const gemini = renderStyle("gemini");
 	const rawGemini = renderStyle("gemini", true);
 	const narrowGemini = renderStyle("gemini", false, 34, () => "very long status message for narrow terminal");
+	const noColorGemini = renderStyle("gemini", false, 88, footer, { noColor: true });
+	const rawNoColorGemini = renderStyle("gemini", true, 88, footer, { noColor: true });
+	const geminiLine = renderStyle("gemini", false, 88, footer, { inputBoxStyle: "line" });
+	const rawGeminiLine = renderStyle("gemini", true, 88, footer, { inputBoxStyle: "line" });
+	const droidLine = renderStyle("droid", false, 88, footer, { inputBoxStyle: "line" });
+	const droidHalfblock = renderStyle("droid", false, 88, footer, { inputBoxStyle: "halfblock" });
 	assert(droid.length === 6, `droid should preserve 6-row editor shell, got ${droid.length}`);
 	assert(droid.some((line) => line.includes("== [")), "droid host border missing");
 	assert(droid.some((line) => line.includes("[stat]")), "droid stat label missing");
@@ -227,12 +243,25 @@ async function runBoxEditorSmoke() {
 	assert(gemini[1]?.includes("│"), "gemini status row should separate token stats and model with a pipe");
 	assert(!gemini[1]?.includes("[stat]"), "gemini status row should omit [stat] label");
 	assert(!gemini[1]?.includes("Tokens:"), "gemini status row should omit the Tokens label");
-	assert(gemini[2]?.replace(/▄/g, "").trim() === "", "gemini input should render top half-line padding");
-	assert(gemini[4]?.replace(/▀/g, "").trim() === "", "gemini input should render bottom half-line padding");
+	assert(gemini[2]?.includes("▄") && gemini[2]?.replace(/▄/g, "").trim() === "", "gemini input should render top half-line padding by default");
+	assert(gemini[4]?.includes("▀") && gemini[4]?.replace(/▀/g, "").trim() === "", "gemini input should render bottom half-line padding by default");
 	assert(rawGemini[2]?.includes(INPUT_BACKGROUND_AS_FG_ANSI), "gemini top half-line padding should match input background color");
-	assert(rawGemini[3]?.includes(INPUT_BACKGROUND_ANSI), "gemini input row should use selected input background");
+	assert(rawGemini[3]?.includes(INPUT_BACKGROUND_ANSI), "gemini input row should use selected input background by default");
 	assert(rawGemini[4]?.includes(INPUT_BACKGROUND_AS_FG_ANSI), "gemini bottom half-line padding should match input background color");
-	assert(!rawGemini[2]?.includes(WRONG_INPUT_BACKGROUND_FG_ANSI), "gemini half-line padding should not use fg(selectedBg)");
+	assert(!rawGemini[2]?.includes(WRONG_INPUT_BACKGROUND_FG_ANSI) && !rawGemini[4]?.includes(WRONG_INPUT_BACKGROUND_FG_ANSI), "gemini half-line padding should convert selectedBg background to foreground instead of using fg(selectedBg)");
+	assert(noColorGemini[2]?.includes("─") && noColorGemini[2]?.replace(/─/g, "").trim() === "", "NO_COLOR gemini input should fallback to top line border");
+	assert(noColorGemini[4]?.includes("─") && noColorGemini[4]?.replace(/─/g, "").trim() === "", "NO_COLOR gemini input should fallback to bottom line border");
+	assert(rawNoColorGemini[2]?.includes(INPUT_BACKGROUND_AS_FG_ANSI), "NO_COLOR gemini top input line border should use selected input background color");
+	assert(!rawNoColorGemini[3]?.includes(INPUT_BACKGROUND_ANSI), "NO_COLOR gemini line-border input row should not use selected input background");
+	assert(rawNoColorGemini[4]?.includes(INPUT_BACKGROUND_AS_FG_ANSI), "NO_COLOR gemini bottom input line border should use selected input background color");
+	assert(geminiLine[2]?.includes("─") && geminiLine[2]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render top line border");
+	assert(geminiLine[4]?.includes("─") && geminiLine[4]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render bottom line border");
+	assert(!rawGeminiLine[3]?.includes(INPUT_BACKGROUND_ANSI), "explicit gemini line input row should not use selected input background");
+	assert(droidLine.length === droid.length, `explicit droid line input style should keep default row count, got ${droidLine.length}`);
+	assert(JSON.stringify(droidLine) === JSON.stringify(droid), "explicit droid line input style should keep the native droid input presentation");
+	assert(droidHalfblock.length === 8, `explicit droid halfblock input style should add two frame rows, got ${droidHalfblock.length}`);
+	assert(droidHalfblock[4]?.includes("▄") && droidHalfblock[4]?.replace(/▄/g, "").trim() === "", "explicit droid halfblock input style should render top half-line padding");
+	assert(droidHalfblock[6]?.includes("▀") && droidHalfblock[6]?.replace(/▀/g, "").trim() === "", "explicit droid halfblock input style should render bottom half-line padding");
 	assert(gemini[3]?.includes("❯") && gemini[3]?.includes("hello"), "gemini input row missing droid prompt icon or text");
 	assert(!gemini.some((line) => /workspace|model|status/.test(line)), "gemini footer should not render column labels");
 	assert(gemini[5]?.includes("pi-droid-style-smoke") && gemini[5]?.includes("ready"), "gemini footer values missing workspace/status");
@@ -251,7 +280,7 @@ async function runFixedZoneSmoke() {
 	const { TerminalSplitCompositor } = await importBuilt("fixed-zone/terminal-split.js");
 	const { resolveUserZoneStyle } = await importBuilt("user-zone/designs.js");
 
-	function run(styleName) {
+	function runInputs(styleName, inputs) {
 		let rawRows = 18;
 		let output = "";
 		const terminal = {
@@ -280,16 +309,40 @@ async function runFixedZoneSmoke() {
 		const compositor = new TerminalSplitCompositor(tui, hidden, { userZoneStyle: resolveUserZoneStyle(styleName) });
 		compositor.install();
 		tui.doRender();
-		output = "";
-		compositor.handleInput("\x1b[<64;10;5M");
+		const outputs = [];
+		for (const input of inputs) {
+			output = "";
+			compositor.handleInput(input);
+			outputs.push(output);
+		}
 		compositor.dispose();
-		return output;
+		return outputs;
+	}
+
+	function run(styleName) {
+		return runInputs(styleName, ["\x1b[<64;10;5M"])[0] ?? "";
+	}
+
+	function rootIndexes(output) {
+		return Array.from(stripAnsi(output).matchAll(/root (\d+)/g), (match) => Number(match[1]));
 	}
 
 	assert(run("droid").includes("█"), "droid fixed-zone scrollbar glyph was not painted after scroll");
 	const geminiFixedZone = run("gemini");
 	assert(geminiFixedZone.includes("█"), "gemini fixed-zone should keep scrollbar affordance");
-	assert(geminiFixedZone.includes("^Shift"), "gemini fixed-zone should surface shortcut hint on the status row");
+	assert(geminiFixedZone.includes("^Alt"), "gemini fixed-zone should surface shortcut hint on the status row");
+
+	const [pageUpOutput, pageDownOutput] = runInputs("gemini", ["\x1b[5~", "\x1b[6~"]);
+	const pageUpRoots = rootIndexes(pageUpOutput ?? "");
+	const pageDownRoots = rootIndexes(pageDownOutput ?? "");
+	assert(pageUpRoots.length > 0 && pageDownRoots.length > 0, "fixed-zone page scroll should rerender root lines");
+	assert((pageUpRoots[0] ?? 0) < (pageDownRoots[0] ?? 0), "PageUp should scroll toward older root lines and PageDown should return toward newer root lines");
+
+	const [homeOutput, endOutput] = runInputs("gemini", ["\x1b[H", "\x1b[F"]);
+	const homeRoots = rootIndexes(homeOutput ?? "");
+	const endRoots = rootIndexes(endOutput ?? "");
+	assert(homeRoots[0] === 0, "Home should jump to the oldest fixed-zone root line");
+	assert(endRoots.includes(79), "End should jump back to the newest fixed-zone root line");
 
 	const directGeminiCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
@@ -297,10 +350,10 @@ async function runFixedZoneSmoke() {
 			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
 			`${"workspace".padEnd(width - "ready".length)}ready`,
 		],
-	}], 60, 4, { scrollHint: "^Shift T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
-	assert(!stripAnsi(directGeminiCluster.lines[0] ?? "").includes("^Shift"), "gemini shortcut hint should not stay inside input row");
+	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
+	assert(!stripAnsi(directGeminiCluster.lines[0] ?? "").includes("^Alt"), "gemini shortcut hint should not stay inside input row");
 	const directFooterLine = stripAnsi(directGeminiCluster.lines[1] ?? "").trimEnd();
-	assert(directFooterLine.endsWith("ready  [^Shift T TOP]"), "gemini shortcut hint should append after footer status without replacing it");
+	assert(directFooterLine.endsWith("ready  [^Alt T TOP]"), "gemini shortcut hint should append after footer status without replacing it");
 
 	const workspaceOnlyCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
@@ -308,12 +361,12 @@ async function runFixedZoneSmoke() {
 			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
 			"workspace".padEnd(width),
 		],
-	}], 60, 4, { scrollHint: "^Shift T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
+	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
 	const workspaceOnlyFooter = stripAnsi(workspaceOnlyCluster.lines[1] ?? "");
 	const workspaceEnd = workspaceOnlyFooter.indexOf("workspace") + "workspace".length;
-	const hintStart = workspaceOnlyFooter.indexOf("[^Shift T TOP]");
+	const hintStart = workspaceOnlyFooter.indexOf("[^Alt T TOP]");
 	assert(hintStart > workspaceEnd + 2, "gemini shortcut hint should stay right-aligned when footer status is empty");
-	assert(workspaceOnlyFooter.endsWith("[^Shift T TOP]"), "gemini shortcut hint should not leave trailing spacing");
+	assert(workspaceOnlyFooter.endsWith("[^Alt T TOP]"), "gemini shortcut hint should not leave trailing spacing");
 	console.log("fixed-zone style smoke ok");
 }
 

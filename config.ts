@@ -5,12 +5,19 @@ import { DEFAULT_USER_ZONE_STYLE, FALLBACK_USER_ZONE_STYLE, isUserZoneStyleName,
 
 export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
 
+export type InputBoxStyle = "auto" | "halfblock" | "line";
+
+export interface InputBoxConfig {
+	style: InputBoxStyle;
+}
+
 export interface DroidStylingConfig {
 	alwaysExpanded: boolean;
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
 	customWorkingMessage: CustomWorkingMessageConfig;
 	userZoneStyle: UserZoneStyleName;
+	inputBox: InputBoxConfig;
 	fixedUserZone: boolean;
 	forceOSC11: boolean;
 }
@@ -22,12 +29,17 @@ const DEFAULT_CUSTOM_WORKING_MESSAGE: CustomWorkingMessageConfig = {
 	running: "Cooking",
 };
 
+const DEFAULT_INPUT_BOX: InputBoxConfig = {
+	style: "auto",
+};
+
 const DEFAULTS: DroidStylingConfig = {
 	alwaysExpanded: false,
 	maxExpandedLines: 50,
 	dimToolOutput: false,
 	customWorkingMessage: DEFAULT_CUSTOM_WORKING_MESSAGE,
 	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
+	inputBox: DEFAULT_INPUT_BOX,
 	fixedUserZone: false,
 	forceOSC11: false,
 };
@@ -74,8 +86,21 @@ function customWorkingMessageOrDefault(value: unknown): CustomWorkingMessageConf
 	return labels;
 }
 
+function isInputBoxStyle(value: unknown): value is InputBoxStyle {
+	return value === "auto" || value === "halfblock" || value === "line";
+}
+
+function inputBoxOrDefault(value: unknown): InputBoxConfig {
+	const config: InputBoxConfig = { ...DEFAULT_INPUT_BOX };
+	if (!isRecord(value)) return config;
+	if (isInputBoxStyle(value.style)) config.style = value.style;
+	return config;
+}
+
 function defaultValueForKey(key: keyof DroidStylingConfig): unknown {
-	return key === "customWorkingMessage" ? defaultCustomWorkingMessage() : DEFAULTS[key];
+	if (key === "customWorkingMessage") return defaultCustomWorkingMessage();
+	if (key === "inputBox") return { ...DEFAULT_INPUT_BOX };
+	return DEFAULTS[key];
 }
 
 function backfillCustomWorkingMessage(config: Record<string, unknown>): boolean {
@@ -106,6 +131,17 @@ function backfillUserZoneStyle(config: Record<string, unknown>): boolean {
 	return true;
 }
 
+function backfillInputBox(config: Record<string, unknown>): boolean {
+	if (!isRecord(config.inputBox)) {
+		config.inputBox = { ...DEFAULT_INPUT_BOX };
+		return true;
+	}
+	const inputBox = config.inputBox as Record<string, unknown>;
+	if (isInputBoxStyle(inputBox.style)) return false;
+	inputBox.style = DEFAULT_INPUT_BOX.style;
+	return true;
+}
+
 function normalizeConfig(raw: unknown): DroidStylingConfig {
 	if (!isRecord(raw)) return defaultConfig();
 	const config = raw as Record<string, unknown>;
@@ -115,6 +151,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: customWorkingMessageOrDefault(config.customWorkingMessage),
 		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
+		inputBox: inputBoxOrDefault(config.inputBox),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 	};
@@ -146,6 +183,7 @@ function backfillMissingDefaults(raw: unknown): void {
 	}
 	if (backfillCustomWorkingMessage(config)) changed = true;
 	if (backfillUserZoneStyle(config)) changed = true;
+	if (backfillInputBox(config)) changed = true;
 	if (!changed) return;
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");

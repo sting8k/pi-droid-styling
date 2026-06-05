@@ -133,5 +133,31 @@ await runConfigSmoke("partial custom labels backfilled", '{"customWorkingMessage
 	assert(config.customWorkingMessage.thinking === "Pondering", "custom thinking label did not normalize");
 });
 
+await runConfigSmoke("inputBox.style scaffold default", undefined, ({ config, raw }) => {
+	assert(raw.inputBox?.style === "auto", "scaffold did not write default inputBox.style");
+	assert(config.inputBox.style === "auto", "default config missing inputBox.style");
+});
+
+await runConfigSmoke("inputBox.style custom halfblock", '{"inputBox":{"style":"halfblock"}}', ({ config, raw }) => {
+	assert(raw.inputBox?.style === "halfblock", "custom halfblock style was not preserved");
+	assert(config.inputBox.style === "halfblock", "custom halfblock style did not normalize");
+});
+
+await runConfigSmoke("inputBox.style custom line", '{"inputBox":{"style":"line"}}', ({ config, raw }) => {
+	assert(raw.inputBox?.style === "line", "custom line style was not preserved");
+	assert(config.inputBox.style === "line", "custom line style did not normalize");
+});
+
+await runConfigSmoke("inputBox.style invalid fallback", '{"inputBox":{"style":"invalid"}}', ({ config, raw }) => {
+	assert(raw.inputBox?.style === "auto", "invalid style was not backfilled to auto");
+	assert(config.inputBox.style === "auto", "invalid style did not fallback to default");
+});
+
+await runConfigSmoke("inputBox missing style field", '{"inputBox":{}}', ({ config, raw }) => {
+	assert(raw.inputBox?.style === "auto", "missing style field was not backfilled");
+	assert(config.inputBox.style === "auto", "missing style field did not normalize to default");
+});
+
+
 await runLoaderSmoke();
 console.log("working-message config smoke ok");

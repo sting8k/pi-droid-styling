@@ -24,7 +24,7 @@ export interface UserZoneEditorStyle {
 	showTrailingBlankLine: boolean;
 	slashBorderColor: string;
 	inputBackgroundColor: string;
-	inputHalfLinePadding: boolean;
+	inputFrame: "auto" | "none" | "halfblock" | "line";
 	footerLabelColor: string;
 	footerValueColor: string;
 }
@@ -78,13 +78,13 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			showTrailingBlankLine: true,
 			slashBorderColor: "border",
 			inputBackgroundColor: "selectedBg",
-			inputHalfLinePadding: false,
+			inputFrame: "none",
 			footerLabelColor: "dim",
 			footerValueColor: "muted",
 		},
 		fixed: {
-			jumpTopHint: "^Shift T TOP",
-			jumpBottomHint: "^Shift G BOT",
+			jumpTopHint: "^Alt T TOP",
+			jumpBottomHint: "^Alt G BOT",
 			scrollHintRightInset: 2,
 			scrollHintPlacement: "cursor",
 			showScrollbar: true,
@@ -116,13 +116,13 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			showTrailingBlankLine: false,
 			slashBorderColor: "borderMuted",
 			inputBackgroundColor: "selectedBg",
-			inputHalfLinePadding: true,
+			inputFrame: "auto",
 			footerLabelColor: "dim",
 			footerValueColor: "dim",
 		},
 		fixed: {
-			jumpTopHint: "^Shift T TOP",
-			jumpBottomHint: "^Shift G BOT",
+			jumpTopHint: "^Alt T TOP",
+			jumpBottomHint: "^Alt G BOT",
 			scrollHintRightInset: 0,
 			scrollHintPlacement: "lastLine",
 			showScrollbar: true,
