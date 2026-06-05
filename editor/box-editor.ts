@@ -5,6 +5,7 @@ import { homedir, hostname, userInfo } from "node:os";
 import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
+import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 
 type SlashAutocompleteItem = {
 	value?: string;
@@ -65,6 +66,10 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+function isHexColor(value: string): boolean {
+	return /^#?[0-9a-fA-F]{3}$/.test(value) || /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value);
+}
+
 function firstCodePoint(text: string): string {
 	const next = text[Symbol.iterator]().next();
 	return next.done ? "" : next.value;
@@ -83,8 +88,6 @@ function currentUserHost(): string {
 	return `${user}@${host}`;
 }
 
-const PANEL_PADDING_X = 2;
-
 export class BoxEditor extends CustomEditor {
 	constructor(
 		tui: any,
@@ -98,12 +101,21 @@ export class BoxEditor extends CustomEditor {
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
 		private readonly getFooterStatus?: FooterStatusProvider,
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
+		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 	) {
 		super(tui, theme, kb);
 	}
 
 	private color(hex: string, text: string): string {
 		return this.fullTheme ? fgHex(this.fullTheme, hex, text) : text;
+	}
+
+	private styleFg(color: string, text: string): string {
+		return isHexColor(color) ? this.color(color, text) : this.tone(color, text);
+	}
+
+	private themeExtraColor(key: string, fallback: string): string {
+		return getThemeExtra(this.fullTheme, key) || fallback;
 	}
 
 	private metadataInSidebar(): boolean {
@@ -350,7 +362,8 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private panelContentWidth(width: number): number {
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
+		const paddingX = this.userZoneStyle.editor.panelPaddingX;
+		const sidePadding = Math.min(paddingX, Math.floor(Math.max(0, width - 1) / 2));
 		return Math.max(1, width - sidePadding * 2);
 	}
 
@@ -376,20 +389,27 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	private renderPanelLine(content: string, width: number): string {
-		const sidePadding = Math.min(PANEL_PADDING_X, Math.floor(Math.max(0, width - 1) / 2));
+		const paddingX = this.userZoneStyle.editor.panelPaddingX;
+		const sidePadding = Math.min(paddingX, Math.floor(Math.max(0, width - 1) / 2));
 		const sidePad = " ".repeat(sidePadding);
 		const contentWidth = Math.max(1, width - sidePadding * 2);
 		return `${sidePad}${this.pad(content, contentWidth)}${sidePad}`;
 	}
 
 	private renderTopBorder(width: number): string {
-		const prefix = this.tone("accent", `== [${currentUserHost()}] == `);
+		const style = this.userZoneStyle.editor;
+		const borderColor = this.themeExtraColor("inputBorderColor", style.hostBorderColor);
+		const prefix = this.styleFg(style.hostPrefixColor, `== [${currentUserHost()}] == `);
 		const remaining = Math.max(0, width - safeVisibleWidth(prefix));
-		return `${prefix}${this.tone("border", "⋯".repeat(remaining))}`;
+		const fill = style.hostBorderFill || " ";
+		return `${prefix}${this.styleFg(borderColor, fill.repeat(remaining))}`;
 	}
 
-	private renderBoldDivider(width: number): string {
-		return this.bold(this.tone("border", "━".repeat(Math.max(1, width))));
+	private renderDivider(width: number): string {
+		const style = this.userZoneStyle.editor;
+		const dividerColor = this.themeExtraColor("inputBorderColor", style.dividerColor);
+		const divider = this.styleFg(dividerColor, (style.dividerChar || " ").repeat(Math.max(1, width)));
+		return style.dividerBold ? this.bold(divider) : divider;
 	}
 
 	private formatCellLabel(label: string): string {
@@ -463,10 +483,12 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	render(width: number): string[] {
+		const editorStyle = this.userZoneStyle.editor;
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const prompt = this.bold(this.tone("accent", "❯"));
-		const promptPrefix = `${prompt}  `;
+		const promptText = this.styleFg(this.themeExtraColor("bashPromptColor", editorStyle.promptColor), editorStyle.prompt);
+		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
+		const promptPrefix = `${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
 		const prefixWidth = safeVisibleWidth(promptPrefix);
 		const inputInnerWidth = contentInnerWidth;
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
@@ -483,16 +505,16 @@ export class BoxEditor extends CustomEditor {
 			return this.renderPanelLine(`${prefix}${this.pad(line, available)}`, width);
 		});
 
-		const lines = [
-			this.renderTopBorder(width),
-			this.renderPanelLine(this.renderTopRow(contentInnerWidth), width),
-			this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width),
-			this.renderBoldDivider(width),
-			...inputLines,
-			this.renderPanelLine("", width),
-		];
+		const lines: string[] = [];
+		if (editorStyle.showHostBorder) lines.push(this.renderTopBorder(width));
+		if (editorStyle.showMetadataRow) lines.push(this.renderPanelLine(this.renderTopRow(contentInnerWidth), width));
+		if (editorStyle.showRuntimeRow) lines.push(this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width));
+		if (editorStyle.showDivider) lines.push(this.renderDivider(width));
+		lines.push(...inputLines);
+		if (editorStyle.showTrailingBlankLine) lines.push(this.renderPanelLine("", width));
 
-		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.tone("border", value));
+		const slashBorderColor = this.themeExtraColor("inputBorderColor", editorStyle.slashBorderColor);
+		const customSlashAutocomplete = this.renderSlashAutocomplete(width, (value) => this.styleFg(slashBorderColor, value));
 		if (customSlashAutocomplete) return [...lines, ...customSlashAutocomplete];
 
 		const paddedAutocomplete = autocompleteLines.map((line) => `${line}${" ".repeat(Math.max(0, width - safeVisibleWidth(line)))}`);

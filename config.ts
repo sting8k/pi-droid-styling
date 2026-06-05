@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
+import { DEFAULT_USER_ZONE_STYLE, normalizeUserZoneStyleName, type UserZoneStyleName } from "./user-zone/designs.js";
 
 export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
 
@@ -9,6 +10,7 @@ export interface DroidStylingConfig {
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
 	customWorkingMessage: CustomWorkingMessageConfig;
+	userZoneStyle: UserZoneStyleName;
 	fixedUserZone: boolean;
 	forceOSC11: boolean;
 }
@@ -25,6 +27,7 @@ const DEFAULTS: DroidStylingConfig = {
 	maxExpandedLines: 50,
 	dimToolOutput: false,
 	customWorkingMessage: DEFAULT_CUSTOM_WORKING_MESSAGE,
+	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
 	fixedUserZone: false,
 	forceOSC11: false,
 };
@@ -91,6 +94,13 @@ function backfillCustomWorkingMessage(config: Record<string, unknown>): boolean 
 	return changed;
 }
 
+function backfillUserZoneStyle(config: Record<string, unknown>): boolean {
+	const normalized = normalizeUserZoneStyleName(config.userZoneStyle);
+	if (config.userZoneStyle === normalized) return false;
+	config.userZoneStyle = normalized;
+	return true;
+}
+
 function normalizeConfig(raw: unknown): DroidStylingConfig {
 	if (!isRecord(raw)) return defaultConfig();
 	const config = raw as Record<string, unknown>;
@@ -99,6 +109,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		maxExpandedLines: maxExpandedLinesOrDefault(config.maxExpandedLines),
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: customWorkingMessageOrDefault(config.customWorkingMessage),
+		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 	};
@@ -129,6 +140,7 @@ function backfillMissingDefaults(raw: unknown): void {
 		changed = true;
 	}
 	if (backfillCustomWorkingMessage(config)) changed = true;
+	if (backfillUserZoneStyle(config)) changed = true;
 	if (!changed) return;
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");

@@ -4,6 +4,7 @@ import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
 import { paintFrameBackgroundLine, paintFrameBackgroundSegment } from "../theme/frame-background.js";
+import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -54,6 +55,7 @@ export interface TerminalSplitOptions {
 	requestScrollRender?: () => void;
 	theme?: FixedZoneNoticeTheme & { frameBgAnsi?: () => string };
 	scrollFrameMs?: number;
+	userZoneStyle?: UserZoneStyle;
 	sidebar?: {
 		enabled: boolean;
 		getInfo?: FixedZoneSidebarInfoProvider;
@@ -99,21 +101,14 @@ const WHEEL_SCROLL_FAST_STEP_LINES = 4;
 const DEFAULT_SCROLL_FRAME_MS = 20;
 const SELECTION_CLEAR_AFTER_COPY_MS = 700;
 const MAX_OSC52_ENCODED_LENGTH = 100_000;
-const SCROLLBAR_GLYPH = "█";
-const SCROLLBAR_TRACK_COLOR = "borderMuted";
-const SCROLLBAR_THUMB_COLOR = "dim";
-const SCROLLBAR_THUMB_ACTIVE_COLOR = "muted";
 const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 2500;
-const SCROLLBAR_VISUAL_ENABLED = true;
 const SCROLLBAR_HIT_COLUMNS = 3;
 // Leave the physical last column blank; exact-width glyph writes can leave terminals in a pending-wrap state.
 const SCROLLBAR_WRAP_GUARD_COLUMNS = 1;
 const JUMP_BOTTOM_INPUT = "\x07";
 const JUMP_TOP_INPUT = "\x14";
-const TOP_HINT = "^Shift T TOP";
-const BOTTOM_HINT = "^Shift G BOT";
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l";
 const DISABLE_MOUSE = "\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?1007h";
 const DISABLE_AUTOWRAP = "\x1b[?7l";
@@ -314,6 +309,10 @@ export class TerminalSplitCompositor {
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
+	}
+
+	private fixedStyle(): UserZoneStyle["fixed"] {
+		return (this.options.userZoneStyle ?? resolveUserZoneStyle(undefined)).fixed;
 	}
 
 	showNotice(kind: FixedZoneNoticeKind, message: string, ttlMs = defaultFixedZoneNoticeTtlMs(kind)): void {
@@ -588,7 +587,11 @@ export class TerminalSplitCompositor {
 	}
 
 	private getClusterOptions(): FixedZoneClusterOptions {
-		return { scrollHint: this.scrollOffset > 0 ? BOTTOM_HINT : TOP_HINT };
+		const style = this.fixedStyle();
+		return {
+			scrollHint: this.scrollOffset > 0 ? style.jumpBottomHint : style.jumpTopHint,
+			hintRightInset: style.scrollHintRightInset,
+		};
 	}
 
 	private getClusterStateKey(): string {
@@ -806,18 +809,18 @@ export class TerminalSplitCompositor {
 		return this.scrollbarDragging || Date.now() <= this.scrollbarVisibleUntil;
 	}
 
-	private formatScrollbarGlyph(color: string): string {
+	private formatScrollbarGlyph(color: string, glyph = this.fixedStyle().scrollbarGlyph): string {
 		const theme = this.options.sidebar?.theme;
 		try {
 			if (theme && typeof theme.fg === "function") {
-				return `${SCROLLBAR_RESET_INTENSITY}${theme.fg(color, SCROLLBAR_GLYPH)}${SCROLLBAR_RESET_INTENSITY}`;
+				return `${SCROLLBAR_RESET_INTENSITY}${theme.fg(color, glyph)}${SCROLLBAR_RESET_INTENSITY}`;
 			}
 		} catch {}
-		return `${SCROLLBAR_RESET_INTENSITY}${SCROLLBAR_DIM}${SCROLLBAR_GLYPH}${SCROLLBAR_RESET_INTENSITY}`;
+		return `${SCROLLBAR_RESET_INTENSITY}${SCROLLBAR_DIM}${glyph}${SCROLLBAR_RESET_INTENSITY}`;
 	}
 
 	private computeScrollbarGeometry(totalRows = this.lastRootLineCount, scrollableRows = this.visibleScrollableRows, start = this.visibleRootStart): ScrollbarGeometry | null {
-		if (!SCROLLBAR_VISUAL_ENABLED) return null;
+		if (!this.fixedStyle().showScrollbar) return null;
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const trackRows = Math.max(0, scrollableRows);
 		const scrollbarCol = Math.max(1, layout.contentWidth - SCROLLBAR_WRAP_GUARD_COLUMNS);
@@ -1405,8 +1408,9 @@ export class TerminalSplitCompositor {
 		const geometry = this.computeScrollbarGeometry();
 		if (!geometry || !this.shouldShowScrollbar()) return "";
 
-		const trackGlyph = this.formatScrollbarGlyph(SCROLLBAR_TRACK_COLOR);
-		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? SCROLLBAR_THUMB_ACTIVE_COLOR : SCROLLBAR_THUMB_COLOR);
+		const style = this.fixedStyle();
+		const trackGlyph = this.formatScrollbarGlyph(style.scrollbarTrackColor, style.scrollbarGlyph);
+		const thumbGlyph = this.formatScrollbarGlyph(this.isScrollbarActive() ? style.scrollbarThumbActiveColor : style.scrollbarThumbColor, style.scrollbarGlyph);
 		let output = saveCursor();
 		for (let index = 0; index < geometry.trackRows; index++) {
 			const isThumb = index >= geometry.thumbTop && index < geometry.thumbTop + geometry.thumbRows;

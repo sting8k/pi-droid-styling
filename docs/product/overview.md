@@ -7,7 +7,7 @@
 The extension provides:
 
 - Compact startup header and loaded resources display.
-- Boxed editor with project, host, model, context, git, and footer status details.
+- Boxed editor with selectable `userZoneStyle` presets for project, host, model, context, git, footer status, and input presentation.
 - Assistant and user message prefixes with cleaner spacing.
 - Compact tool call tags with badges, elapsed time, dimmed output support, and specialized renderers for common tools.
 - Footer stats including assistant token/word speed and compact session context.
@@ -35,6 +35,7 @@ Current options:
     "answering": "Answering",
     "running": "Cooking"
   },
+  "userZoneStyle": "droid",
   "fixedUserZone": false,
   "forceOSC11": false
 }
@@ -43,6 +44,7 @@ Current options:
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
 `customWorkingMessage` is on by default and accepts `working`, `thinking`, `answering`, and `running` strings for themed loader labels.
 Legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
+`userZoneStyle` accepts `droid`, `compact`, or `minimal` and changes built-in user-zone presentation in both normal and fixed modes; themes keep the same extras/color format.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 `forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
 

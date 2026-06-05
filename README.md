@@ -21,7 +21,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 ## Features
 
 - Compact startup header and loaded resources table.
-- Boxed editor and adjusted TUI padding.
+- Boxed editor with selectable `userZoneStyle` presets and adjusted TUI padding.
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
 - Footer stats including token speed and compact session context.
@@ -43,12 +43,14 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
     "answering": "Answering",
     "running": "Cooking"
   },
+  "userZoneStyle": "droid",
   "fixedUserZone": false,
   "forceOSC11": false
 }
 ```
 
 `alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
+`userZoneStyle` selects a built-in presentation preset for the user input zone in both normal and fixed modes. Supported values are `droid`, `compact`, and `minimal`; theme files keep using the existing extras/color format.
 `fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
 `forceOSC11` is off by default on Windows/WSL/Windows Terminal. Set it to `true` only if you want to test OSC 11 terminal background sync there.
 
