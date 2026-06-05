@@ -318,7 +318,7 @@ async function runFixedZoneSmoke() {
 	assert(run("droid").includes("█"), "droid fixed-zone scrollbar glyph was not painted after scroll");
 	const geminiFixedZone = run("gemini");
 	assert(geminiFixedZone.includes("█"), "gemini fixed-zone should keep scrollbar affordance");
-	assert(geminiFixedZone.includes("^Shift"), "gemini fixed-zone should surface shortcut hint on the status row");
+	assert(geminiFixedZone.includes("^Alt"), "gemini fixed-zone should surface shortcut hint on the status row");
 
 	const directGeminiCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
@@ -326,10 +326,10 @@ async function runFixedZoneSmoke() {
 			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
 			`${"workspace".padEnd(width - "ready".length)}ready`,
 		],
-	}], 60, 4, { scrollHint: "^Shift T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
-	assert(!stripAnsi(directGeminiCluster.lines[0] ?? "").includes("^Shift"), "gemini shortcut hint should not stay inside input row");
+	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
+	assert(!stripAnsi(directGeminiCluster.lines[0] ?? "").includes("^Alt"), "gemini shortcut hint should not stay inside input row");
 	const directFooterLine = stripAnsi(directGeminiCluster.lines[1] ?? "").trimEnd();
-	assert(directFooterLine.endsWith("ready  [^Shift T TOP]"), "gemini shortcut hint should append after footer status without replacing it");
+	assert(directFooterLine.endsWith("ready  [^Alt T TOP]"), "gemini shortcut hint should append after footer status without replacing it");
 
 	const workspaceOnlyCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
@@ -337,12 +337,12 @@ async function runFixedZoneSmoke() {
 			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
 			"workspace".padEnd(width),
 		],
-	}], 60, 4, { scrollHint: "^Shift T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
+	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
 	const workspaceOnlyFooter = stripAnsi(workspaceOnlyCluster.lines[1] ?? "");
 	const workspaceEnd = workspaceOnlyFooter.indexOf("workspace") + "workspace".length;
-	const hintStart = workspaceOnlyFooter.indexOf("[^Shift T TOP]");
+	const hintStart = workspaceOnlyFooter.indexOf("[^Alt T TOP]");
 	assert(hintStart > workspaceEnd + 2, "gemini shortcut hint should stay right-aligned when footer status is empty");
-	assert(workspaceOnlyFooter.endsWith("[^Shift T TOP]"), "gemini shortcut hint should not leave trailing spacing");
+	assert(workspaceOnlyFooter.endsWith("[^Alt T TOP]"), "gemini shortcut hint should not leave trailing spacing");
 	console.log("fixed-zone style smoke ok");
 }
 

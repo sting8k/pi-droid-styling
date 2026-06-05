@@ -246,11 +246,11 @@ function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 }
 
 function isJumpBottomInput(data: string): boolean {
-	return data === JUMP_BOTTOM_INPUT || matchesKey(data, "ctrl+shift+g") || matchesKey(data, "ctrl+g");
+	return data === JUMP_BOTTOM_INPUT || matchesKey(data, "ctrl+alt+g");
 }
 
 function isJumpTopInput(data: string): boolean {
-	return data === JUMP_TOP_INPUT || matchesKey(data, "ctrl+shift+t") || matchesKey(data, "ctrl+t");
+	return data === JUMP_TOP_INPUT || matchesKey(data, "ctrl+alt+t");
 }
 
 export class TerminalSplitCompositor {

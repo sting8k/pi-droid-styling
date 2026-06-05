@@ -83,8 +83,8 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			footerValueColor: "muted",
 		},
 		fixed: {
-			jumpTopHint: "^Shift T TOP",
-			jumpBottomHint: "^Shift G BOT",
+			jumpTopHint: "^Alt T TOP",
+			jumpBottomHint: "^Alt G BOT",
 			scrollHintRightInset: 2,
 			scrollHintPlacement: "cursor",
 			showScrollbar: true,
@@ -121,8 +121,8 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			footerValueColor: "dim",
 		},
 		fixed: {
-			jumpTopHint: "^Shift T TOP",
-			jumpBottomHint: "^Shift G BOT",
+			jumpTopHint: "^Alt T TOP",
+			jumpBottomHint: "^Alt G BOT",
 			scrollHintRightInset: 0,
 			scrollHintPlacement: "lastLine",
 			showScrollbar: true,
