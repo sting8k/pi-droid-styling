@@ -1,4 +1,4 @@
-import { Markdown } from "@earendil-works/pi-tui";
+import { Markdown, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const PATCHED = Symbol.for("pi-droid-styling.markdown-codeblock-renderer.patched");
 const DEFAULT_CODE_BLOCK_RAIL = "┃ ";
@@ -55,18 +55,23 @@ function renderHighlightedCode(component: MarkdownLike, code: string, language: 
 	return code.split("\n").map((line) => styleCodeLine(component, line));
 }
 
-function renderCodeBlock(component: MarkdownLike, token: CodeTokenLike, nextTokenType: string | undefined): string[] {
+function renderCodeBlockLine(rail: string, line: string, width: number): string[] {
+	const contentWidth = Math.max(1, width - visibleWidth(rail));
+	return wrapTextWithAnsi(line, contentWidth).map((wrappedLine) => `${rail}${wrappedLine}`);
+}
+
+function renderCodeBlock(component: MarkdownLike, token: CodeTokenLike, width: number, nextTokenType: string | undefined): string[] {
 	const lines: string[] = [];
 	const language = getCodeLanguage(token);
 	const code = typeof token.text === "string" ? token.text : "";
 	const rail = styleCodeBlockRail(component);
 
 	if (language) {
-		lines.push(`${rail}${styleCodeBlockLanguage(component, language)}`);
+		lines.push(...renderCodeBlockLine(rail, styleCodeBlockLanguage(component, language), width));
 	}
 
 	for (const line of renderHighlightedCode(component, code, language)) {
-		lines.push(`${rail}${line}`);
+		lines.push(...renderCodeBlockLine(rail, line, width));
 	}
 
 	if (nextTokenType && nextTokenType !== "space") {
@@ -85,7 +90,7 @@ export function installMarkdownCodeBlockRenderer(MarkdownClass: any = Markdown):
 
 	proto.renderToken = function patchedMarkdownCodeBlockRenderer(this: MarkdownLike, token: any, width: number, nextTokenType?: string, styleContext?: any): string[] {
 		if (token?.type === "code") {
-			return renderCodeBlock(this, token, nextTokenType);
+			return renderCodeBlock(this, token, width, nextTokenType);
 		}
 		return baseRenderToken.call(this, token, width, nextTokenType, styleContext);
 	};
