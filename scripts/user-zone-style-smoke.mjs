@@ -142,7 +142,8 @@ async function runStyleResolverSmoke() {
 	assert(styles.resolveUserZoneStyle("gemini").fixed.showScrollbar === true, "gemini fixed-zone should keep scrollbar affordance");
 	assert(styles.resolveUserZoneStyle("droid").fixed.scrollHintRightInset === 2, "droid fixed-zone should preserve cursor hint inset");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.scrollHintRightInset === 0, "gemini fixed-zone should not leave trailing hint inset");
-	assert(styles.resolveUserZoneStyle("unknown").name === "droid", "unknown style did not resolve to droid");
+	assert(styles.resolveUserZoneStyle(undefined).name === "gemini", "missing style did not resolve to gemini default");
+	assert(styles.resolveUserZoneStyle("unknown").name === "droid", "unknown style did not resolve to droid fallback");
 	assert(styles.resolveUserZoneStyle("toString").name === "droid", "inherited object key did not resolve to droid");
 	console.log("style resolver smoke ok");
 }
@@ -320,8 +321,8 @@ prepareWorkDir();
 compileChangedSurface();
 
 await runConfigSmoke("scaffold default style", undefined, ({ config, raw }) => {
-	assert(raw.userZoneStyle === "droid", "scaffold did not write default userZoneStyle");
-	assert(config.userZoneStyle === "droid", "default config did not normalize to droid");
+	assert(raw.userZoneStyle === "gemini", "scaffold did not write default userZoneStyle");
+	assert(config.userZoneStyle === "gemini", "default config did not normalize to gemini");
 });
 
 await runConfigSmoke("valid style preserved", '{"userZoneStyle":"gemini"}', ({ config, raw }) => {
