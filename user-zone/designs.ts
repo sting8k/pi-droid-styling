@@ -52,7 +52,8 @@ const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
 	gemini: true,
 };
 
-export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "droid";
+export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "gemini";
+export const FALLBACK_USER_ZONE_STYLE: UserZoneStyleName = "droid";
 
 export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 	droid: {
@@ -138,7 +139,8 @@ export function isUserZoneStyleName(value: unknown): value is UserZoneStyleName 
 }
 
 export function normalizeUserZoneStyleName(value: unknown): UserZoneStyleName {
-	return isUserZoneStyleName(value) ? value : DEFAULT_USER_ZONE_STYLE;
+	if (value === undefined) return DEFAULT_USER_ZONE_STYLE;
+	return isUserZoneStyleName(value) ? value : FALLBACK_USER_ZONE_STYLE;
 }
 
 export function resolveUserZoneStyle(value: unknown): UserZoneStyle {

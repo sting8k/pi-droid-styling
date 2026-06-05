@@ -27,7 +27,7 @@ This markdown file is a human-readable fallback for the initial brownfield basel
 | US-009 | Fixed-zone notices render in a reserved themed bottom footer row and copy feedback uses that local surface | yes | yes | no | pending | implemented | Pending validation for notice render smoke, scoped TypeScript no-emit, render profile, and srcwalk review; manual Pi themed pill smoke pending |
 | US-014 | `customWorkingMessage` defaults to an object of loader labels, migrates legacy booleans, backfills partial objects, and renders configured loader labels | yes | yes | no | pending | implemented | `npm run test:working-message`; `git diff --check`; `semantic_review` |
 | US-016 | Theme extras ending in `Color` resolve semantic theme tokens/aliases while non-color extras remain literal | yes | yes | no | no | implemented | `npm run test:theme-extras`; `npm run test:startup-resources`; `npm run test:working-message`; `git diff --check`; `semantic_review` |
-| US-017 | `userZoneStyle` selects `droid` or `gemini` user-zone presets without changing theme format, with Gemini status/input/footer and fixed-zone footer hint behavior | yes | yes | no | pending | implemented | `npm run test:user-zone-style`; `npm run test:working-message`; `npm run test:theme-extras`; `git diff --check`; `semantic_review` |
+| US-017 | `userZoneStyle` defaults to `gemini` and can select `droid` or `gemini` presets without changing theme format, with Gemini status/input/footer and fixed-zone footer hint behavior | yes | yes | no | pending | implemented | `npm run test:user-zone-style`; `npm run test:working-message`; `npm run test:theme-extras`; `git diff --check`; `semantic_review` |
 
 ## Evidence Rules
 

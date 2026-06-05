@@ -14,8 +14,8 @@ Users can select a built-in user-zone presentation preset with `userZoneStyle`. 
 
 The supported preset set is intentionally small:
 
-- `droid` is the default boxed user-zone layout.
-- `gemini` is a Gemini-like status/input/footer layout. Its top status row keeps droid runtime stats without the `[stat]` or `Tokens:` labels, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, and moves git branch/status to the right. It renders an always-visible horizontal divider before the status row using the same theme border token as tool-call boxes. Its input row is borderless, keeps the droid `❯` prompt icon, and uses Gemini-style half-line background padding rather than full blank padding rows. Its footer renders dim wrapped workspace/status values without column labels and does not render sandbox or quota columns.
+- `gemini` is the default Gemini-like status/input/footer layout. Its top status row keeps droid runtime stats without the `[stat]` or `Tokens:` labels, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, and moves git branch/status to the right. It renders an always-visible horizontal divider before the status row using the same theme border token as tool-call boxes. Its input row is borderless, keeps the droid `❯` prompt icon, and uses Gemini-style half-line background padding rather than full blank padding rows. Its footer renders dim wrapped workspace/status values without column labels and does not render sandbox or quota columns.
+- `droid` remains available as the boxed legacy user-zone layout.
 
 ## Relevant Product Docs
 
@@ -27,9 +27,9 @@ The supported preset set is intentionally small:
 
 ## Acceptance Criteria
 
-- `userZoneStyle` defaults to `"droid"` and is scaffolded/backfilled in `~/.pi/agent/pi-droid-styling.json`.
+- `userZoneStyle` defaults to `"gemini"` when missing and is scaffolded in `~/.pi/agent/pi-droid-styling.json`; invalid/non-string values fall back to `"droid"` as the safe legacy layout.
 - Supported styles are the code-defined preset set `droid` and `gemini`; invalid or non-string values normalize to `droid`.
-- The default `droid` style preserves the existing BoxEditor/user zone layout and fixed-zone shell affordances.
+- The `droid` style preserves the existing BoxEditor/user zone layout and fixed-zone shell affordances when selected explicitly or used as the invalid-value fallback.
 - The `gemini` style changes user-zone presentation in normal mode because BoxEditor consumes the resolved style directly.
 - The `gemini` style renders a top status row without `[stat]` or `Tokens:`, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, puts git branch/status on the right of that row, renders an always-visible divider before the status row using the same theme border token as tool-call boxes, keeps a borderless `❯` input row with Gemini-style half-line background padding and without full blank padding rows, and renders dim wrapped workspace/status footer values without column labels.
 - The `gemini` style does not render sandbox or quota columns.
@@ -51,7 +51,7 @@ The supported preset set is intentionally small:
 
 | Layer | Expected proof |
 | --- | --- |
-| Unit | Focused smoke for default scaffold, valid gemini preservation, invalid fallback/backfill, style resolver identity, BoxEditor droid/gemini render markers and omissions, and fixed-zone style options. |
+| Unit | Focused smoke for default gemini scaffold, valid gemini preservation, invalid droid fallback/backfill, style resolver identity, BoxEditor droid/gemini render markers and omissions, and fixed-zone style options. |
 | Integration | Focused TypeScript compile for config, user-zone style module, BoxEditor, fixed-zone installer/compositor, and index; `git diff --check`; semantic review. |
 | E2E | Manual Pi smoke recommended for both presets in fixed and non-fixed modes. |
 | Platform | Terminal visual/manual smoke still recommended because fixed-zone shell uses compositor painting. |
@@ -63,7 +63,7 @@ US-017 now documents the narrowed preset set (`droid`, `gemini`) and reusable `n
 
 ## Evidence
 
-- `npm run test:user-zone-style` passed: focused TypeScript compile, default scaffold/backfill, valid `gemini` preservation, invalid/non-string fallback, inherited-key guard, style resolver checks, BoxEditor render smoke for `droid`/`gemini`, compact gemini model visual, single accent thinking-level color, unchanged token stat formatting, always-visible tool-border-colored divider behavior, gemini branch/status/input/footer markers, sandbox/quota omissions, and fixed-zone scrollbar/footer-hint affordance smoke.
+- `npm run test:user-zone-style` passed: focused TypeScript compile, default gemini scaffold/backfill, valid `gemini` preservation, invalid/non-string droid fallback, inherited-key guard, style resolver checks, BoxEditor render smoke for `droid`/`gemini`, compact gemini model visual, single accent thinking-level color, unchanged token stat formatting, always-visible tool-border-colored divider behavior, gemini branch/status/input/footer markers, sandbox/quota omissions, and fixed-zone scrollbar/footer-hint affordance smoke.
 - `npm run test:working-message` passed after the config/style surface changed.
 - `npm run test:theme-extras` passed to confirm existing theme extras/color format remains valid.
 - `PI_DROID_PROFILE_BENCH_ITERATIONS=20 PI_DROID_PROFILE_BENCH_ROOT_LINES=120 npm run profile:render` passed.
