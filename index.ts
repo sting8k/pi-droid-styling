@@ -218,25 +218,39 @@ export default function (pi: ExtensionAPI) {
 			installRenderAutowrapGuard(tui as any);
 			const piVersion = getPiVersion();
 			let fixedZoneSidebarActive = false;
+			let fixedZoneSelectionCopySerial = Promise.resolve();
+			let fixedZoneSelectionCopySeq = 0;
 			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
 			const fixedZoneTheme = createFixedZoneTheme(uiTheme);
 			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 				enabled: config.fixedUserZone,
 				onCopySelection: (text, clipboard) => {
-					void copyToClipboard(text).then(
-						() => {
-							const remoteClipboard = isRemoteClipboardSession();
-							const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
-							clipboard.showNotice(
-								remoteClipboard && !terminalClipboardEmitted ? "warning" : "success",
-								remoteClipboard && !terminalClipboardEmitted ? "Copy failed" : "Selected text copied to clipboard",
-							);
-						},
-						() => {
-							const osc52Emitted = clipboard.emitOsc52Clipboard();
-							clipboard.showNotice(osc52Emitted ? "success" : "warning", osc52Emitted ? "Selected text copied to clipboard" : "Copy failed");
-						},
-					);
+					const copySeq = ++fixedZoneSelectionCopySeq;
+					const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
+					if (terminalClipboardEmitted) clipboard.showNotice("success", "Selected text copied to clipboard");
+
+					fixedZoneSelectionCopySerial = fixedZoneSelectionCopySerial
+						.catch(() => undefined)
+						.then(() => copyToClipboard(text))
+						.then(
+							() => {
+								if (copySeq !== fixedZoneSelectionCopySeq || terminalClipboardEmitted) return;
+								const remoteClipboard = isRemoteClipboardSession();
+								const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
+								clipboard.showNotice(
+									remoteClipboard && !fallbackOsc52Emitted ? "warning" : "success",
+									remoteClipboard && !fallbackOsc52Emitted ? "Copy failed" : "Selected text copied to clipboard",
+								);
+							},
+							() => {
+								if (copySeq !== fixedZoneSelectionCopySeq || terminalClipboardEmitted) return;
+								const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
+								clipboard.showNotice(
+									fallbackOsc52Emitted ? "success" : "warning",
+									fallbackOsc52Emitted ? "Selected text copied to clipboard" : "Copy failed",
+								);
+							},
+						);
 				},
 				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
 				theme: fixedZoneTheme,

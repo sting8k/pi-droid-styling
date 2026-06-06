@@ -953,6 +953,13 @@ export class TerminalSplitCompositor {
 		return Math.max(0, this.lastRootLineCount - this.getScrollableRows());
 	}
 
+	private syncVisibleRootFromScrollOffset(): void {
+		const scrollableRows = this.getScrollableRows();
+		const maxOffset = Math.max(0, this.lastRootLineCount - scrollableRows);
+		this.visibleScrollableRows = scrollableRows;
+		this.visibleRootStart = Math.max(0, maxOffset - this.scrollOffset);
+	}
+
 	private setScrollOffset(nextOffset: number, reason: string): boolean {
 		const maxOffset = this.getMaxScrollOffset();
 		const next = Math.max(0, Math.min(maxOffset, nextOffset));
@@ -1378,6 +1385,7 @@ export class TerminalSplitCompositor {
 		if (next === this.scrollOffset) return false;
 		this.markScrollbarInteraction();
 		this.scrollOffset = next;
+		this.syncVisibleRootFromScrollOffset();
 		if (this.options.requestScrollRender) this.options.requestScrollRender();
 		else this.tui.requestRender();
 		return true;

@@ -394,20 +394,20 @@ async function runFixedZoneSmoke() {
 		const asCompositor = new TerminalSplitCompositor(asTui, asHidden, {
 			userZoneStyle: resolveUserZoneStyle("gemini"),
 			onCopySelection: (text) => autoScrollCopied.push(text),
+			requestScrollRender: () => {},
 		});
 		asCompositor.install();
 		asTui.doRender();
-		// Press at row 5 to start root selection
-		asCompositor.handleInput("\x1b[<0;10;5M");
-		// Drag to row 20 — past the scrollable root rows (16), triggers auto-scroll
+		asCompositor.handleInput("\x1b[H");
+		asTui.doRender();
+		// Press at bottom root row, then drag below the root viewport.
+		asCompositor.handleInput("\x1b[<0;10;15M");
 		asCompositor.handleInput("\x1b[<32;10;20M");
-		// Wait for auto-scroll timer to fire several ticks
+		// Wait for auto-scroll timer to fire while requestScrollRender is throttled/no-op.
 		await new Promise((r) => setTimeout(r, 250));
-		// Release
 		asCompositor.handleInput("\x1b[<0;10;20m");
-		assert(autoScrollCopied.length > 0, "auto-scroll selection should copy content on release");
 		const asCopiedText = autoScrollCopied[0] ?? "";
-		assert(asCopiedText.length > 40, `auto-scroll should produce meaningful copied content, got length ${asCopiedText.length}`);
+		assert(asCopiedText.includes("root 15"), `auto-scroll downward should copy newer root content without waiting for render, got ${JSON.stringify(asCopiedText)}`);
 		asCompositor.dispose();
 	}
 
@@ -441,6 +441,7 @@ async function runFixedZoneSmoke() {
 		const asUpCompositor = new TerminalSplitCompositor(asUpTui, asUpHidden, {
 			userZoneStyle: resolveUserZoneStyle("gemini"),
 			onCopySelection: (text) => autoScrollUpCopied.push(text),
+			requestScrollRender: () => {},
 		});
 		asUpCompositor.install();
 		asUpTui.doRender();
