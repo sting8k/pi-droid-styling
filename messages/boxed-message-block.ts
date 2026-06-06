@@ -10,9 +10,6 @@ import {
 } from "../tool-tags/common.js";
 import { fgHex, isHexColor } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
-import { safeVisibleWidth } from "../render-budget.js";
-
-export type MessageBlockTone = "info" | "success" | "error" | "pending";
 
 export type MessageBlockOptions = {
   kind: string;
@@ -21,7 +18,6 @@ export type MessageBlockOptions = {
   body: (contentWidth: number) => string[];
   bgName?: string;
   hasDivider?: boolean;
-  tone?: MessageBlockTone;
 };
 
 function formatMessageBlockTitle(theme: any, kind: string, title?: string): string {
@@ -44,7 +40,6 @@ export function renderBoxedMessageBlock(
     body,
     bgName = "customMessageBg",
     hasDivider = true,
-    tone = "info",
   } = options;
 
   let cache: { width: number; lines: string[] } | null = null;

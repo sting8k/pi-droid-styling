@@ -205,6 +205,7 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 				bgName: "customMessageBg",
 				hasDivider: Boolean(text),
 			});
+			this.customComponent = block;
 			this.addChild(block);
 		} catch {
 			return base.call(this);

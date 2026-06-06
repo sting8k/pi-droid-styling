@@ -20,6 +20,10 @@ function stripAnsi(text) {
 	return String(text).replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
 }
 
+function resetCoreMessageBlockPatchFlag() {
+	delete globalThis.__droidCoreMessageBlocksPatched__;
+}
+
 function prepareWorkDir() {
 	rmSync(workDir, { recursive: true, force: true });
 	mkdirSync(buildDir, { recursive: true });
@@ -170,6 +174,7 @@ async function runBoxedMessageBlockSmoke() {
 }
 
 async function runInstallerSmoke() {
+	resetCoreMessageBlockPatchFlag();
 	const { installCoreMessageBlockStyling, setCoreMessageBlockTheme } = await importBuilt("messages/core-message-blocks.js");
 	const theme = makeTheme();
 
@@ -186,6 +191,37 @@ async function runInstallerSmoke() {
 	// Test that missing components don't throw
 	installCoreMessageBlockStyling({});
 	console.log("installer missing-components smoke ok");
+}
+
+async function runCustomMessageComponentSmoke() {
+	resetCoreMessageBlockPatchFlag();
+	const { CustomMessageComponent } = await import("@earendil-works/pi-coding-agent");
+	const { installCoreMessageBlockStyling, setCoreMessageBlockTheme } = await importBuilt("messages/core-message-blocks.js");
+	const theme = makeTheme();
+
+	setCoreMessageBlockTheme(theme);
+	installCoreMessageBlockStyling({ CustomMessageComponent });
+
+	const fallback = new CustomMessageComponent({ customType: "probe", content: "hello" }, undefined);
+	const first = fallback.render(60).map(stripAnsi);
+	fallback.rebuild();
+	const second = fallback.render(60).map(stripAnsi);
+	const firstCount = first.filter((line) => line.includes("➔ Custom | probe")).length;
+	const secondCount = second.filter((line) => line.includes("➔ Custom | probe")).length;
+	assert(firstCount === 1, `custom fallback should render one boxed block initially, got ${firstCount}`);
+	assert(secondCount === 1, `custom fallback should not duplicate after rebuild, got ${secondCount}`);
+	assert(second.length === first.length, `custom fallback rebuild should keep line count stable, before=${first.length} after=${second.length}`);
+	console.log("custom message fallback rebuild smoke ok");
+
+	const customRendered = { render: () => ["custom renderer output"] };
+	const rendered = new CustomMessageComponent({ customType: "rendered", content: "ignored" }, () => customRendered);
+	const renderedLines = rendered.render(60).map(stripAnsi);
+	rendered.rebuild();
+	const rerenderedLines = rendered.render(60).map(stripAnsi);
+	assert(rerenderedLines.some((line) => line.includes("custom renderer output")), "custom renderer output should be preserved");
+	assert(!rerenderedLines.some((line) => line.includes("➔ Custom | rendered")), "custom renderer output should not be wrapped by fallback box");
+	assert(rerenderedLines.length === renderedLines.length, "custom renderer rebuild should keep line count stable");
+	console.log("custom message renderer passthrough smoke ok");
 }
 
 async function runPatchedComponentSmoke() {
@@ -258,6 +294,7 @@ async function main() {
 	compileChangedSurface();
 	await runBoxedMessageBlockSmoke();
 	await runInstallerSmoke();
+	await runCustomMessageComponentSmoke();
 	await runPatchedComponentSmoke();
 	console.log("core-message-blocks smoke ok");
 }
