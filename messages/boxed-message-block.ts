@@ -1,6 +1,5 @@
 import type { Component } from "@earendil-works/pi-tui";
 import {
-  boxBgLines,
   boxBorder,
   boxInsetDivider,
   boxLine,
@@ -16,7 +15,6 @@ export type MessageBlockOptions = {
   title?: string;
   right?: string;
   body: (contentWidth: number) => string[];
-  bgName?: string;
   hasDivider?: boolean;
 };
 
@@ -29,6 +27,14 @@ function formatMessageBlockTitle(theme: any, kind: string, title?: string): stri
   return typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 }
 
+/**
+ * Render a boxed message block.
+ *
+ * Returns only border/content lines with foreground styling.
+ * Background is applied by the parent Box (all patched components extend
+ * Box with customMessageBg bgFn), so this helper must NOT apply background
+ * itself — that would create a double-background conflict.
+ */
 export function renderBoxedMessageBlock(
   theme: any,
   options: MessageBlockOptions,
@@ -38,7 +44,6 @@ export function renderBoxedMessageBlock(
     title,
     right,
     body,
-    bgName = "customMessageBg",
     hasDivider = true,
   } = options;
 
@@ -74,9 +79,8 @@ export function renderBoxedMessageBlock(
 
       lines.push(boxBorder(theme, "└", "┘", renderedWidth));
 
-      const rendered = boxBgLines(theme, lines, bgName);
-      cache = { width, lines: rendered };
-      return rendered;
+      cache = { width, lines };
+      return lines;
     },
   };
 }

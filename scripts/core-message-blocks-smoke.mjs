@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 const repoRoot = process.cwd();
 const workDir = join(repoRoot, ".pi", "core-message-blocks-smoke");
 const buildDir = join(workDir, "build");
+const themeSourcePath = join(workDir, "smoke-theme.json");
 const stubPath = join(workDir, "node-stubs.d.ts");
 const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
 let importCounter = 0;
@@ -28,6 +29,11 @@ function prepareWorkDir() {
 	rmSync(workDir, { recursive: true, force: true });
 	mkdirSync(buildDir, { recursive: true });
 	writeFileSync(join(buildDir, "package.json"), "{\"type\":\"module\"}\n", "utf8");
+	writeFileSync(themeSourcePath, JSON.stringify({
+		name: "droid-smoke",
+		vars: { bg: "#010203", customMessageBg: "#1f2328" },
+		export: { pageBg: "bg" },
+	}) + "\n", "utf8");
 	writeFileSync(stubPath, `declare module "fs" {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
@@ -98,6 +104,8 @@ async function importBuilt(relativePath) {
 
 function makeTheme() {
 	return {
+		name: "droid-smoke",
+		sourcePath: themeSourcePath,
 		fg: (color, text) => {
 			if (color === "dim") return `\x1b[2m${text}\x1b[22m`;
 			if (color === "bashMode") return `\x1b[36m${text}\x1b[39m`;
@@ -126,7 +134,7 @@ async function runBoxedMessageBlockSmoke() {
 		title: "plan",
 		right: "(Ctrl+O to expand)",
 		body: () => [],
-		bgName: "customMessageBg",
+
 		hasDivider: false,
 	});
 	const collapsedLines = collapsedBlock.render(60);
@@ -136,6 +144,8 @@ async function runBoxedMessageBlockSmoke() {
 	assert(collapsedStripped[0]?.startsWith("┌"), "collapsed block should start with top border");
 	assert(collapsedStripped[1]?.includes("➔ Skill | plan"), "collapsed block should have formatted title");
 	assert(collapsedStripped[1]?.includes("(Ctrl+O to expand)"), "collapsed block should have right hint");
+	assert(!collapsedLines.some((line) => line.includes("\x1b[48;5;236m")), "message block child should not apply background - parent Box handles it");
+	assert(!collapsedLines.some((line) => line.includes("\x1b[48;2;1;2;3m")), "message blocks should not use pageBg behind border lines");
 	assert(collapsedStripped[2]?.startsWith("└"), "collapsed block should end with bottom border");
 	console.log("boxed message block collapsed smoke ok");
 
@@ -144,7 +154,7 @@ async function runBoxedMessageBlockSmoke() {
 		kind: "Compaction",
 		title: "123,456 tokens",
 		body: (contentWidth) => ["Compacted summary line 1", "Compacted summary line 2"],
-		bgName: "customMessageBg",
+
 		hasDivider: true,
 	});
 	const expandedLines = expandedBlock.render(60);
@@ -163,7 +173,7 @@ async function runBoxedMessageBlockSmoke() {
 	const noTitleBlock = renderBoxedMessageBlock(theme, {
 		kind: "Branch",
 		body: () => ["Branch summary content"],
-		bgName: "customMessageBg",
+
 		hasDivider: true,
 	});
 	const noTitleLines = noTitleBlock.render(60);
@@ -242,7 +252,7 @@ async function runPatchedComponentSmoke() {
 			title: `${tokenStr} tokens`,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
-			bgName: "customMessageBg",
+	
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
@@ -274,7 +284,7 @@ async function runPatchedComponentSmoke() {
 			title: skillName,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
-			bgName: "customMessageBg",
+	
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
