@@ -101,6 +101,10 @@ const WHEEL_SCROLL_FAST_STEP_LINES = 4;
 const DEFAULT_SCROLL_FRAME_MS = 20;
 const SELECTION_CLEAR_AFTER_COPY_MS = 700;
 const MAX_OSC52_ENCODED_LENGTH = 100_000;
+const SELECTION_AUTO_SCROLL_INTERVAL_MS = 40;
+const SELECTION_AUTO_SCROLL_EDGE_ROWS = 2;
+const SELECTION_AUTO_SCROLL_MIN_SPEED = 1;
+const SELECTION_AUTO_SCROLL_MAX_SPEED = 4;
 const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 2500;
@@ -238,6 +242,10 @@ function isMouseRelease(packet: SgrMousePacket): boolean {
 	return packet.final === "m";
 }
 
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
+}
+
 function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 	if (a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);
@@ -267,6 +275,7 @@ export class TerminalSplitCompositor {
 	private renderingCluster = false;
 	private lastClusterHeight = 0;
 	private clusterCache: { width: number; rawRows: number; stateKey: string; cluster: FixedZoneCluster } | undefined;
+	private clusterLines: string[] = [];
 	private renderPassActive = false;
 	private scrollRegionBottom = 0;
 	private rootLines: string[] = [];
@@ -279,6 +288,8 @@ export class TerminalSplitCompositor {
 	private readonly selection = new FixedZoneSelection();
 	private selectionCopyTimer: ReturnType<typeof setTimeout> | undefined;
 	private selectionClearTimer: ReturnType<typeof setTimeout> | undefined;
+	private selectionAutoScrollTimer: ReturnType<typeof setTimeout> | undefined;
+	private selectionAutoScrollPerTick = 0;
 	private notice: FixedZoneNotice | null = null;
 	private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingMouseInput = "";
@@ -400,6 +411,7 @@ export class TerminalSplitCompositor {
 		this.clearSmoothWheelScroll();
 		this.clearPendingSelectionTimers();
 		this.clearNoticeTimer();
+		this.stopSelectionAutoScroll();
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -610,11 +622,14 @@ export class TerminalSplitCompositor {
 		const cached = this.clusterCache;
 		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) {
 			profileCount("fixed.cluster.cacheHit");
+			this.lastClusterHeight = cached.cluster.lines.length;
+			this.clusterLines = cached.cluster.lines;
 			return cached.cluster;
 		}
 		profileCount("fixed.cluster.cacheMiss");
 		const cluster = this.renderCluster(width, rawRows);
 		this.lastClusterHeight = cluster.lines.length;
+		this.clusterLines = cluster.lines;
 		this.clusterCache = { width, rawRows, stateKey, cluster };
 		return cluster;
 	}
@@ -938,6 +953,13 @@ export class TerminalSplitCompositor {
 		return Math.max(0, this.lastRootLineCount - this.getScrollableRows());
 	}
 
+	private syncVisibleRootFromScrollOffset(): void {
+		const scrollableRows = this.getScrollableRows();
+		const maxOffset = Math.max(0, this.lastRootLineCount - scrollableRows);
+		this.visibleScrollableRows = scrollableRows;
+		this.visibleRootStart = Math.max(0, maxOffset - this.scrollOffset);
+	}
+
 	private setScrollOffset(nextOffset: number, reason: string): boolean {
 		const maxOffset = this.getMaxScrollOffset();
 		const next = Math.max(0, Math.min(maxOffset, nextOffset));
@@ -1143,11 +1165,11 @@ export class TerminalSplitCompositor {
 		}
 
 		if (isMouseRelease(packet)) {
-			this.finishSelection(this.selectionPointForPacket(packet));
+			this.finishSelection(this.selectionPointForPacket(packet, this.selection.activeRegion));
 			return;
 		}
 
-		const point = this.selectionPointForPacket(packet);
+		const point = this.selectionPointForPacket(packet, this.selection.dragging ? this.selection.activeRegion : undefined);
 		if (!point) {
 			if (isLeftPress(packet)) {
 				this.selection.resetClickSequence();
@@ -1164,6 +1186,9 @@ export class TerminalSplitCompositor {
 		}
 
 		if (isLeftDrag(packet)) {
+			if (this.selection.dragging && this.selection.activeRegion === "root") {
+				this.handleSelectionDragAutoScroll(packet);
+			}
 			const dragResult = this.selection.updateDrag(point);
 			if (dragResult === "noop") {
 				profileCount("fixed.input.selection.dragNoop");
@@ -1176,17 +1201,55 @@ export class TerminalSplitCompositor {
 		}
 	}
 
-	private selectionPointForPacket(packet: SgrMousePacket): SelectionPoint | null {
+	private selectionPointForPacket(packet: SgrMousePacket, preferredRegion?: SelectionRegion): SelectionPoint | null {
+		const rawRows = this.getRawRows();
 		const layout = this.getSidebarLayout(this.getRawColumns());
+		const clusterHeight = this.lastClusterHeight;
+		const clusterStartRow = rawRows - clusterHeight + 1;
+		const scrollableRows = Math.max(1, rawRows - clusterHeight);
+		const contentCol = Math.max(0, Math.min(packet.col, layout.contentWidth) - 1);
+
+		if (preferredRegion === "root") {
+			return {
+				region: "root",
+				line: this.visibleRootStart + clamp(packet.row, 1, scrollableRows) - 1,
+				col: contentCol,
+			};
+		}
+		if (preferredRegion === "cluster") {
+			if (clusterHeight === 0) return null;
+			return {
+				region: "cluster",
+				line: clamp(packet.row - clusterStartRow, 0, clusterHeight - 1),
+				col: contentCol,
+			};
+		}
+		if (preferredRegion === "sidebar") {
+			if (!layout.active) return null;
+			return {
+				region: "sidebar",
+				line: clamp(packet.row, 1, rawRows) - 1,
+				col: Math.max(0, packet.col - layout.contentWidth - 1),
+			};
+		}
+
 		if (layout.active && packet.col > layout.contentWidth) {
-			if (packet.row < 1 || packet.row > this.getRawRows()) return null;
+			if (packet.row < 1 || packet.row > rawRows) return null;
 			return {
 				region: "sidebar",
 				line: packet.row - 1,
 				col: Math.max(0, packet.col - layout.contentWidth - 1),
 			};
 		}
-		if (packet.row < 1 || packet.row > this.visibleScrollableRows) return null;
+		if (packet.row < 1 || packet.row > rawRows) return null;
+		if (clusterHeight > 0 && packet.row >= clusterStartRow) {
+			return {
+				region: "cluster",
+				line: packet.row - clusterStartRow,
+				col: Math.max(0, packet.col - 1),
+			};
+		}
+		if (packet.row > this.visibleScrollableRows) return null;
 		return {
 			region: "root",
 			line: this.visibleRootStart + packet.row - 1,
@@ -1209,10 +1272,13 @@ export class TerminalSplitCompositor {
 	}
 
 	private selectionSourceLines(region: SelectionRegion): readonly string[] {
-		return region === "sidebar" ? this.sidebarRows : this.rootLines;
+		if (region === "sidebar") return this.sidebarRows;
+		if (region === "cluster") return this.clusterLines;
+		return this.rootLines;
 	}
 
 	private finishSelection(point: SelectionPoint | null): void {
+		this.stopSelectionAutoScroll();
 		const finishedActivity = this.selection.finish(point);
 		if (!finishedActivity) return;
 		profileCount("fixed.input.selection.finish");
@@ -1296,12 +1362,13 @@ export class TerminalSplitCompositor {
 	}
 
 	private clearSelection(): void {
+		this.stopSelectionAutoScroll();
 		this.clearPendingSelectionTimers();
 		this.selection.clear();
 	}
 
 	private getSelectedText(): string {
-		return this.selection.getSelectedText({ root: this.rootLines, sidebar: this.sidebarRows });
+		return this.selection.getSelectedText({ root: this.rootLines, sidebar: this.sidebarRows, cluster: this.clusterLines });
 	}
 
 	private renderSelectionHighlight(line: string, lineIndex: number): string {
@@ -1310,6 +1377,88 @@ export class TerminalSplitCompositor {
 
 	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
 		return this.selection.renderLineHighlight("sidebar", line, lineIndex);
+	}
+
+	private scrollOffsetKeepSelection(nextOffset: number): boolean {
+		const maxOffset = this.getMaxScrollOffset();
+		const next = Math.max(0, Math.min(maxOffset, nextOffset));
+		if (next === this.scrollOffset) return false;
+		this.markScrollbarInteraction();
+		this.scrollOffset = next;
+		this.syncVisibleRootFromScrollOffset();
+		if (this.options.requestScrollRender) this.options.requestScrollRender();
+		else this.tui.requestRender();
+		return true;
+	}
+
+	private stopSelectionAutoScroll(): void {
+		if (!this.selectionAutoScrollTimer) return;
+		clearTimeout(this.selectionAutoScrollTimer);
+		this.selectionAutoScrollTimer = undefined;
+		this.selectionAutoScrollPerTick = 0;
+	}
+
+	private handleSelectionDragAutoScroll(packet: SgrMousePacket): void {
+		const rawRows = this.getRawRows();
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
+		const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+
+		const edgeRows = Math.min(SELECTION_AUTO_SCROLL_EDGE_ROWS, Math.max(0, Math.floor((scrollableRows - 1) / 2)));
+		const overshootUp = edgeRows > 0 ? Math.max(0, edgeRows + 1 - packet.row) : 0;
+		const overshootDown = edgeRows > 0 ? Math.max(0, packet.row - (scrollableRows - edgeRows)) : 0;
+		const overshoot = Math.max(overshootUp, overshootDown);
+
+		if (overshoot > 0) {
+			// scrollOffset increases toward top (older) and decreases toward bottom (newer).
+			const direction = overshootDown > 0 ? -1 : 1;
+			const speedMagnitude = Math.min(
+				SELECTION_AUTO_SCROLL_MAX_SPEED,
+				Math.max(SELECTION_AUTO_SCROLL_MIN_SPEED, Math.ceil(overshoot / SELECTION_AUTO_SCROLL_EDGE_ROWS)),
+			);
+			this.selectionAutoScrollPerTick = direction >= 0 ? speedMagnitude : -speedMagnitude;
+
+			if (!this.selectionAutoScrollTimer) {
+				this.markScrollbarInteraction();
+				this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+			}
+		} else {
+			this.stopSelectionAutoScroll();
+		}
+	}
+
+	private tickSelectionAutoScroll(): void {
+		this.selectionAutoScrollTimer = undefined;
+
+		if (this.disposed || !this.selection.dragging || this.selection.activeRegion !== "root") {
+			this.selectionAutoScrollPerTick = 0;
+			return;
+		}
+
+		const moved = this.scrollOffsetKeepSelection(this.scrollOffset + this.selectionAutoScrollPerTick);
+
+		// Update selection focus to the scroll boundary so the highlight extends with the new content
+		if (moved) {
+			const col = this.selection.focus?.col ?? 0;
+			// Positive perTick = scroll UP (older content at top), so focus top line.
+			// Negative perTick = scroll DOWN (newer content at bottom), so focus bottom line.
+			const boundaryLine = this.selectionAutoScrollPerTick > 0
+				? this.visibleRootStart
+				: this.visibleRootStart + this.visibleScrollableRows - 1;
+			this.selection.updateDrag({ region: "root", line: boundaryLine, col });
+			// Continue if still dragging
+			if (this.selection.dragging && this.selection.activeRegion === "root") {
+				this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+			}
+		} else {
+			// Already at scroll boundary — stop idle timer.
+			// handleSelectionDragAutoScroll will restart if cursor re-enters the edge band.
+			this.stopSelectionAutoScroll();
+		}
+	}
+
+	private renderClusterSelectionHighlight(line: string, lineIndex: number): string {
+		return this.selection.renderLineHighlight("cluster", line, lineIndex);
 	}
 
 	private renderPass(): void {
@@ -1477,7 +1626,9 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const startRow = rawRows - cluster.lines.length + 1;
-			const paintRows = cluster.lines.map((line, index) => this.paintFrameRow(this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1), this.getRawColumns()));
+			const paintRows = cluster.lines.map((line, index) =>
+				this.paintFrameRow(this.composeWithSidebar(this.renderClusterSelectionHighlight(line, index), layout, sidebarRows, startRow + index - 1), this.getRawColumns()),
+			);
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
 			const cursorPaint = cluster.cursor
 				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
