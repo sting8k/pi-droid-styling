@@ -1,6 +1,6 @@
 import { safeVisibleWidth } from "../render-budget.js";
 
-export type SelectionRegion = "root" | "sidebar";
+export type SelectionRegion = "root" | "sidebar" | "cluster";
 
 export interface SelectionPoint {
 	region: SelectionRegion;
@@ -98,6 +98,10 @@ export class FixedZoneSelection {
 
 	get dragging(): boolean {
 		return this.activity === "drag";
+	}
+
+	get activeRegion(): SelectionRegion | undefined {
+		return this.activity && this.anchorPoint ? this.anchorPoint.region : undefined;
 	}
 
 	registerPress(point: SelectionPoint, now = Date.now()): number {

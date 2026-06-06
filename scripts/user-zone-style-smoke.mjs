@@ -280,7 +280,7 @@ async function runFixedZoneSmoke() {
 	const { TerminalSplitCompositor } = await importBuilt("fixed-zone/terminal-split.js");
 	const { resolveUserZoneStyle } = await importBuilt("user-zone/designs.js");
 
-	function runInputs(styleName, inputs) {
+	function runInputs(styleName, inputs, options = {}) {
 		let rawRows = 18;
 		let output = "";
 		const terminal = {
@@ -306,7 +306,10 @@ async function runFixedZoneSmoke() {
 				"workspace ready",
 			],
 		}];
-		const compositor = new TerminalSplitCompositor(tui, hidden, { userZoneStyle: resolveUserZoneStyle(styleName) });
+		const compositor = new TerminalSplitCompositor(tui, hidden, {
+			userZoneStyle: resolveUserZoneStyle(styleName),
+			onCopySelection: options.onCopySelection,
+		});
 		compositor.install();
 		tui.doRender();
 		const outputs = [];
@@ -343,6 +346,23 @@ async function runFixedZoneSmoke() {
 	const endRoots = rootIndexes(endOutput ?? "");
 	assert(homeRoots[0] === 0, "Home should jump to the oldest fixed-zone root line");
 	assert(endRoots.includes(79), "End should jump back to the newest fixed-zone root line");
+
+	const clusterSelectionCopied = [];
+	const clusterSelectionOutputs = runInputs("gemini", ["\x1b[<0;2;16M", "\x1b[<32;8;16M", "\x1b[<0;8;16m"], {
+		onCopySelection: (text, clipboard) => {
+			clusterSelectionCopied.push(text);
+			clipboard.emitOsc52Clipboard();
+		},
+	});
+	assert(clusterSelectionOutputs.some((output) => output.includes("\x1b[7m")), "fixed user zone selection should highlight dragged cluster text");
+	assert(clusterSelectionCopied[0] === "editor", `fixed user zone selection should copy cluster text, got ${JSON.stringify(clusterSelectionCopied[0])}`);
+	assert(clusterSelectionOutputs.some((output) => output.includes("\x1b]52;c;ZWRpdG9y\x07")), "fixed user zone release-copy should emit terminal OSC52 clipboard data");
+
+	const rootReleaseInClusterCopied = [];
+	runInputs("gemini", ["\x1b[<0;2;5M", "\x1b[<0;20;18m"], {
+		onCopySelection: (text) => rootReleaseInClusterCopied.push(text),
+	});
+	assert(rootReleaseInClusterCopied[0]?.includes("root 79"), `fixed root selection should copy when release lands in fixed cluster, got ${JSON.stringify(rootReleaseInClusterCopied[0])}`);
 
 	const directGeminiCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },

@@ -225,8 +225,12 @@ export default function (pi: ExtensionAPI) {
 				onCopySelection: (text, clipboard) => {
 					void copyToClipboard(text).then(
 						() => {
-							if (isRemoteClipboardSession()) clipboard.emitOsc52Clipboard();
-							clipboard.showNotice("success", "Selected text copied to clipboard");
+							const remoteClipboard = isRemoteClipboardSession();
+							const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
+							clipboard.showNotice(
+								remoteClipboard && !terminalClipboardEmitted ? "warning" : "success",
+								remoteClipboard && !terminalClipboardEmitted ? "Copy failed" : "Selected text copied to clipboard",
+							);
 						},
 						() => {
 							const osc52Emitted = clipboard.emitOsc52Clipboard();

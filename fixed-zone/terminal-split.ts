@@ -238,6 +238,10 @@ function isMouseRelease(packet: SgrMousePacket): boolean {
 	return packet.final === "m";
 }
 
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
+}
+
 function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 	if (a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);
@@ -267,6 +271,7 @@ export class TerminalSplitCompositor {
 	private renderingCluster = false;
 	private lastClusterHeight = 0;
 	private clusterCache: { width: number; rawRows: number; stateKey: string; cluster: FixedZoneCluster } | undefined;
+	private clusterLines: string[] = [];
 	private renderPassActive = false;
 	private scrollRegionBottom = 0;
 	private rootLines: string[] = [];
@@ -610,11 +615,14 @@ export class TerminalSplitCompositor {
 		const cached = this.clusterCache;
 		if (cached && cached.width === width && cached.rawRows === rawRows && cached.stateKey === stateKey) {
 			profileCount("fixed.cluster.cacheHit");
+			this.lastClusterHeight = cached.cluster.lines.length;
+			this.clusterLines = cached.cluster.lines;
 			return cached.cluster;
 		}
 		profileCount("fixed.cluster.cacheMiss");
 		const cluster = this.renderCluster(width, rawRows);
 		this.lastClusterHeight = cluster.lines.length;
+		this.clusterLines = cluster.lines;
 		this.clusterCache = { width, rawRows, stateKey, cluster };
 		return cluster;
 	}
@@ -1143,11 +1151,11 @@ export class TerminalSplitCompositor {
 		}
 
 		if (isMouseRelease(packet)) {
-			this.finishSelection(this.selectionPointForPacket(packet));
+			this.finishSelection(this.selectionPointForPacket(packet, this.selection.activeRegion));
 			return;
 		}
 
-		const point = this.selectionPointForPacket(packet);
+		const point = this.selectionPointForPacket(packet, this.selection.dragging ? this.selection.activeRegion : undefined);
 		if (!point) {
 			if (isLeftPress(packet)) {
 				this.selection.resetClickSequence();
@@ -1176,17 +1184,55 @@ export class TerminalSplitCompositor {
 		}
 	}
 
-	private selectionPointForPacket(packet: SgrMousePacket): SelectionPoint | null {
+	private selectionPointForPacket(packet: SgrMousePacket, preferredRegion?: SelectionRegion): SelectionPoint | null {
+		const rawRows = this.getRawRows();
 		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
+		const clusterStartRow = rawRows - cluster.lines.length + 1;
+		const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+		const contentCol = Math.max(0, Math.min(packet.col, layout.contentWidth) - 1);
+
+		if (preferredRegion === "root") {
+			return {
+				region: "root",
+				line: this.visibleRootStart + clamp(packet.row, 1, scrollableRows) - 1,
+				col: contentCol,
+			};
+		}
+		if (preferredRegion === "cluster") {
+			if (cluster.lines.length === 0) return null;
+			return {
+				region: "cluster",
+				line: clamp(packet.row - clusterStartRow, 0, cluster.lines.length - 1),
+				col: contentCol,
+			};
+		}
+		if (preferredRegion === "sidebar") {
+			if (!layout.active) return null;
+			return {
+				region: "sidebar",
+				line: clamp(packet.row, 1, rawRows) - 1,
+				col: Math.max(0, packet.col - layout.contentWidth - 1),
+			};
+		}
+
 		if (layout.active && packet.col > layout.contentWidth) {
-			if (packet.row < 1 || packet.row > this.getRawRows()) return null;
+			if (packet.row < 1 || packet.row > rawRows) return null;
 			return {
 				region: "sidebar",
 				line: packet.row - 1,
 				col: Math.max(0, packet.col - layout.contentWidth - 1),
 			};
 		}
-		if (packet.row < 1 || packet.row > this.visibleScrollableRows) return null;
+		if (packet.row < 1 || packet.row > rawRows) return null;
+		if (packet.row >= clusterStartRow) {
+			return {
+				region: "cluster",
+				line: packet.row - clusterStartRow,
+				col: Math.max(0, packet.col - 1),
+			};
+		}
+		if (packet.row > this.visibleScrollableRows) return null;
 		return {
 			region: "root",
 			line: this.visibleRootStart + packet.row - 1,
@@ -1209,7 +1255,9 @@ export class TerminalSplitCompositor {
 	}
 
 	private selectionSourceLines(region: SelectionRegion): readonly string[] {
-		return region === "sidebar" ? this.sidebarRows : this.rootLines;
+		if (region === "sidebar") return this.sidebarRows;
+		if (region === "cluster") return this.clusterLines;
+		return this.rootLines;
 	}
 
 	private finishSelection(point: SelectionPoint | null): void {
@@ -1301,7 +1349,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private getSelectedText(): string {
-		return this.selection.getSelectedText({ root: this.rootLines, sidebar: this.sidebarRows });
+		return this.selection.getSelectedText({ root: this.rootLines, sidebar: this.sidebarRows, cluster: this.clusterLines });
 	}
 
 	private renderSelectionHighlight(line: string, lineIndex: number): string {
@@ -1310,6 +1358,10 @@ export class TerminalSplitCompositor {
 
 	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
 		return this.selection.renderLineHighlight("sidebar", line, lineIndex);
+	}
+
+	private renderClusterSelectionHighlight(line: string, lineIndex: number): string {
+		return this.selection.renderLineHighlight("cluster", line, lineIndex);
 	}
 
 	private renderPass(): void {
@@ -1477,7 +1529,9 @@ export class TerminalSplitCompositor {
 				return "";
 			}
 			const startRow = rawRows - cluster.lines.length + 1;
-			const paintRows = cluster.lines.map((line, index) => this.paintFrameRow(this.composeWithSidebar(line, layout, sidebarRows, startRow + index - 1), this.getRawColumns()));
+			const paintRows = cluster.lines.map((line, index) =>
+				this.paintFrameRow(this.composeWithSidebar(this.renderClusterSelectionHighlight(line, index), layout, sidebarRows, startRow + index - 1), this.getRawColumns()),
+			);
 			const paintKey = `${rawRows}:${layout.contentWidth}:${layout.sidebarWidth}:${layout.active ? 1 : 0}:${startRow}`;
 			const cursorPaint = cluster.cursor
 				? moveCursor(startRow + cluster.cursor.row - 1, Math.max(1, Math.min(layout.contentWidth, cluster.cursor.col)))
