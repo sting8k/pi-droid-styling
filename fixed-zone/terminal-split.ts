@@ -101,6 +101,10 @@ const WHEEL_SCROLL_FAST_STEP_LINES = 4;
 const DEFAULT_SCROLL_FRAME_MS = 20;
 const SELECTION_CLEAR_AFTER_COPY_MS = 700;
 const MAX_OSC52_ENCODED_LENGTH = 100_000;
+const SELECTION_AUTO_SCROLL_INTERVAL_MS = 40;
+const SELECTION_AUTO_SCROLL_EDGE_ROWS = 2;
+const SELECTION_AUTO_SCROLL_MIN_SPEED = 1;
+const SELECTION_AUTO_SCROLL_MAX_SPEED = 4;
 const SCROLLBAR_DIM = "\x1b[2m";
 const SCROLLBAR_RESET_INTENSITY = "\x1b[22m";
 const SCROLLBAR_VISIBLE_MS = 2500;
@@ -284,6 +288,8 @@ export class TerminalSplitCompositor {
 	private readonly selection = new FixedZoneSelection();
 	private selectionCopyTimer: ReturnType<typeof setTimeout> | undefined;
 	private selectionClearTimer: ReturnType<typeof setTimeout> | undefined;
+	private selectionAutoScrollTimer: ReturnType<typeof setTimeout> | undefined;
+	private selectionAutoScrollPerTick = 0;
 	private notice: FixedZoneNotice | null = null;
 	private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingMouseInput = "";
@@ -405,6 +411,7 @@ export class TerminalSplitCompositor {
 		this.clearSmoothWheelScroll();
 		this.clearPendingSelectionTimers();
 		this.clearNoticeTimer();
+		this.stopSelectionAutoScroll();
 		this.scrollbarDragging = false;
 		this.scrollbarDragOffset = 0;
 		this.scrollbarVisibleUntil = 0;
@@ -1172,6 +1179,9 @@ export class TerminalSplitCompositor {
 		}
 
 		if (isLeftDrag(packet)) {
+			if (this.selection.dragging && this.selection.activeRegion === "root") {
+				this.handleSelectionDragAutoScroll(packet);
+			}
 			const dragResult = this.selection.updateDrag(point);
 			if (dragResult === "noop") {
 				profileCount("fixed.input.selection.dragNoop");
@@ -1261,6 +1271,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private finishSelection(point: SelectionPoint | null): void {
+		this.stopSelectionAutoScroll();
 		const finishedActivity = this.selection.finish(point);
 		if (!finishedActivity) return;
 		profileCount("fixed.input.selection.finish");
@@ -1344,6 +1355,7 @@ export class TerminalSplitCompositor {
 	}
 
 	private clearSelection(): void {
+		this.stopSelectionAutoScroll();
 		this.clearPendingSelectionTimers();
 		this.selection.clear();
 	}
@@ -1358,6 +1370,80 @@ export class TerminalSplitCompositor {
 
 	private renderSidebarSelectionHighlight(line: string, lineIndex: number): string {
 		return this.selection.renderLineHighlight("sidebar", line, lineIndex);
+	}
+
+	private scrollOffsetKeepSelection(nextOffset: number): boolean {
+		const maxOffset = this.getMaxScrollOffset();
+		const next = Math.max(0, Math.min(maxOffset, nextOffset));
+		if (next === this.scrollOffset) return false;
+		this.markScrollbarInteraction();
+		this.scrollOffset = next;
+		if (this.options.requestScrollRender) this.options.requestScrollRender();
+		else this.tui.requestRender();
+		return true;
+	}
+
+	private stopSelectionAutoScroll(): void {
+		if (!this.selectionAutoScrollTimer) return;
+		clearTimeout(this.selectionAutoScrollTimer);
+		this.selectionAutoScrollTimer = undefined;
+		this.selectionAutoScrollPerTick = 0;
+	}
+
+	private handleSelectionDragAutoScroll(packet: SgrMousePacket): void {
+		const rawRows = this.getRawRows();
+		const layout = this.getSidebarLayout(this.getRawColumns());
+		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
+		const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+
+		const edgeRows = Math.min(SELECTION_AUTO_SCROLL_EDGE_ROWS, Math.max(0, Math.floor((scrollableRows - 1) / 2)));
+		const overshootUp = edgeRows > 0 ? Math.max(0, edgeRows + 1 - packet.row) : 0;
+		const overshootDown = edgeRows > 0 ? Math.max(0, packet.row - (scrollableRows - edgeRows)) : 0;
+		const overshoot = Math.max(overshootUp, overshootDown);
+
+		if (overshoot > 0) {
+			// scrollOffset increases toward top (older) and decreases toward bottom (newer).
+			const direction = overshootDown > 0 ? -1 : 1;
+			const speedMagnitude = Math.min(
+				SELECTION_AUTO_SCROLL_MAX_SPEED,
+				Math.max(SELECTION_AUTO_SCROLL_MIN_SPEED, Math.ceil(overshoot / SELECTION_AUTO_SCROLL_EDGE_ROWS)),
+			);
+			this.selectionAutoScrollPerTick = direction >= 0 ? speedMagnitude : -speedMagnitude;
+
+			if (!this.selectionAutoScrollTimer) {
+				this.markScrollbarInteraction();
+				this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+			}
+		} else {
+			this.stopSelectionAutoScroll();
+		}
+	}
+
+	private tickSelectionAutoScroll(): void {
+		this.selectionAutoScrollTimer = undefined;
+
+		if (this.disposed || !this.selection.dragging || this.selection.activeRegion !== "root") {
+			this.selectionAutoScrollPerTick = 0;
+			return;
+		}
+
+		const moved = this.scrollOffsetKeepSelection(this.scrollOffset + this.selectionAutoScrollPerTick);
+
+		// Update selection focus to the scroll boundary so the highlight extends with the new content
+		if (moved) {
+			const col = this.selection.focus?.col ?? 0;
+			// Positive perTick = scroll UP (older content at top), so focus top line.
+			// Negative perTick = scroll DOWN (newer content at bottom), so focus bottom line.
+			const boundaryLine = this.selectionAutoScrollPerTick > 0
+				? this.visibleRootStart
+				: this.visibleRootStart + this.visibleScrollableRows - 1;
+			this.selection.updateDrag({ region: "root", line: boundaryLine, col });
+		}
+
+		// Continue if still dragging
+		if (this.selection.dragging && this.selection.activeRegion === "root") {
+			this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+		}
 	}
 
 	private renderClusterSelectionHighlight(line: string, lineIndex: number): string {

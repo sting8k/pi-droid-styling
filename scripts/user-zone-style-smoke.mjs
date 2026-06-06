@@ -364,6 +364,95 @@ async function runFixedZoneSmoke() {
 	});
 	assert(rootReleaseInClusterCopied[0]?.includes("root 79"), `fixed root selection should copy when release lands in fixed cluster, got ${JSON.stringify(rootReleaseInClusterCopied[0])}`);
 
+	// Auto-scroll: drag root selection past viewport edge and verify content beyond original viewport is copied
+	{
+		const autoScrollCopied = [];
+		let asRawRows = 18;
+		let asOutput = "";
+		const asTerminal = {
+			columns: 88,
+			get rows() { return asRawRows; },
+			set rows(value) { asRawRows = value; },
+			write(data) { asOutput += String(data); },
+		};
+		const asTui = {
+			terminal: asTerminal,
+			render: () => Array.from({ length: 80 }, (_v, i) => `root ${i}`),
+			requestRender() { this.doRender?.(); },
+			doRender() {
+				const lines = this.render(this.terminal.columns);
+				this.terminal.write(`${lines.join("\n")}\n`);
+			},
+		};
+		const asHidden = [{
+			target: { render: () => [] },
+			render: (width) => [
+				`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
+				"workspace ready",
+			],
+		}];
+		const asCompositor = new TerminalSplitCompositor(asTui, asHidden, {
+			userZoneStyle: resolveUserZoneStyle("gemini"),
+			onCopySelection: (text) => autoScrollCopied.push(text),
+		});
+		asCompositor.install();
+		asTui.doRender();
+		// Press at row 5 to start root selection
+		asCompositor.handleInput("\x1b[<0;10;5M");
+		// Drag to row 20 — past the scrollable root rows (16), triggers auto-scroll
+		asCompositor.handleInput("\x1b[<32;10;20M");
+		// Wait for auto-scroll timer to fire several ticks
+		await new Promise((r) => setTimeout(r, 250));
+		// Release
+		asCompositor.handleInput("\x1b[<0;10;20m");
+		assert(autoScrollCopied.length > 0, "auto-scroll selection should copy content on release");
+		const asCopiedText = autoScrollCopied[0] ?? "";
+		assert(asCopiedText.length > 40, `auto-scroll should produce meaningful copied content, got length ${asCopiedText.length}`);
+		asCompositor.dispose();
+	}
+
+	// Auto-scroll upward: row 1 is the top terminal edge, so edge-band trigger must scroll up.
+	{
+		const autoScrollUpCopied = [];
+		let asUpRawRows = 18;
+		let asUpOutput = "";
+		const asUpTerminal = {
+			columns: 88,
+			get rows() { return asUpRawRows; },
+			set rows(value) { asUpRawRows = value; },
+			write(data) { asUpOutput += String(data); },
+		};
+		const asUpTui = {
+			terminal: asUpTerminal,
+			render: () => Array.from({ length: 80 }, (_v, i) => `root ${i}`),
+			requestRender() { this.doRender?.(); },
+			doRender() {
+				const lines = this.render(this.terminal.columns);
+				this.terminal.write(`${lines.join("\n")}\n`);
+			},
+		};
+		const asUpHidden = [{
+			target: { render: () => [] },
+			render: (width) => [
+				`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
+				"workspace ready",
+			],
+		}];
+		const asUpCompositor = new TerminalSplitCompositor(asUpTui, asUpHidden, {
+			userZoneStyle: resolveUserZoneStyle("gemini"),
+			onCopySelection: (text) => autoScrollUpCopied.push(text),
+		});
+		asUpCompositor.install();
+		asUpTui.doRender();
+		asUpCompositor.handleInput("\x1b[<0;10;12M");
+		asUpCompositor.handleInput("\x1b[<32;10;1M");
+		await new Promise((r) => setTimeout(r, 250));
+		asUpCompositor.handleInput("\x1b[<0;10;1m");
+		const asUpCopiedText = autoScrollUpCopied[0] ?? "";
+		assert(asUpCopiedText.includes("root 63"), `auto-scroll upward should copy older root content, got ${JSON.stringify(asUpCopiedText)}`);
+		asUpCompositor.dispose();
+	}
+
 	const directGeminiCluster = renderFixedUserZoneCluster([{
 		target: { render: () => [] },
 		render: (width) => [

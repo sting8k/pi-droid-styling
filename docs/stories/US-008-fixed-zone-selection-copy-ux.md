@@ -57,10 +57,11 @@ No harness policy change expected. This story records a normal-lane UX refinemen
 - New-file whitespace check for `fixed-zone/selection.ts`: passed via `git diff --no-index --check /dev/null fixed-zone/selection.ts`.
 - Scoped TypeScript no-emit: `npm exec tsc -- --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck --strict false --allowJs false index.ts fixed-zone/install.ts fixed-zone/terminal-split.ts fixed-zone/selection.ts` passed.
 - Focused selection runtime smoke: drag range, double-click word, triple-click line, and empty-space word miss passed (`selection smoke ok`).
-- Fixed cluster selection regression smoke: `npm run test:user-zone-style` passed with cluster drag highlight, release-copy, terminal-scoped OSC 52 coverage, and long root selection release inside the fixed cluster.
+- Fixed cluster selection regression smoke: `npm run test:user-zone-style` passed with cluster drag highlight, release-copy, terminal-scoped OSC 52 coverage, long root selection release inside the fixed cluster, and auto-scroll smoke.
 - `npm run profile:render`: passed.
 - OSC 52 terminal-proxy patch validation: `srcwalk review --scope .`, scoped TypeScript no-emit for `index.ts fixed-zone/install.ts fixed-zone/terminal-split.ts fixed-zone/selection.ts`, `git diff --check`, and `PI_DROID_PROFILE_BENCH_ROOT_LINES=6000 PI_DROID_PROFILE_BENCH_ITERATIONS=30 npm run profile:render` passed.
 - Release-copy transport fix: selection copy now emits terminal-scoped OSC 52 after host `copyToClipboard()` succeeds, because Pi/core clipboard fallback can resolve after writing OSC 52 to `process.stdout` instead of the active terminal stream.
 - Long-selection release fix: active selections now clamp drag/release mouse points to the anchor region, so releasing a root selection inside the fixed user cluster still finishes and copies the root range.
+- Selection auto-scroll: dragging past the root viewport top/bottom edge triggers a timer that scrolls the viewport at 40ms intervals with speed proportional to overshoot (1-4 lines per tick), updating selection focus to the scroll boundary and preserving the existing copy-on-release flow.
 - `semantic_review` working tree: passed for changed files.
 - Manual Pi smoke still pending for real terminal mouse packets, jump/browser OSC 52 clipboard propagation, and notification UX.
