@@ -1204,9 +1204,9 @@ export class TerminalSplitCompositor {
 	private selectionPointForPacket(packet: SgrMousePacket, preferredRegion?: SelectionRegion): SelectionPoint | null {
 		const rawRows = this.getRawRows();
 		const layout = this.getSidebarLayout(this.getRawColumns());
-		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
-		const clusterStartRow = rawRows - cluster.lines.length + 1;
-		const scrollableRows = Math.max(1, rawRows - cluster.lines.length);
+		const clusterHeight = this.lastClusterHeight;
+		const clusterStartRow = rawRows - clusterHeight + 1;
+		const scrollableRows = Math.max(1, rawRows - clusterHeight);
 		const contentCol = Math.max(0, Math.min(packet.col, layout.contentWidth) - 1);
 
 		if (preferredRegion === "root") {
@@ -1217,10 +1217,10 @@ export class TerminalSplitCompositor {
 			};
 		}
 		if (preferredRegion === "cluster") {
-			if (cluster.lines.length === 0) return null;
+			if (clusterHeight === 0) return null;
 			return {
 				region: "cluster",
-				line: clamp(packet.row - clusterStartRow, 0, cluster.lines.length - 1),
+				line: clamp(packet.row - clusterStartRow, 0, clusterHeight - 1),
 				col: contentCol,
 			};
 		}
@@ -1242,7 +1242,7 @@ export class TerminalSplitCompositor {
 			};
 		}
 		if (packet.row < 1 || packet.row > rawRows) return null;
-		if (packet.row >= clusterStartRow) {
+		if (clusterHeight > 0 && packet.row >= clusterStartRow) {
 			return {
 				region: "cluster",
 				line: packet.row - clusterStartRow,
@@ -1446,11 +1446,14 @@ export class TerminalSplitCompositor {
 				? this.visibleRootStart
 				: this.visibleRootStart + this.visibleScrollableRows - 1;
 			this.selection.updateDrag({ region: "root", line: boundaryLine, col });
-		}
-
-		// Continue if still dragging
-		if (this.selection.dragging && this.selection.activeRegion === "root") {
-			this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+			// Continue if still dragging
+			if (this.selection.dragging && this.selection.activeRegion === "root") {
+				this.selectionAutoScrollTimer = setTimeout(() => this.tickSelectionAutoScroll(), SELECTION_AUTO_SCROLL_INTERVAL_MS);
+			}
+		} else {
+			// Already at scroll boundary — stop idle timer.
+			// handleSelectionDragAutoScroll will restart if cursor re-enters the edge band.
+			this.stopSelectionAutoScroll();
 		}
 	}
 

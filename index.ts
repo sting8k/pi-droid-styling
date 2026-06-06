@@ -234,7 +234,8 @@ export default function (pi: ExtensionAPI) {
 						.then(() => copyToClipboard(text))
 						.then(
 							() => {
-								if (copySeq !== fixedZoneSelectionCopySeq || terminalClipboardEmitted) return;
+								if (copySeq !== fixedZoneSelectionCopySeq) return;
+								if (terminalClipboardEmitted) return; // optimistic success already shown
 								const remoteClipboard = isRemoteClipboardSession();
 								const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
 								clipboard.showNotice(
@@ -243,11 +244,11 @@ export default function (pi: ExtensionAPI) {
 								);
 							},
 							() => {
-								if (copySeq !== fixedZoneSelectionCopySeq || terminalClipboardEmitted) return;
-								const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
+								if (copySeq !== fixedZoneSelectionCopySeq) return;
+								const fallbackOsc52Emitted = terminalClipboardEmitted || clipboard.emitOsc52Clipboard();
 								clipboard.showNotice(
-									fallbackOsc52Emitted ? "success" : "warning",
-									fallbackOsc52Emitted ? "Selected text copied to clipboard" : "Copy failed",
+									fallbackOsc52Emitted ? "warning" : "error",
+									fallbackOsc52Emitted ? "Copy may not work in all applications" : "Copy failed",
 								);
 							},
 						);
