@@ -1,5 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AssistantMessageComponent, copyToClipboard, InteractiveMode, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+  AssistantMessageComponent,
+  BranchSummaryMessageComponent,
+  CompactionSummaryMessageComponent,
+  CustomMessageComponent,
+  InteractiveMode,
+  SkillInvocationMessageComponent,
+  ToolExecutionComponent,
+  copyToClipboard,
+} from "@earendil-works/pi-coding-agent";
 
 import { BoxEditor } from "./editor/box-editor.js";
 import { FIXED_ZONE_SCROLL_FRAME_MS, installFixedUserZone } from "./fixed-zone/install.js";
@@ -17,6 +26,7 @@ import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
 import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
 import { installUserMessagePrefix } from "./messages/user-prefix.js";
+import { installCoreMessageBlockStyling, setCoreMessageBlockTheme } from "./messages/core-message-blocks.js";
 import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
 import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
 import { installRenderFrameBackground } from "./performance/render-frame-background.js";
@@ -58,6 +68,12 @@ export default function (pi: ExtensionAPI) {
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
 	registerToolCallTags(pi);
+	installCoreMessageBlockStyling({
+		CompactionSummaryMessageComponent,
+		SkillInvocationMessageComponent,
+		BranchSummaryMessageComponent,
+		CustomMessageComponent,
+	});
 
 	let currentThinkingLevel: string | undefined;
 	const assistantSpeedTracker = createAssistantSpeedTracker();
@@ -206,6 +222,7 @@ export default function (pi: ExtensionAPI) {
 
 		setDefaultBadgeTheme(sessionUi.theme);
 		setToolSpacingTheme(sessionUi.theme);
+		setCoreMessageBlockTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			const uiTheme = (sessionUi.theme ?? theme) as any;

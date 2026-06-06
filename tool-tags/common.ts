@@ -319,7 +319,7 @@ export function boxBg(theme: any, text: string, bgName = "toolSuccessBg"): strin
 	return themeBg(theme, bgName, text);
 }
 
-function boxBgLines(theme: any, lines: string[], bgName = "toolSuccessBg"): string[] {
+export function boxBgLines(theme: any, lines: string[], bgName = "toolSuccessBg"): string[] {
 	return lines.map((line) => boxBg(theme, line, bgName));
 }
 
@@ -333,7 +333,7 @@ function padVisibleRight(text: string, width: number): string {
 	return `${text}${" ".repeat(Math.max(0, width - safeVisibleWidth(text)))}`;
 }
 
-function boxLineWithRight(theme: any, left: string, right: string, width: number): string {
+export function boxLineWithRight(theme: any, left: string, right: string, width: number): string {
 	const renderedWidth = boxWidth(width);
 	const contentWidth = boxInnerWidth(renderedWidth);
 	const divider = ` ${boxText(theme, "|")} `;
@@ -375,7 +375,7 @@ export function boxLine(theme: any, content: string, width: number): string {
 	return `${boxFrameText(theme, BOX_VERTICAL)}${sidePad}${truncated}${fill}${sidePad}${boxFrameText(theme, BOX_VERTICAL)}`;
 }
 
-function boxInsetDivider(theme: any, width: number): string {
+export function boxInsetDivider(theme: any, width: number): string {
 	const renderedWidth = boxWidth(width);
 	const lineWidth = boxInnerWidth(renderedWidth);
 	const sidePad = " ".repeat(BOX_SIDE_PADDING);
