@@ -52,12 +52,14 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 }
 ```
 
-`alwaysExpanded` only sets the initial tool-output expansion state for a session; Pi core Ctrl+O remains authoritative afterward.
-`userZoneStyle` selects a built-in presentation preset for the user input zone in both normal and fixed modes. Supported values are `gemini` and `droid`; theme files keep using the existing extras/color format. `gemini` is the default Gemini-like status/input/footer layout with compact `provider model · level` model info before the unchanged token stats on the top row, branch status on the right, an always-visible divider before the status row using the same theme border color as tool-call boxes, a borderless `❯` input row with Gemini-style half-line background padding, fixed-zone shortcut hints right-aligned on the footer/status row, and dim wrapped workspace/status footer values without labels, sandbox, or quota columns. `droid` remains available as the boxed legacy layout.
-`inputBox.style` controls the input-frame treatment for all `userZoneStyle` presets. Supported values are `auto`, `halfblock`, and `line`; `auto` keeps the active preset default. For `gemini`, that means half-block padding normally and a line frame when `NO_COLOR` is set. For `droid`, `line` is the native boxed/default input presentation, not an extra Gemini-style line frame.
-
-`fixedUserZone` is opt-in. When enabled, the status/widgets/editor/footer cluster is kept fixed at the bottom while chat/feed output renders in the scrollable region above it.
-`forceOSC11` is off by default on Windows/WSL/Windows Terminal. Set it to `true` only if you want to test OSC 11 terminal background sync there.
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `alwaysExpanded` | `bool` | `false` | Initial tool-output expansion state. Pi core `Ctrl+O` stays authoritative after that. |
+| `customWorkingMessage` | `object` | `{"working":"Working", ...}` | Custom labels for the working/thinking/answering/running loader. Accepts partial objects; legacy `true`/`false` auto-normalizes. |
+| `userZoneStyle` | `"gemini"` \| `"droid"` | `"gemini"` | Input-zone preset. `gemini` = compact header/divider/status/halfblock-input/footer layout. `droid` = boxed legacy layout. |
+| `inputBox.style` | `"auto"` \| `"halfblock"` \| `"line"` | `"auto"` | Input-frame override. `auto` = preset default (gemini uses halfblock, droid uses line). |
+| `fixedUserZone` | `bool` | `false` | When enabled, status/widgets/editor/footer stay fixed at the bottom while chat/feed scrolls above. |
+| `forceOSC11` | `bool` | `false` | Enable OSC 11 terminal background sync on Windows/WSL (off by default).
 
 ## Profiling
 
