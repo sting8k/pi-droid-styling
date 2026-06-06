@@ -12,6 +12,9 @@ const themeSourcePath = join(workDir, "smoke-theme.json");
 const stubPath = join(workDir, "node-stubs.d.ts");
 const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
 let importCounter = 0;
+const PAGE_BG = "\x1b[48;2;1;2;3m";
+const CUSTOM_MESSAGE_BG = "\x1b[48;5;236m";
+
 
 function assert(condition, message) {
 	if (!condition) throw new Error(message);
@@ -23,6 +26,11 @@ function stripAnsi(text) {
 
 function resetCoreMessageBlockPatchFlag() {
 	delete globalThis.__droidCoreMessageBlocksPatched__;
+}
+
+function assertUsesPageBackground(lines, label) {
+	assert(lines.some((line) => line.includes(PAGE_BG)), `${label} should use common page background`);
+	assert(!lines.some((line) => line.includes(CUSTOM_MESSAGE_BG)), `${label} should not use brighter customMessageBg`);
 }
 
 function prepareWorkDir() {
@@ -134,7 +142,6 @@ async function runBoxedMessageBlockSmoke() {
 		title: "plan",
 		right: "(Ctrl+O to expand)",
 		body: () => [],
-
 		hasDivider: false,
 	});
 	const collapsedLines = collapsedBlock.render(60);
@@ -144,8 +151,8 @@ async function runBoxedMessageBlockSmoke() {
 	assert(collapsedStripped[0]?.startsWith("┌"), "collapsed block should start with top border");
 	assert(collapsedStripped[1]?.includes("➔ Skill | plan"), "collapsed block should have formatted title");
 	assert(collapsedStripped[1]?.includes("(Ctrl+O to expand)"), "collapsed block should have right hint");
-	assert(!collapsedLines.some((line) => line.includes("\x1b[48;5;236m")), "message block child should not apply background - parent Box handles it");
-	assert(!collapsedLines.some((line) => line.includes("\x1b[48;2;1;2;3m")), "message blocks should not use pageBg behind border lines");
+	assert(!collapsedLines.some((line) => line.includes(CUSTOM_MESSAGE_BG)), "message block child should not apply background - parent Box handles it");
+	assert(!collapsedLines.some((line) => line.includes(PAGE_BG)), "message block child should not apply pageBg - parent Box handles it");
 	assert(collapsedStripped[2]?.startsWith("└"), "collapsed block should end with bottom border");
 	console.log("boxed message block collapsed smoke ok");
 
@@ -154,7 +161,6 @@ async function runBoxedMessageBlockSmoke() {
 		kind: "Compaction",
 		title: "123,456 tokens",
 		body: (contentWidth) => ["Compacted summary line 1", "Compacted summary line 2"],
-
 		hasDivider: true,
 	});
 	const expandedLines = expandedBlock.render(60);
@@ -173,7 +179,6 @@ async function runBoxedMessageBlockSmoke() {
 	const noTitleBlock = renderBoxedMessageBlock(theme, {
 		kind: "Branch",
 		body: () => ["Branch summary content"],
-
 		hasDivider: true,
 	});
 	const noTitleLines = noTitleBlock.render(60);
@@ -203,6 +208,35 @@ async function runInstallerSmoke() {
 	console.log("installer missing-components smoke ok");
 }
 
+async function runBoxBackedComponentBackgroundSmoke() {
+	resetCoreMessageBlockPatchFlag();
+	const {
+		BranchSummaryMessageComponent,
+		CompactionSummaryMessageComponent,
+		SkillInvocationMessageComponent,
+	} = await import("@earendil-works/pi-coding-agent");
+	const { installCoreMessageBlockStyling, setCoreMessageBlockTheme } = await importBuilt("messages/core-message-blocks.js");
+	const theme = makeTheme();
+
+	setCoreMessageBlockTheme(theme);
+	installCoreMessageBlockStyling({
+		BranchSummaryMessageComponent,
+		CompactionSummaryMessageComponent,
+		SkillInvocationMessageComponent,
+	});
+
+	const components = [
+		["compaction", new CompactionSummaryMessageComponent({ tokensBefore: 123456, summary: "summary" }, undefined)],
+		["skill", new SkillInvocationMessageComponent({ name: "plan", content: "body" }, undefined)],
+		["branch", new BranchSummaryMessageComponent({ summary: "branch summary" }, undefined)],
+	];
+
+	for (const [label, component] of components) {
+		assertUsesPageBackground(component.render(60), label);
+	}
+	console.log("box-backed component background smoke ok");
+}
+
 async function runCustomMessageComponentSmoke() {
 	resetCoreMessageBlockPatchFlag();
 	const { CustomMessageComponent } = await import("@earendil-works/pi-coding-agent");
@@ -213,6 +247,7 @@ async function runCustomMessageComponentSmoke() {
 	installCoreMessageBlockStyling({ CustomMessageComponent });
 
 	const fallback = new CustomMessageComponent({ customType: "probe", content: "hello" }, undefined);
+	assertUsesPageBackground(fallback.render(60), "custom fallback");
 	const first = fallback.render(60).map(stripAnsi);
 	fallback.rebuild();
 	const second = fallback.render(60).map(stripAnsi);
@@ -252,7 +287,6 @@ async function runPatchedComponentSmoke() {
 			title: `${tokenStr} tokens`,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
-	
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
@@ -284,7 +318,6 @@ async function runPatchedComponentSmoke() {
 			title: skillName,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
-	
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
@@ -304,6 +337,7 @@ async function main() {
 	compileChangedSurface();
 	await runBoxedMessageBlockSmoke();
 	await runInstallerSmoke();
+	await runBoxBackedComponentBackgroundSmoke();
 	await runCustomMessageComponentSmoke();
 	await runPatchedComponentSmoke();
 	console.log("core-message-blocks smoke ok");

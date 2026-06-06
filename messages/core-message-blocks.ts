@@ -1,4 +1,6 @@
 import { Markdown } from "@earendil-works/pi-tui";
+import { setFullTheme } from "../theme/theme-extras.js";
+import { boxBg } from "../tool-tags/common.js";
 import { renderBoxedMessageBlock } from "./boxed-message-block.js";
 
 const PATCH_FLAG = "__droidCoreMessageBlocksPatched__";
@@ -7,6 +9,7 @@ let cachedTheme: any = null;
 
 export function setCoreMessageBlockTheme(theme: any): void {
 	cachedTheme = theme;
+	setFullTheme(theme);
 }
 
 type ComponentCtor = { prototype?: any };
@@ -25,6 +28,11 @@ export function installCoreMessageBlockStyling(ctors: {
 	patchSkill(ctors.SkillInvocationMessageComponent);
 	patchBranch(ctors.BranchSummaryMessageComponent);
 	patchCustomMessage(ctors.CustomMessageComponent);
+}
+
+function setMessageBlockBackground(component: any, theme: any): void {
+	if (typeof component?.setBgFn !== "function") return;
+	component.setBgFn((text: string) => boxBg(theme, text, "customMessageBg"));
 }
 
 function createMarkdownBody(text: string, markdownTheme: any, theme: any): (contentWidth: number) => string[] {
@@ -46,6 +54,7 @@ function patchCompaction(ctor?: ComponentCtor): void {
 		const tokensBefore = this.message.tokensBefore;
 		if (tokensBefore == null) return base.call(this);
 
+		setMessageBlockBackground(this, theme);
 		this.clear();
 
 		const expanded = Boolean(this.expanded);
@@ -64,7 +73,6 @@ function patchCompaction(ctor?: ComponentCtor): void {
 				title: `${tokenStr} tokens`,
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
-
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -86,6 +94,7 @@ function patchSkill(ctor?: ComponentCtor): void {
 		const skillName = this.skillBlock.name;
 		if (!skillName) return base.call(this);
 
+		setMessageBlockBackground(this, theme);
 		this.clear();
 
 		const expanded = Boolean(this.expanded);
@@ -102,7 +111,6 @@ function patchSkill(ctor?: ComponentCtor): void {
 				title: skillName,
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
-
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -121,6 +129,7 @@ function patchBranch(ctor?: ComponentCtor): void {
 		const theme = cachedTheme;
 		if (!theme) return base.call(this);
 
+		setMessageBlockBackground(this, theme);
 		this.clear();
 
 		const expanded = Boolean(this.expanded);
@@ -136,7 +145,6 @@ function patchBranch(ctor?: ComponentCtor): void {
 				kind: "Branch",
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
-
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -202,11 +210,18 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 				kind: "Custom",
 				title: customType,
 				body,
-
 				hasDivider: Boolean(text),
 			});
-			this.customComponent = block;
-			this.addChild(block);
+
+			if (this.box && typeof this.box.clear === "function" && typeof this.box.addChild === "function") {
+				setMessageBlockBackground(this.box, theme);
+				this.addChild(this.box);
+				this.box.clear();
+				this.box.addChild(block);
+			} else {
+				this.customComponent = block;
+				this.addChild(block);
+			}
 		} catch {
 			return base.call(this);
 		}
