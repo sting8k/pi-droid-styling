@@ -140,7 +140,7 @@ function patchBranch(ctor?: ComponentCtor): void {
 	const base = proto.updateDisplay;
 	proto.updateDisplay = function patchedBranchUpdateDisplay(this: any) {
 		const theme = cachedTheme;
-		if (!theme) return base.call(this);
+		if (!theme || this.message == null) return base.call(this);
 
 		setMessageBlockBackground(this, theme);
 		this.clear();

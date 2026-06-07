@@ -237,6 +237,43 @@ async function runBoxBackedComponentBackgroundSmoke() {
 	console.log("box-backed component background smoke ok");
 }
 
+async function runBranchNullGuardSmoke() {
+	resetCoreMessageBlockPatchFlag();
+	const { installCoreMessageBlockStyling, setCoreMessageBlockTheme } = await importBuilt("messages/core-message-blocks.js");
+	const theme = makeTheme();
+	let baseCalls = 0;
+
+	class BranchSummaryMessageComponent {
+		constructor() {
+			this.message = null;
+			this.children = ["native"];
+		}
+
+		updateDisplay() {
+			baseCalls += 1;
+			this.baseRendered = true;
+		}
+
+		clear() {
+			this.children = [];
+		}
+
+		addChild(component) {
+			this.children.push(component);
+		}
+	}
+
+	setCoreMessageBlockTheme(theme);
+	installCoreMessageBlockStyling({ BranchSummaryMessageComponent });
+
+	const branch = new BranchSummaryMessageComponent();
+	branch.updateDisplay();
+	assert(baseCalls === 1, `branch null message should call base updateDisplay, got ${baseCalls}`);
+	assert(branch.baseRendered === true, "branch null message should use native base display");
+	assert(branch.children.length === 1 && branch.children[0] === "native", "branch null message should not clear native children");
+	console.log("branch null message guard smoke ok");
+}
+
 async function runCustomMessageComponentSmoke() {
 	resetCoreMessageBlockPatchFlag();
 	const { CustomMessageComponent } = await import("@earendil-works/pi-coding-agent");
@@ -369,6 +406,7 @@ async function main() {
 	await runBoxedMessageBlockSmoke();
 	await runInstallerSmoke();
 	await runBoxBackedComponentBackgroundSmoke();
+	await runBranchNullGuardSmoke();
 	await runCustomMessageComponentSmoke();
 	await runPatchedComponentSmoke();
 	console.log("core-message-blocks smoke ok");
