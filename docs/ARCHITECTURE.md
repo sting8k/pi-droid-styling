@@ -25,7 +25,7 @@ editor/
   BoxEditor component and editor-specific rendering
 
 messages/
-  Assistant/user message prefix patches
+  Assistant/user message prefix patches and boxed Pi core special message block styling
 
 tool-tags/
   Tool call renderers, badges, elapsed metrics, and tool-output formatting
