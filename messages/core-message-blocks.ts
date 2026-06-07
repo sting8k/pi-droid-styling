@@ -73,6 +73,7 @@ function patchCompaction(ctor?: ComponentCtor): void {
 				title: `${tokenStr} tokens`,
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
+				icon: "⊟",
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -111,6 +112,7 @@ function patchSkill(ctor?: ComponentCtor): void {
 				title: skillName,
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
+				icon: "⊟",
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -145,6 +147,7 @@ function patchBranch(ctor?: ComponentCtor): void {
 				kind: "Branch",
 				right: expanded ? undefined : "(Ctrl+O to expand)",
 				body,
+				icon: "⊟",
 				hasDivider: expanded,
 			});
 			this.addChild(block);
@@ -210,6 +213,7 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 				kind: "Custom",
 				title: customType,
 				body,
+				icon: "⊟",
 				hasDivider: Boolean(text),
 			});
 

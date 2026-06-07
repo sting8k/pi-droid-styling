@@ -16,10 +16,11 @@ export type MessageBlockOptions = {
   right?: string;
   body: (contentWidth: number) => string[];
   hasDivider?: boolean;
+  icon?: string;
 };
 
-function formatMessageBlockTitle(theme: any, kind: string, title?: string): string {
-  const rawTitle = title ? `➔ ${kind} | ${title}` : `➔ ${kind}`;
+function formatMessageBlockTitle(theme: any, kind: string, title?: string, icon = "➔"): string {
+  const rawTitle = title ? `${icon} ${kind} | ${title}` : `${icon} ${kind}`;
   const bashPromptColor = getThemeExtra(theme, "bashPromptColor");
   const coloredTitle = bashPromptColor && isHexColor(bashPromptColor)
     ? fgHex(theme, bashPromptColor, rawTitle)
@@ -44,6 +45,7 @@ export function renderBoxedMessageBlock(
     title,
     right,
     body,
+    icon = "➔",
     hasDivider = true,
   } = options;
 
@@ -56,7 +58,7 @@ export function renderBoxedMessageBlock(
 
       const renderedWidth = boxWidth(width);
       const contentWidth = boxInnerWidth(renderedWidth);
-      const titleLine = formatMessageBlockTitle(theme, kind, title);
+      const titleLine = formatMessageBlockTitle(theme, kind, title, icon);
 
       const lines: string[] = [];
       lines.push(boxBorder(theme, "┌", "┐", renderedWidth));

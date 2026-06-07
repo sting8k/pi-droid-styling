@@ -251,8 +251,8 @@ async function runCustomMessageComponentSmoke() {
 	const first = fallback.render(60).map(stripAnsi);
 	fallback.rebuild();
 	const second = fallback.render(60).map(stripAnsi);
-	const firstCount = first.filter((line) => line.includes("➔ Custom | probe")).length;
-	const secondCount = second.filter((line) => line.includes("➔ Custom | probe")).length;
+	const firstCount = first.filter((line) => line.includes("⊟ Custom | probe")).length;
+	const secondCount = second.filter((line) => line.includes("⊟ Custom | probe")).length;
 	assert(firstCount === 1, `custom fallback should render one boxed block initially, got ${firstCount}`);
 	assert(secondCount === 1, `custom fallback should not duplicate after rebuild, got ${secondCount}`);
 	assert(second.length === first.length, `custom fallback rebuild should keep line count stable, before=${first.length} after=${second.length}`);
@@ -264,7 +264,7 @@ async function runCustomMessageComponentSmoke() {
 	rendered.rebuild();
 	const rerenderedLines = rendered.render(60).map(stripAnsi);
 	assert(rerenderedLines.some((line) => line.includes("custom renderer output")), "custom renderer output should be preserved");
-	assert(!rerenderedLines.some((line) => line.includes("➔ Custom | rendered")), "custom renderer output should not be wrapped by fallback box");
+	assert(!rerenderedLines.some((line) => line.includes("⊟ Custom | rendered")), "custom renderer output should not be wrapped by fallback box");
 	assert(rerenderedLines.length === renderedLines.length, "custom renderer rebuild should keep line count stable");
 	console.log("custom message renderer passthrough smoke ok");
 }
@@ -287,6 +287,7 @@ async function runPatchedComponentSmoke() {
 			title: `${tokenStr} tokens`,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
+			icon: "⊟",
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
@@ -318,13 +319,14 @@ async function runPatchedComponentSmoke() {
 			title: skillName,
 			right: expanded ? undefined : "(Ctrl+O to expand)",
 			body,
+			icon: "⊟",
 			hasDivider: expanded,
 		});
 		return block.render(80).map(stripAnsi);
 	}
 
 	const skillCollapsed = simulatePatchedSkill(false, "plan", "Plan content");
-	assert(skillCollapsed[1]?.includes("➔ Skill | plan"), "collapsed skill should show skill name in title");
+	assert(skillCollapsed[1]?.includes("⊟ Skill | plan"), "collapsed skill should show skill name in title");
 	console.log("patched skill collapsed smoke ok");
 
 	const skillExpanded = simulatePatchedSkill(true, "plan", "Plan content");
