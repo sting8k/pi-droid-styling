@@ -324,15 +324,21 @@ async function runCustomMessageComponentSmoke() {
 	assert(noBoxSecond.filter((line) => line.includes("⊟ Custom | nobox")).length === 1, "custom no-box fallback should not duplicate after rebuild");
 	console.log("custom message no-box fallback background smoke ok");
 
-	const customRendered = { render: () => ["custom renderer output"] };
+	let customRenderCount = 0;
+	const customRendered = { render: () => [`custom renderer output ${++customRenderCount}`] };
 	const rendered = new CustomMessageComponent({ customType: "rendered", content: "ignored" }, () => customRendered);
-	const renderedLines = rendered.render(60).map(stripAnsi);
+	const renderedOutput = rendered.render(60);
+	assertUsesPageBackground(renderedOutput, "custom renderer wrapped");
+	const renderedLines = renderedOutput.map(stripAnsi);
+	const refreshedLines = rendered.render(60).map(stripAnsi);
 	rendered.rebuild();
 	const rerenderedLines = rendered.render(60).map(stripAnsi);
-	assert(rerenderedLines.some((line) => line.includes("custom renderer output")), "custom renderer output should be preserved");
-	assert(!rerenderedLines.some((line) => line.includes("⊟ Custom | rendered")), "custom renderer output should not be wrapped by fallback box");
+	assert(renderedLines.some((line) => line.includes("custom renderer output 1")), "custom renderer output should be preserved");
+	assert(refreshedLines.some((line) => line.includes("custom renderer output 2")), "custom renderer should rerender at the same width");
+	assert(rerenderedLines.some((line) => line.includes("custom renderer output 3")), "custom renderer output should be preserved after rebuild");
+	assert(rerenderedLines.filter((line) => line.includes("⊟ Custom | rendered")).length === 1, "custom renderer output should be wrapped in one boxed block");
 	assert(rerenderedLines.length === renderedLines.length, "custom renderer rebuild should keep line count stable");
-	console.log("custom message renderer passthrough smoke ok");
+	console.log("custom message renderer wrapped smoke ok");
 }
 
 async function runPatchedComponentSmoke() {
