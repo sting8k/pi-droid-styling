@@ -33,6 +33,10 @@ function assertUsesPageBackground(lines, label) {
 	assert(!lines.some((line) => line.includes(CUSTOM_MESSAGE_BG)), `${label} should not use brighter customMessageBg`);
 }
 
+function hasInsetDividerLine(lines) {
+	return lines.some((line) => line.includes("│") && line.includes("─") && !line.includes("┌") && !line.includes("└"));
+}
+
 function prepareWorkDir() {
 	rmSync(workDir, { recursive: true, force: true });
 	mkdirSync(buildDir, { recursive: true });
@@ -324,6 +328,13 @@ async function runCustomMessageComponentSmoke() {
 	assert(noBoxSecond.filter((line) => line.includes("⊟ Custom | nobox")).length === 1, "custom no-box fallback should not duplicate after rebuild");
 	console.log("custom message no-box fallback background smoke ok");
 
+	const emptyRendered = new CustomMessageComponent({ customType: "empty-rendered", content: "ignored" }, () => ({ render: () => [] }));
+	const emptyRenderedOutput = emptyRendered.render(60);
+	assertUsesPageBackground(emptyRenderedOutput, "custom renderer empty wrapped");
+	const emptyRenderedLines = emptyRenderedOutput.map(stripAnsi);
+	assert(emptyRenderedLines.some((line) => line.includes("⊟ Custom | empty-rendered")), "empty custom renderer should still render the custom block title");
+	assert(!hasInsetDividerLine(emptyRenderedLines), "empty custom renderer should not show an orphan divider");
+
 	let customRenderCount = 0;
 	const customRendered = { render: () => [`custom renderer output ${++customRenderCount}`] };
 	const rendered = new CustomMessageComponent({ customType: "rendered", content: "ignored" }, () => customRendered);
@@ -333,6 +344,7 @@ async function runCustomMessageComponentSmoke() {
 	const refreshedLines = rendered.render(60).map(stripAnsi);
 	rendered.rebuild();
 	const rerenderedLines = rendered.render(60).map(stripAnsi);
+	assert(hasInsetDividerLine(renderedLines), "custom renderer with body should show divider");
 	assert(renderedLines.some((line) => line.includes("custom renderer output 1")), "custom renderer output should be preserved");
 	assert(refreshedLines.some((line) => line.includes("custom renderer output 2")), "custom renderer should rerender at the same width");
 	assert(rerenderedLines.some((line) => line.includes("custom renderer output 3")), "custom renderer output should be preserved after rebuild");

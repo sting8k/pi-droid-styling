@@ -208,7 +208,7 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 						title: customType,
 						body: (contentWidth) => component.render(contentWidth),
 						icon: "⊟",
-						hasDivider: true,
+						hasDivider: "auto",
 						cache: false,
 					});
 					attachCustomMessageBlock(this, theme, block);

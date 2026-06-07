@@ -13,7 +13,7 @@ export type MessageBlockOptions = {
   title?: string;
   right?: string;
   body: (contentWidth: number) => string[];
-  hasDivider?: boolean;
+  hasDivider?: boolean | "auto";
   icon?: string;
   cache?: boolean;
 };
@@ -66,11 +66,11 @@ export function renderBoxedMessageBlock(
         lines.push(boxLine(theme, titleLine, renderedWidth));
       }
 
-      if (hasDivider) {
+      const bodyLines = body(contentWidth);
+      const showDivider = hasDivider === "auto" ? bodyLines.length > 0 : hasDivider;
+      if (showDivider) {
         lines.push(boxInsetDivider(theme, renderedWidth));
       }
-
-      const bodyLines = body(contentWidth);
       for (const line of bodyLines) {
         lines.push(boxLine(theme, line, renderedWidth));
       }
