@@ -46,6 +46,18 @@ function withMessageBlockBackground(component: any, theme: any): any {
 	};
 }
 
+function attachCustomMessageBlock(instance: any, theme: any, block: any): void {
+	if (instance.box && typeof instance.box.clear === "function" && typeof instance.box.addChild === "function") {
+		setMessageBlockBackground(instance.box, theme);
+		instance.addChild(instance.box);
+		instance.box.clear();
+		instance.box.addChild(block);
+	} else {
+		instance.customComponent = withMessageBlockBackground(block, theme);
+		instance.addChild(instance.customComponent);
+	}
+}
+
 function createMarkdownBody(text: string, markdownTheme: any, theme: any): (contentWidth: number) => string[] {
 	const md = new Markdown(text || "", 0, 0, markdownTheme, {
 		color: (t: string) => theme.fg("customMessageText", t),
@@ -181,13 +193,25 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 		}
 		this.removeChild(this.box);
 
-		// Try custom renderer first - it handles its own styling
+		const theme = cachedTheme;
+		if (!theme) return base.call(this);
+
+		const customType = this.message?.customType || "Custom";
+
+		// Try custom renderer first, but keep the special block shell/background owned here.
 		if (this.customRenderer) {
 			try {
-				const component = this.customRenderer(this.message, { expanded: this._expanded }, cachedTheme);
-				if (component) {
-					this.customComponent = component;
-					this.addChild(component);
+				const component = this.customRenderer(this.message, { expanded: this._expanded }, theme);
+				if (component && typeof component.render === "function") {
+					const block = renderBoxedMessageBlock(theme, {
+						kind: "Custom",
+						title: customType,
+						body: (contentWidth) => component.render(contentWidth),
+						icon: "⊟",
+						hasDivider: "auto",
+						cache: false,
+					});
+					attachCustomMessageBlock(this, theme, block);
 					return;
 				}
 			} catch {
@@ -196,8 +220,6 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 		}
 
 		// Default rendering: use boxed message block
-		const theme = cachedTheme;
-		if (!theme) return base.call(this);
 
 		// Extract text content
 		let text: string;
@@ -212,7 +234,6 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 			text = "";
 		}
 
-		const customType = this.message.customType || "Custom";
 		const markdownTheme = this.markdownTheme;
 
 		const body = text && markdownTheme
@@ -228,15 +249,7 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 				hasDivider: Boolean(text),
 			});
 
-			if (this.box && typeof this.box.clear === "function" && typeof this.box.addChild === "function") {
-				setMessageBlockBackground(this.box, theme);
-				this.addChild(this.box);
-				this.box.clear();
-				this.box.addChild(block);
-			} else {
-				this.customComponent = withMessageBlockBackground(block, theme);
-				this.addChild(this.customComponent);
-			}
+			attachCustomMessageBlock(this, theme, block);
 		} catch {
 			return base.call(this);
 		}

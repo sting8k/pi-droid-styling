@@ -13,8 +13,9 @@ export type MessageBlockOptions = {
   title?: string;
   right?: string;
   body: (contentWidth: number) => string[];
-  hasDivider?: boolean;
+  hasDivider?: boolean | "auto";
   icon?: string;
+  cache?: boolean;
 };
 
 function formatMessageBlockTitle(theme: any, kind: string, title?: string, icon = "➔"): string {
@@ -42,14 +43,14 @@ export function renderBoxedMessageBlock(
     body,
     icon = "➔",
     hasDivider = true,
+    cache: shouldCache = true,
   } = options;
-
   let cache: { width: number; lines: string[] } | null = null;
 
   return {
     invalidate() { cache = null; },
     render(width: number): string[] {
-      if (cache?.width === width) return cache.lines;
+      if (shouldCache && cache?.width === width) return cache.lines;
 
       const renderedWidth = boxWidth(width);
       const contentWidth = boxInnerWidth(renderedWidth);
@@ -65,18 +66,18 @@ export function renderBoxedMessageBlock(
         lines.push(boxLine(theme, titleLine, renderedWidth));
       }
 
-      if (hasDivider) {
+      const bodyLines = body(contentWidth);
+      const showDivider = hasDivider === "auto" ? bodyLines.length > 0 : hasDivider;
+      if (showDivider) {
         lines.push(boxInsetDivider(theme, renderedWidth));
       }
-
-      const bodyLines = body(contentWidth);
       for (const line of bodyLines) {
         lines.push(boxLine(theme, line, renderedWidth));
       }
 
       lines.push(boxBorder(theme, "└", "┘", renderedWidth));
 
-      cache = { width, lines };
+      if (shouldCache) cache = { width, lines };
       return lines;
     },
   };
