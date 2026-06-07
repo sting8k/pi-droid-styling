@@ -258,6 +258,35 @@ async function runCustomMessageComponentSmoke() {
 	assert(second.length === first.length, `custom fallback rebuild should keep line count stable, before=${first.length} after=${second.length}`);
 	console.log("custom message fallback rebuild smoke ok");
 
+	resetCoreMessageBlockPatchFlag();
+	class NoBoxCustomMessageComponent {
+		constructor(message) {
+			this.message = message;
+			this.children = [];
+			this._expanded = false;
+			this.rebuild();
+		}
+		rebuild() {}
+		addChild(component) {
+			this.children.push(component);
+		}
+		removeChild(component) {
+			this.children = this.children.filter((child) => child !== component);
+		}
+		render(width) {
+			return this.children.flatMap((child) => child.render(width));
+		}
+	}
+	installCoreMessageBlockStyling({ CustomMessageComponent: NoBoxCustomMessageComponent });
+	const noBox = new NoBoxCustomMessageComponent({ customType: "nobox", content: "hello" });
+	assertUsesPageBackground(noBox.render(60), "custom no-box fallback");
+	const noBoxFirst = noBox.render(60).map(stripAnsi);
+	noBox.rebuild();
+	const noBoxSecond = noBox.render(60).map(stripAnsi);
+	assert(noBoxFirst.filter((line) => line.includes("⊟ Custom | nobox")).length === 1, "custom no-box fallback should render one boxed block initially");
+	assert(noBoxSecond.filter((line) => line.includes("⊟ Custom | nobox")).length === 1, "custom no-box fallback should not duplicate after rebuild");
+	console.log("custom message no-box fallback background smoke ok");
+
 	const customRendered = { render: () => ["custom renderer output"] };
 	const rendered = new CustomMessageComponent({ customType: "rendered", content: "ignored" }, () => customRendered);
 	const renderedLines = rendered.render(60).map(stripAnsi);

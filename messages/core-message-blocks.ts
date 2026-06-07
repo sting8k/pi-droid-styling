@@ -1,6 +1,6 @@
 import { Markdown } from "@earendil-works/pi-tui";
 import { setFullTheme } from "../theme/theme-extras.js";
-import { boxBg } from "../tool-tags/common.js";
+import { boxBg, boxBgLines } from "../tool-tags/common.js";
 import { renderBoxedMessageBlock } from "./boxed-message-block.js";
 
 const PATCH_FLAG = "__droidCoreMessageBlocksPatched__";
@@ -33,6 +33,17 @@ export function installCoreMessageBlockStyling(ctors: {
 function setMessageBlockBackground(component: any, theme: any): void {
 	if (typeof component?.setBgFn !== "function") return;
 	component.setBgFn((text: string) => boxBg(theme, text, "customMessageBg"));
+}
+
+function withMessageBlockBackground(component: any, theme: any): any {
+	return {
+		invalidate() {
+			if (typeof component?.invalidate === "function") component.invalidate();
+		},
+		render(width: number): string[] {
+			return boxBgLines(theme, component.render(width), "customMessageBg");
+		},
+	};
 }
 
 function createMarkdownBody(text: string, markdownTheme: any, theme: any): (contentWidth: number) => string[] {
@@ -223,8 +234,8 @@ function patchCustomMessage(ctor?: ComponentCtor): void {
 				this.box.clear();
 				this.box.addChild(block);
 			} else {
-				this.customComponent = block;
-				this.addChild(block);
+				this.customComponent = withMessageBlockBackground(block, theme);
+				this.addChild(this.customComponent);
 			}
 		} catch {
 			return base.call(this);

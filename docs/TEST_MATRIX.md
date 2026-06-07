@@ -28,6 +28,7 @@ This markdown file is a human-readable fallback for the initial brownfield basel
 | US-014 | `customWorkingMessage` defaults to an object of loader labels, migrates legacy booleans, backfills partial objects, and renders configured loader labels | yes | yes | no | pending | implemented | `npm run test:working-message`; `git diff --check`; `semantic_review` |
 | US-016 | Theme extras ending in `Color` resolve semantic theme tokens/aliases while non-color extras remain literal | yes | yes | no | no | implemented | `npm run test:theme-extras`; `npm run test:startup-resources`; `npm run test:working-message`; `git diff --check`; `semantic_review` |
 | US-017 | `userZoneStyle` defaults to `gemini` and can select `droid` or `gemini` presets without changing theme format, with Gemini status/input/footer and fixed-zone footer hint behavior | yes | yes | no | pending | implemented | `npm run test:user-zone-style`; `npm run test:working-message`; `npm run test:theme-extras`; `git diff --check`; `semantic_review` |
+| US-018 | Pi core special message blocks (Compaction, Skill, Branch, and Custom) render as boxed blocks with page-surface background, reload-safe patches, custom fallback deduplication, no-box fallback background, and distinct special titles | yes | yes | no | no | implemented | `npm run test:core-message-blocks`; `npm run test:user-zone-style`; `semantic_review working-tree` |
 
 ## Evidence Rules
 

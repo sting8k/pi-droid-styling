@@ -7,8 +7,6 @@ import {
   boxWidth,
   boxInnerWidth,
 } from "../tool-tags/common.js";
-import { fgHex, isHexColor } from "../theme/ansi.js";
-import { getThemeExtra } from "../theme/theme-extras.js";
 
 export type MessageBlockOptions = {
   kind: string;
@@ -21,10 +19,7 @@ export type MessageBlockOptions = {
 
 function formatMessageBlockTitle(theme: any, kind: string, title?: string, icon = "➔"): string {
   const rawTitle = title ? `${icon} ${kind} | ${title}` : `${icon} ${kind}`;
-  const bashPromptColor = getThemeExtra(theme, "bashPromptColor");
-  const coloredTitle = bashPromptColor && isHexColor(bashPromptColor)
-    ? fgHex(theme, bashPromptColor, rawTitle)
-    : theme.fg("bashMode", rawTitle);
+  const coloredTitle = theme.fg("accent", rawTitle);
   return typeof theme?.bold === "function" ? theme.bold(coloredTitle) : coloredTitle;
 }
 
