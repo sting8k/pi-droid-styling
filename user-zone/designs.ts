@@ -1,11 +1,11 @@
-export const USER_ZONE_STYLE_NAMES = ["droid", "gemini"] as const;
+export const USER_ZONE_STYLE_NAMES = ["droid", "gemini", "droid-cli"] as const;
 
 export type UserZoneStyleName = typeof USER_ZONE_STYLE_NAMES[number];
 
 type UserZoneStyleNameSet = Record<UserZoneStyleName, true>;
 
 export interface UserZoneEditorStyle {
-	layout: "droid" | "gemini";
+	layout: "droid" | "gemini" | "droid-cli";
 	panelPaddingX: number;
 	prompt: string;
 	promptColor: string;
@@ -24,7 +24,7 @@ export interface UserZoneEditorStyle {
 	showTrailingBlankLine: boolean;
 	slashBorderColor: string;
 	inputBackgroundColor: string;
-	inputFrame: "auto" | "none" | "halfblock" | "line";
+	inputFrame: "auto" | "none" | "halfblock" | "line" | "solid" | "outline";
 	footerLabelColor: string;
 	footerValueColor: string;
 }
@@ -50,6 +50,7 @@ export interface UserZoneStyle {
 const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
 	droid: true,
 	gemini: true,
+	"droid-cli": true,
 };
 
 export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "gemini";
@@ -127,6 +128,44 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			scrollHintPlacement: "lastLine",
 			showScrollbar: true,
 			scrollbarGlyph: "█",
+			scrollbarTrackColor: "borderMuted",
+			scrollbarThumbColor: "dim",
+			scrollbarThumbActiveColor: "muted",
+		},
+	},
+	"droid-cli": {
+		name: "droid-cli",
+		editor: {
+			layout: "droid-cli",
+			panelPaddingX: 0,
+			prompt: "›",
+			promptColor: "accent",
+			promptBold: true,
+			promptGap: 1,
+			showHostBorder: false,
+			hostBorderFill: "",
+			hostPrefixColor: "accent",
+			hostBorderColor: "borderMuted",
+			showMetadataRow: false,
+			showRuntimeRow: true,
+			showDivider: false,
+			dividerChar: "─",
+			dividerColor: "borderMuted",
+			dividerBold: false,
+			showTrailingBlankLine: false,
+			slashBorderColor: "borderMuted",
+			inputBackgroundColor: "selectedBg",
+			inputFrame: "outline",
+			footerLabelColor: "dim",
+			footerValueColor: "muted",
+		},
+		fixed: {
+			jumpTopHint: "^Alt T TOP",
+			jumpBottomHint: "^Alt G BOT",
+			scrollHintRightInset: 0,
+			scrollHintPlacement: "lastLine",
+			showScrollbar: true,
+			scrollbarGlyph: "▰",
 			scrollbarTrackColor: "borderMuted",
 			scrollbarThumbColor: "dim",
 			scrollbarThumbActiveColor: "muted",

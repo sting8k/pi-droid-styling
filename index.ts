@@ -315,6 +315,7 @@ export default function (pi: ExtensionAPI) {
 							? {
 								provider: model.provider,
 								id: model.id,
+								name: (model as any).name,
 								reasoning: model.reasoning,
 								thinkingLevel: currentThinkingLevel,
 							}

@@ -125,6 +125,7 @@ async function runConfigSmoke(name, initialJson, validate) {
 	mkdirSync(homeDir, { recursive: true });
 	writeInitialConfig(homeDir, initialJson);
 	process.env.HOME = homeDir;
+	process.env.USERPROFILE = homeDir;
 	const { loadConfig } = await importBuilt("config.js");
 	const config = loadConfig();
 	const raw = JSON.parse(readFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), "utf8"));
@@ -134,14 +135,18 @@ async function runConfigSmoke(name, initialJson, validate) {
 
 async function runStyleResolverSmoke() {
 	const styles = await importBuilt("user-zone/designs.js");
-	assert(styles.USER_ZONE_STYLE_NAMES.join(",") === "droid,gemini", "style names changed unexpectedly");
+	assert(styles.USER_ZONE_STYLE_NAMES.join(",") === "droid,gemini,droid-cli", "style names changed unexpectedly");
 	assert(styles.resolveUserZoneStyle("droid").editor.showHostBorder === true, "droid style did not preserve host border");
 	assert(styles.resolveUserZoneStyle("gemini").editor.layout === "gemini", "gemini style did not select gemini layout");
 	assert(styles.resolveUserZoneStyle("gemini").editor.prompt === "❯", "gemini style did not keep droid prompt icon");
 	assert(styles.resolveUserZoneStyle("gemini").editor.inputFrame === "auto", "gemini style should auto-select input framing");
+	assert(styles.resolveUserZoneStyle("droid-cli").editor.layout === "droid-cli", "droid-cli style did not select Droid CLI layout");
+	assert(styles.resolveUserZoneStyle("droid-cli").editor.prompt === "›", "droid-cli style did not use the Droid CLI prompt glyph");
+	assert(styles.resolveUserZoneStyle("droid-cli").editor.inputFrame === "outline", "droid-cli style should use outline input framing by default");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.showScrollbar === true, "gemini fixed-zone should keep scrollbar affordance");
 	assert(styles.resolveUserZoneStyle("droid").fixed.scrollHintRightInset === 2, "droid fixed-zone should preserve cursor hint inset");
 	assert(styles.resolveUserZoneStyle("gemini").fixed.scrollHintRightInset === 0, "gemini fixed-zone should not leave trailing hint inset");
+	assert(styles.resolveUserZoneStyle("droid-cli").fixed.scrollbarGlyph === "▰", "droid-cli fixed-zone should use Droid CLI-style scrollbar glyph");
 	assert(styles.resolveUserZoneStyle(undefined).name === "gemini", "missing style did not resolve to gemini default");
 	assert(styles.resolveUserZoneStyle("unknown").name === "droid", "unknown style did not resolve to droid fallback");
 	assert(styles.resolveUserZoneStyle("toString").name === "droid", "inherited object key did not resolve to droid");
@@ -183,10 +188,11 @@ async function runBoxEditorSmoke() {
 	const tui = { terminal: { rows: 32, columns: 100 }, requestRender() {} };
 	const keybindings = { matches: () => false };
 	const usage = () => ({ tokens: 12000, percent: 25, contextWindow: 48000 });
-	const model = () => ({ provider: "openai", id: "gpt-test", reasoning: true, thinkingLevel: "high" });
+	const model = () => ({ provider: "openai", id: "gpt-test", name: "Deepseek V4 Flash", reasoning: true, thinkingLevel: "high" });
 	const branch = () => ({ branch: "main", insertions: 2, deletions: 1 });
 	const speed = () => 42;
 	const footer = () => "ready";
+	const droidCliFooter = () => "MCP ✓";
 
 	const renderStyle = (styleName, raw = false, width = 88, footerProvider = footer, options = {}) => {
 		const previousNoColor = process.env.NO_COLOR;
@@ -209,7 +215,7 @@ async function runBoxEditorSmoke() {
 				resolveUserZoneStyle(styleName),
 				options.inputBoxStyle,
 			);
-			editor.setText("hello");
+			editor.setText(options.text ?? "hello");
 			const rendered = editor.render(width);
 			return raw ? rendered : rendered.map(stripAnsi);
 		} finally {
@@ -221,17 +227,36 @@ async function runBoxEditorSmoke() {
 	const droid = renderStyle("droid");
 	const gemini = renderStyle("gemini");
 	const rawGemini = renderStyle("gemini", true);
+	const droidCli = renderStyle("droid-cli", false, 88, droidCliFooter);
+	const rawDroidCli = renderStyle("droid-cli", true, 88, droidCliFooter);
+	const droidCliLineOverride = renderStyle("droid-cli", false, 88, droidCliFooter, { inputBoxStyle: "line" });
+	const emptyDroidCli = renderStyle("droid-cli", false, 88, droidCliFooter, { text: "" });
 	const narrowGemini = renderStyle("gemini", false, 34, () => "very long status message for narrow terminal");
 	const noColorGemini = renderStyle("gemini", false, 88, footer, { noColor: true });
 	const rawNoColorGemini = renderStyle("gemini", true, 88, footer, { noColor: true });
 	const geminiLine = renderStyle("gemini", false, 88, footer, { inputBoxStyle: "line" });
 	const rawGeminiLine = renderStyle("gemini", true, 88, footer, { inputBoxStyle: "line" });
+	const geminiSolid = renderStyle("gemini", false, 88, footer, { inputBoxStyle: "solid" });
+	const rawGeminiSolid = renderStyle("gemini", true, 88, footer, { inputBoxStyle: "solid" });
 	const droidLine = renderStyle("droid", false, 88, footer, { inputBoxStyle: "line" });
 	const droidHalfblock = renderStyle("droid", false, 88, footer, { inputBoxStyle: "halfblock" });
 	assert(droid.length === 6, `droid should preserve 6-row editor shell, got ${droid.length}`);
 	assert(droid.some((line) => line.includes("== [")), "droid host border missing");
 	assert(droid.some((line) => line.includes("[stat]")), "droid stat label missing");
 	assert(gemini.length === 6, `gemini should render divider/status/padded-input/footer shell, got ${gemini.length}`);
+	assert(droidCli.length === 4, `droid-cli should render outlined input plus one split status row, got ${droidCli.length}`);
+	assert(!droidCli.some((line) => line.includes("Auto (Off)")), "droid-cli should not render approval status copy");
+	assert(droidCli[0]?.startsWith("┌") && droidCli[0]?.endsWith("┐"), "droid-cli input should render a full-width outline top border without side padding");
+	assert(droidCli[0]?.length === 88 && droidCli[1]?.length === 88 && droidCli[2]?.length === 88, "droid-cli outline should use the full container width");
+	assert(rawDroidCli[0]?.includes("\x1b[90m") && !rawDroidCli[0]?.includes("\x1b[32m"), "droid-cli outline border should use muted border color instead of primary accent");
+	assert(droidCli[1]?.startsWith("│") && droidCli[1]?.endsWith("│") && droidCli[1]?.includes("›") && droidCli[1]?.includes("hello"), "droid-cli input row should render prompt and text inside full-width outline borders");
+	assert(droidCli[2]?.startsWith("└") && droidCli[2]?.endsWith("┘"), "droid-cli input should render a full-width outline bottom border without side padding");
+	assert(droidCli[3]?.includes("Model: Deepseek V4 Flash") && droidCli[3]?.includes("Ctx: 12k/48k") && droidCli[3]?.includes("🌿 main") && droidCli[3]?.includes("📁 pi-droid-style-smoke"), "droid-cli status row should show dynamic model/context-window/branch/project on the left");
+	assert(droidCli[3]?.includes("MCP ✓") && !droidCli[3]?.includes("⏱") && !droidCli[3]?.includes("? for help"), "droid-cli status row should show footer status on the right without elapsed/help chrome");
+	assert((droidCli[3]?.indexOf("📁 pi-droid-style-smoke") ?? 0) < (droidCli[3]?.indexOf("MCP ✓") ?? 0), "droid-cli status row should split metadata left and MCP status right");
+	assert(!droidCli.some((line) => line.includes("gpt-test (High)") || line.includes("Tokens:")), "droid-cli should not render legacy header or token label in the prompt dock");
+	assert(droidCliLineOverride[0]?.includes("┌") && droidCliLineOverride[1]?.includes("│") && droidCliLineOverride[2]?.includes("└"), "droid-cli should keep a true outline box even when inputBox.style is line");
+	assert(emptyDroidCli[1]?.includes("Type a prompt or / for commands"), "droid-cli empty input should render the placeholder text");
 	assert(gemini[0]?.replace(/─/g, "").trim() === "", "gemini divider should always be visible");
 	assert(rawGemini[0]?.includes("\x1b[34m") && rawGemini[0]?.includes("\x1b[1m"), "gemini divider should use bold tool-box border color");
 	assert(gemini[1]?.includes("main"), "gemini status row should put branch on the right");
@@ -257,6 +282,11 @@ async function runBoxEditorSmoke() {
 	assert(geminiLine[2]?.includes("─") && geminiLine[2]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render top line border");
 	assert(geminiLine[4]?.includes("─") && geminiLine[4]?.replace(/─/g, "").trim() === "", "explicit gemini line input style should render bottom line border");
 	assert(!rawGeminiLine[3]?.includes(INPUT_BACKGROUND_ANSI), "explicit gemini line input row should not use selected input background");
+	assert(geminiSolid.length === gemini.length - 1, `explicit gemini solid input style should remove the top padding row, got ${geminiSolid.length}`);
+	assert(geminiSolid[2]?.includes("❯") && geminiSolid[2]?.includes("hello"), "explicit gemini solid input style should put the input row directly under the status row");
+	assert(!geminiSolid[3]?.includes("▄") && !geminiSolid[3]?.includes("▀") && !geminiSolid[3]?.includes("─") && geminiSolid[3]?.trim() === "", "explicit gemini solid input style should render bottom full-background padding without glyph seams");
+	assert(rawGeminiSolid[2]?.includes(INPUT_BACKGROUND_ANSI), "explicit gemini solid input row should use selected input background");
+	assert(rawGeminiSolid[3]?.includes(INPUT_BACKGROUND_ANSI), "explicit gemini solid bottom padding should use selected input background");
 	assert(droidLine.length === droid.length, `explicit droid line input style should keep default row count, got ${droidLine.length}`);
 	assert(JSON.stringify(droidLine) === JSON.stringify(droid), "explicit droid line input style should keep the native droid input presentation");
 	assert(droidHalfblock.length === 8, `explicit droid halfblock input style should add two frame rows, got ${droidHalfblock.length}`);
@@ -491,6 +521,11 @@ await runConfigSmoke("scaffold default style", undefined, ({ config, raw }) => {
 await runConfigSmoke("valid style preserved", '{"userZoneStyle":"gemini"}', ({ config, raw }) => {
 	assert(raw.userZoneStyle === "gemini", "valid userZoneStyle was not preserved");
 	assert(config.userZoneStyle === "gemini", "valid userZoneStyle did not normalize");
+});
+
+await runConfigSmoke("droid-cli style preserved", '{"userZoneStyle":"droid-cli"}', ({ config, raw }) => {
+	assert(raw.userZoneStyle === "droid-cli", "droid-cli userZoneStyle was not preserved");
+	assert(config.userZoneStyle === "droid-cli", "droid-cli userZoneStyle did not normalize");
 });
 
 await runConfigSmoke("unknown string style preserved on disk", '{"userZoneStyle":"ghost"}', ({ config, raw }) => {

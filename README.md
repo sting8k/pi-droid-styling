@@ -56,8 +56,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | --- | --- | --- | --- |
 | `alwaysExpanded` | `bool` | `false` | Initial tool-output expansion state. Pi core `Ctrl+O` stays authoritative after that. |
 | `customWorkingMessage` | `object` | `{"working":"Working", ...}` | Custom labels for the working/thinking/answering/running loader. Accepts partial objects; legacy `true`/`false` auto-normalizes. |
-| `userZoneStyle` | `"gemini"` \| `"droid"` | `"gemini"` | Input-zone preset. `gemini` = compact header/divider/status/halfblock-input/footer layout. `droid` = boxed legacy layout. |
-| `inputBox.style` | `"auto"` \| `"halfblock"` \| `"line"` | `"auto"` | Input-frame override. `auto` = preset default (gemini uses halfblock, droid uses line). |
+| `userZoneStyle` | `"gemini"` \| `"droid"` \| `"droid-cli"` | `"gemini"` | Input-zone preset. `gemini` = compact header/divider/status/halfblock-input/footer layout. `droid` = boxed legacy layout. `droid-cli` = opt-in Droid CLI-style bottom dock with a true outlined `›` prompt box, placeholder, model/context/branch/project status on the left, and MCP/footer status on the right. |
+| `inputBox.style` | `"auto"` \| `"halfblock"` \| `"line"` \| `"solid"` | `"auto"` | Input-frame override. `auto` = preset default (gemini uses halfblock, droid uses line). `solid` uses selected-background input plus a bottom padding row without half-block glyphs for terminals with `▀`/`▄` seams. `droid-cli` intentionally keeps its outline box even if this is set to `line`. |
 | `fixedUserZone` | `bool` | `false` | When enabled, status/widgets/editor/footer stay fixed at the bottom while chat/feed scrolls above. |
 | `forceOSC11` | `bool` | `false` | Enable OSC 11 terminal background sync on Windows/WSL (off by default).
 

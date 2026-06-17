@@ -79,6 +79,7 @@ async function runConfigSmoke(name, initialJson, validate) {
 	mkdirSync(homeDir, { recursive: true });
 	writeInitialConfig(homeDir, initialJson);
 	process.env.HOME = homeDir;
+	process.env.USERPROFILE = homeDir;
 	const { loadConfig } = await importBuilt("config.js");
 	const config = loadConfig();
 	const raw = JSON.parse(readFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), "utf8"));
@@ -146,6 +147,11 @@ await runConfigSmoke("inputBox.style custom halfblock", '{"inputBox":{"style":"h
 await runConfigSmoke("inputBox.style custom line", '{"inputBox":{"style":"line"}}', ({ config, raw }) => {
 	assert(raw.inputBox?.style === "line", "custom line style was not preserved");
 	assert(config.inputBox.style === "line", "custom line style did not normalize");
+});
+
+await runConfigSmoke("inputBox.style custom solid", '{"inputBox":{"style":"solid"}}', ({ config, raw }) => {
+	assert(raw.inputBox?.style === "solid", "custom solid style was not preserved");
+	assert(config.inputBox.style === "solid", "custom solid style did not normalize");
 });
 
 await runConfigSmoke("inputBox.style invalid fallback", '{"inputBox":{"style":"invalid"}}', ({ config, raw }) => {
