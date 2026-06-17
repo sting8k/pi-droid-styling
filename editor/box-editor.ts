@@ -792,7 +792,9 @@ export class BoxEditor extends CustomEditor {
 		const autocompleteLines = bottomBorderIndex >= 0 ? parentLines.slice(bottomBorderIndex + 1) : [];
 		const displayLines = this.renderInputContentLines(text, contentWidth);
 		if (editorStyle.layout === "droid-cli" && text.length === 0 && displayLines[0] !== undefined) {
-			displayLines[0] = `${displayLines[0]}${this.tone("dim", " Type a prompt or / for commands")}`;
+			const placeholder = this.tone("dim", " Type a prompt or / for commands");
+			const available = Math.max(0, contentWidth - safeVisibleWidth(displayLines[0]));
+			displayLines[0] = `${displayLines[0]}${safeVisibleWidth(placeholder) > available ? safeTruncateToWidth(placeholder, available, "") : placeholder}`;
 		}
 
 		const inputLines = displayLines.map((line, index) => {
