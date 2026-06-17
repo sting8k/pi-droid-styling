@@ -228,7 +228,7 @@ async function runBoxEditorSmoke() {
 	const gemini = renderStyle("gemini");
 	const rawGemini = renderStyle("gemini", true);
 	const droidCli = renderStyle("droid-cli", false, 88, droidCliFooter);
-	const rawDroidCli = renderStyle("droid-cli", true, 88, droidCliFooter);
+		const rawDroidCli = renderStyle("droid-cli", true, 88, droidCliFooter);
 	const droidCliLineOverride = renderStyle("droid-cli", false, 88, droidCliFooter, { inputBoxStyle: "line" });
 	const emptyDroidCli = renderStyle("droid-cli", false, 88, droidCliFooter, { text: "" });
 	const narrowGemini = renderStyle("gemini", false, 34, () => "very long status message for narrow terminal");
@@ -251,7 +251,7 @@ async function runBoxEditorSmoke() {
 	assert(rawDroidCli[0]?.includes("\x1b[90m") && !rawDroidCli[0]?.includes("\x1b[32m"), "droid-cli outline border should use muted border color instead of primary accent");
 	assert(droidCli[1]?.startsWith("│") && droidCli[1]?.endsWith("│") && droidCli[1]?.includes("›") && droidCli[1]?.includes("hello"), "droid-cli input row should render prompt and text inside full-width outline borders");
 	assert(droidCli[2]?.startsWith("└") && droidCli[2]?.endsWith("┘"), "droid-cli input should render a full-width outline bottom border without side padding");
-	assert(droidCli[3]?.includes("Model: Deepseek V4 Flash") && droidCli[3]?.includes("Ctx: 12k/48k") && droidCli[3]?.includes("🌿 main") && droidCli[3]?.includes("📁 pi-droid-style-smoke"), "droid-cli status row should show dynamic model/context-window/branch/project on the left");
+	assert(droidCli[3]?.includes("Model: Deepseek V4 Flash - high") && droidCli[3]?.includes("Ctx: 12k/48k") && droidCli[3]?.includes("🌿 main") && droidCli[3]?.includes("📁 pi-droid"), "droid-cli status row should show dynamic model with thinking level/context-window/branch/project on the left");
 	assert(droidCli[3]?.includes("MCP ✓") && !droidCli[3]?.includes("⏱") && !droidCli[3]?.includes("? for help"), "droid-cli status row should show footer status on the right without elapsed/help chrome");
 	assert((droidCli[3]?.indexOf("📁 pi-droid-style-smoke") ?? 0) < (droidCli[3]?.indexOf("MCP ✓") ?? 0), "droid-cli status row should split metadata left and MCP status right");
 	assert(!droidCli.some((line) => line.includes("gpt-test (High)") || line.includes("Tokens:")), "droid-cli should not render legacy header or token label in the prompt dock");

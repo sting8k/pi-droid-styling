@@ -648,7 +648,14 @@ export class BoxEditor extends CustomEditor {
 		const info = this.getModelInfo?.();
 		const displayName = String(info?.name || info?.id || "").trim();
 		if (!displayName) return null;
-		return { plain: displayName, rendered: this.tone("accent", displayName) };
+		const level = info?.reasoning && typeof info?.thinkingLevel === "string" && info.thinkingLevel.trim().length > 0
+			? info.thinkingLevel.trim()
+			: "";
+		const levelLabel = level ? ` - ${level}` : "";
+		return {
+			plain: `${displayName}${levelLabel}`,
+			rendered: `${this.tone("accent", displayName)}${levelLabel ? this.tone("muted", levelLabel) : ""}`,
+		};
 	}
 
 	private formatDroidCliFooterStatus(): { plain: string; rendered: string } | null {
