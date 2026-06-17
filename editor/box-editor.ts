@@ -651,10 +651,10 @@ export class BoxEditor extends CustomEditor {
 		const level = info?.reasoning && typeof info?.thinkingLevel === "string" && info.thinkingLevel.trim().length > 0
 			? info.thinkingLevel.trim()
 			: "";
-		const levelLabel = level ? ` - ${level}` : "";
+		const levelLabel = level ? ` · ${level}` : "";
 		return {
 			plain: `${displayName}${levelLabel}`,
-			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("dim", " - ")}${this.tone("accent", level)}` : ""}`,
+			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("muted", " · ")}${this.tone("accent", level)}` : ""}`,
 		};
 	}
 
