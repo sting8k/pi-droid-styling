@@ -654,7 +654,7 @@ export class BoxEditor extends CustomEditor {
 		const levelLabel = level ? ` - ${level}` : "";
 		return {
 			plain: `${displayName}${levelLabel}`,
-			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("dim", " - ")}${this.tone("thinkingText", level)}` : ""}`,
+			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("dim", " - ")}${this.tone("accent", level)}` : ""}`,
 		};
 	}
 
