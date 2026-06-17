@@ -654,7 +654,7 @@ export class BoxEditor extends CustomEditor {
 		const levelLabel = level ? ` - ${level}` : "";
 		return {
 			plain: `${displayName}${levelLabel}`,
-			rendered: `${this.tone("accent", displayName)}${levelLabel ? this.tone("muted", levelLabel) : ""}`,
+			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("dim", " - ")}${this.tone("thinkingText", level)}` : ""}`,
 		};
 	}
 
@@ -788,7 +788,7 @@ export class BoxEditor extends CustomEditor {
 			: this.themeExtraColor("bashPromptColor", editorStyle.promptColor);
 		const promptText = this.styleFg(promptColor, editorStyle.prompt);
 		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
-		const promptPrefix = `${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
+		const promptPrefix = `${editorStyle.layout === "droid-cli" ? " " : ""}${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
 		const prefixWidth = safeVisibleWidth(promptPrefix);
 		const inputInnerWidth = Math.max(1, contentInnerWidth - (editorStyle.layout === "droid-cli" ? 2 : 0));
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
