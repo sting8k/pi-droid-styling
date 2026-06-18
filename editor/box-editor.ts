@@ -599,7 +599,7 @@ export class BoxEditor extends CustomEditor {
 			? this.inputBoxStyle
 			: presetFrame;
 
-		if (this.userZoneStyle.name === "droid-cli") return "outline";
+		if (this.userZoneStyle.name === "cli-dock") return "outline";
 		if (frame === "line" && this.userZoneStyle.name === "droid") return "none";
 		if (frame === "line" || frame === "halfblock" || frame === "none" || frame === "solid" || frame === "outline") return frame;
 		return process.env.NO_COLOR ? "line" : "halfblock";
@@ -619,7 +619,7 @@ export class BoxEditor extends CustomEditor {
 		}
 		if (inputFrame === "none") return inputLines;
 		if (inputFrame === "outline") {
-			const borderColor = this.userZoneStyle.name === "droid-cli"
+			const borderColor = this.userZoneStyle.name === "cli-dock"
 				? (style.slashBorderColor || style.dividerColor)
 				: this.themeExtraColor("inputBorderColor", style.slashBorderColor || style.dividerColor);
 			const border = (value: string) => this.styleFg(borderColor, value);
@@ -644,7 +644,7 @@ export class BoxEditor extends CustomEditor {
 		return [topPadding, ...inputRows, bottomPadding];
 	}
 
-	private formatDroidCliModelBadge(): { plain: string; rendered: string } | null {
+	private formatCliDockModelBadge(): { plain: string; rendered: string } | null {
 		const info = this.getModelInfo?.();
 		const displayName = String(info?.name || info?.id || "").trim();
 		if (!displayName) return null;
@@ -658,21 +658,21 @@ export class BoxEditor extends CustomEditor {
 		};
 	}
 
-	private formatDroidCliFooterStatus(): { plain: string; rendered: string } | null {
+	private formatCliDockFooterStatus(): { plain: string; rendered: string } | null {
 		const plain = normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
 		if (!plain) return null;
 		const rendered = plain.split(/(✓)/g).map((part) => part === "✓" ? this.tone("success", part) : this.tone("muted", part)).join("");
 		return { plain, rendered };
 	}
 
-	private formatDroidCliProjectName(): string {
+	private formatCliDockProjectName(): string {
 		const normalized = (this.sessionCwd || process.cwd()).replace(/\\/g, "/").replace(/\/+$/, "");
 		return normalized.split("/").filter(Boolean).pop() || ".";
 	}
 
-	private renderDroidCliStatusLine(width: number): string {
+	private renderCliDockStatusLine(width: number): string {
 		const parts: Array<{ plain: string; rendered: string }> = [];
-		const model = this.formatDroidCliModelBadge();
+		const model = this.formatCliDockModelBadge();
 		if (model) {
 			parts.push({
 				plain: `Model: ${model.plain}`,
@@ -692,12 +692,12 @@ export class BoxEditor extends CustomEditor {
 			parts.push({ plain: `🌿 ${branch.branch}`, rendered: this.tone("success", `🌿 ${branch.branch}`) });
 		}
 
-		const project = this.formatDroidCliProjectName();
+		const project = this.formatCliDockProjectName();
 		parts.push({ plain: `📁 ${project}`, rendered: this.tone("mdLinkUrl", `📁 ${project}`) });
 
 		const separator = ` ${this.tone("dim", "|")} `;
 		const rendered = parts.map((part) => part.rendered).join(separator);
-		const status = this.formatDroidCliFooterStatus();
+		const status = this.formatCliDockFooterStatus();
 		if (!status) return safeVisibleWidth(rendered) > width ? safeTruncateToWidth(rendered, width, "…") : this.pad(rendered, width);
 		return this.renderSplitRow(rendered, status.rendered, status.plain, width);
 	}
@@ -772,10 +772,10 @@ export class BoxEditor extends CustomEditor {
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
-	private renderDroidCliLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
+	private renderCliDockLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
 		const lines: string[] = [];
 		lines.push(...this.renderInputBoxFrame(inputLines, contentInnerWidth).map((line) => this.renderPanelLine(line, width)));
-		lines.push(this.renderPanelLine(this.renderDroidCliStatusLine(contentInnerWidth), width));
+		lines.push(this.renderPanelLine(this.renderCliDockStatusLine(contentInnerWidth), width));
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
@@ -783,14 +783,14 @@ export class BoxEditor extends CustomEditor {
 		const editorStyle = this.userZoneStyle.editor;
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const promptColor = editorStyle.layout === "droid-cli"
+		const promptColor = editorStyle.layout === "cli-dock"
 			? editorStyle.promptColor
 			: this.themeExtraColor("bashPromptColor", editorStyle.promptColor);
 		const promptText = this.styleFg(promptColor, editorStyle.prompt);
 		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
-		const promptPrefix = `${editorStyle.layout === "droid-cli" ? " " : ""}${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
+		const promptPrefix = `${editorStyle.layout === "cli-dock" ? " " : ""}${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
 		const prefixWidth = safeVisibleWidth(promptPrefix);
-		const inputInnerWidth = Math.max(1, contentInnerWidth - (editorStyle.layout === "droid-cli" ? 2 : 0));
+		const inputInnerWidth = Math.max(1, contentInnerWidth - (editorStyle.layout === "cli-dock" ? 2 : 0));
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
 		const parentLines = super.render(contentWidth);
 		if (parentLines.length === 0) return parentLines;
@@ -798,7 +798,7 @@ export class BoxEditor extends CustomEditor {
 		const bottomBorderIndex = findLastBorderIndex(parentLines);
 		const autocompleteLines = bottomBorderIndex >= 0 ? parentLines.slice(bottomBorderIndex + 1) : [];
 		const displayLines = this.renderInputContentLines(text, contentWidth);
-		if (editorStyle.layout === "droid-cli" && text.length === 0 && displayLines[0] !== undefined) {
+		if (editorStyle.layout === "cli-dock" && text.length === 0 && displayLines[0] !== undefined) {
 			const placeholder = this.tone("dim", " Type a prompt or / for commands");
 			const available = Math.max(0, contentWidth - safeVisibleWidth(displayLines[0]));
 			displayLines[0] = `${displayLines[0]}${safeVisibleWidth(placeholder) > available ? safeTruncateToWidth(placeholder, available, "") : placeholder}`;
@@ -808,11 +808,11 @@ export class BoxEditor extends CustomEditor {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const available = Math.max(1, inputInnerWidth - safeVisibleWidth(prefix));
 			const row = `${prefix}${this.pad(line, available)}`;
-			return editorStyle.layout === "droid-cli" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
+			return editorStyle.layout === "cli-dock" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
 		});
 
 		const layoutRenderers: Record<string, (inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number) => string[]> = {
-			"droid-cli": (il, al, w, ciw) => this.renderDroidCliLayout(il, al, w, ciw),
+			"cli-dock": (il, al, w, ciw) => this.renderCliDockLayout(il, al, w, ciw),
 			"gemini": (il, al, w, ciw) => this.renderGeminiLayout(il, al, w, ciw),
 			"droid": (il, al, w, ciw) => this.renderDroidLayout(il, al, w, ciw),
 		};

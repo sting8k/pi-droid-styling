@@ -1,11 +1,11 @@
-export const USER_ZONE_STYLE_NAMES = ["droid", "gemini", "droid-cli"] as const;
+export const USER_ZONE_STYLE_NAMES = ["droid", "gemini", "cli-dock"] as const;
 
 export type UserZoneStyleName = typeof USER_ZONE_STYLE_NAMES[number];
 
 type UserZoneStyleNameSet = Record<UserZoneStyleName, true>;
 
 export interface UserZoneEditorStyle {
-	layout: "droid" | "gemini" | "droid-cli";
+	layout: "droid" | "gemini" | "cli-dock";
 	panelPaddingX: number;
 	prompt: string;
 	promptColor: string;
@@ -50,7 +50,7 @@ export interface UserZoneStyle {
 const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
 	droid: true,
 	gemini: true,
-	"droid-cli": true,
+	"cli-dock": true,
 };
 
 export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "gemini";
@@ -133,10 +133,10 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			scrollbarThumbActiveColor: "muted",
 		},
 	},
-	"droid-cli": {
-		name: "droid-cli",
+	"cli-dock": {
+		name: "cli-dock",
 		editor: {
-			layout: "droid-cli",
+			layout: "cli-dock",
 			panelPaddingX: 0,
 			prompt: "›",
 			promptColor: "accent",
