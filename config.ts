@@ -5,7 +5,7 @@ import { DEFAULT_USER_ZONE_STYLE, FALLBACK_USER_ZONE_STYLE, isUserZoneStyleName,
 
 export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
 
-export type InputBoxStyle = "auto" | "halfblock" | "line";
+export type InputBoxStyle = "auto" | "halfblock" | "line" | "solid";
 
 export interface InputBoxConfig {
 	style: InputBoxStyle;
@@ -87,7 +87,7 @@ function customWorkingMessageOrDefault(value: unknown): CustomWorkingMessageConf
 }
 
 function isInputBoxStyle(value: unknown): value is InputBoxStyle {
-	return value === "auto" || value === "halfblock" || value === "line";
+	return value === "auto" || value === "halfblock" || value === "line" || value === "solid";
 }
 
 function inputBoxOrDefault(value: unknown): InputBoxConfig {

@@ -6,6 +6,7 @@ import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
+import type { InputBoxStyle } from "../config.js";
 
 type SlashAutocompleteItem = {
 	value?: string;
@@ -31,12 +32,12 @@ type ContextUsageProvider = () =>
 type ModelInfoProvider = () => {
 	provider?: string;
 	id?: string;
+	name?: string;
 	reasoning?: boolean;
 	thinkingLevel?: string;
 } | undefined;
 
-type InputBoxStyleOverride = "auto" | "halfblock" | "line";
-type ResolvedInputFrame = "none" | "halfblock" | "line";
+type ResolvedInputFrame = "none" | "halfblock" | "line" | "solid" | "outline";
 
 type BranchInfo = {
 	branch: string;
@@ -141,7 +142,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getFooterStatus?: FooterStatusProvider,
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
-		private readonly inputBoxStyle?: InputBoxStyleOverride,
+		private readonly inputBoxStyle?: InputBoxStyle,
 	) {
 		super(tui, theme, kb);
 	}
@@ -598,8 +599,9 @@ export class BoxEditor extends CustomEditor {
 			? this.inputBoxStyle
 			: presetFrame;
 
+		if (this.userZoneStyle.name === "cli-dock") return "outline";
 		if (frame === "line" && this.userZoneStyle.name === "droid") return "none";
-		if (frame === "line" || frame === "halfblock" || frame === "none") return frame;
+		if (frame === "line" || frame === "halfblock" || frame === "none" || frame === "solid" || frame === "outline") return frame;
 		return process.env.NO_COLOR ? "line" : "halfblock";
 	}
 
@@ -616,12 +618,88 @@ export class BoxEditor extends CustomEditor {
 			return [border, ...inputLines.map((line) => this.pad(line, width)), border];
 		}
 		if (inputFrame === "none") return inputLines;
+		if (inputFrame === "outline") {
+			const borderColor = this.userZoneStyle.name === "cli-dock"
+				? (style.slashBorderColor || style.dividerColor)
+				: this.themeExtraColor("inputBorderColor", style.slashBorderColor || style.dividerColor);
+			const border = (value: string) => this.styleFg(borderColor, value);
+			const innerWidth = Math.max(1, width - 2);
+			if (width <= 2) return inputLines.map((line) => this.pad(line, width));
+			return [
+				border(`┌${"─".repeat(innerWidth)}┐`),
+				...inputLines.map((line) => `${border("│")}${this.pad(line, innerWidth)}${border("│")}`),
+				border(`└${"─".repeat(innerWidth)}┘`),
+			];
+		}
 
 		const renderLine = (line: string) => this.bg(style.inputBackgroundColor, this.pad(line, width));
 		const inputRows = inputLines.map(renderLine);
+		if (inputFrame === "solid") {
+			const bottomPadding = this.bg(style.inputBackgroundColor, " ".repeat(Math.max(1, width)));
+			return [...inputRows, bottomPadding];
+		}
+
 		const topPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
 		const bottomPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));
 		return [topPadding, ...inputRows, bottomPadding];
+	}
+
+	private formatCliDockModelBadge(): { plain: string; rendered: string } | null {
+		const info = this.getModelInfo?.();
+		const displayName = String(info?.name || info?.id || "").trim();
+		if (!displayName) return null;
+		const level = info?.reasoning && typeof info?.thinkingLevel === "string" && info.thinkingLevel.trim().length > 0
+			? info.thinkingLevel.trim()
+			: "";
+		const levelLabel = level ? ` · ${level}` : "";
+		return {
+			plain: `${displayName}${levelLabel}`,
+			rendered: `${this.tone("accent", displayName)}${level ? `${this.tone("muted", " · ")}${this.tone("accent", level)}` : ""}`,
+		};
+	}
+
+	private formatCliDockFooterStatus(): { plain: string; rendered: string } | null {
+		const plain = normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
+		if (!plain) return null;
+		const rendered = plain.split(/(✓)/g).map((part) => part === "✓" ? this.tone("success", part) : this.tone("muted", part)).join("");
+		return { plain, rendered };
+	}
+
+	private formatCliDockProjectName(): string {
+		const normalized = (this.sessionCwd || process.cwd()).replace(/\\/g, "/").replace(/\/+$/, "");
+		return normalized.split("/").filter(Boolean).pop() || ".";
+	}
+
+	private renderCliDockStatusLine(width: number): string {
+		const parts: Array<{ plain: string; rendered: string }> = [];
+		const model = this.formatCliDockModelBadge();
+		if (model) {
+			parts.push({
+				plain: `Model: ${model.plain}`,
+				rendered: `${this.tone("accent", "Model:")} ${model.rendered}`,
+			});
+		}
+
+		const usage = this.contextUsage();
+		if (usage?.contextWindow) {
+			const used = typeof usage.tokens === "number" && Number.isFinite(usage.tokens) ? usage.tokens : 0;
+			const ctxPlain = `Ctx: ${this.formatCompactTokens(used)}/${this.formatCompactTokens(usage.contextWindow)}`;
+			parts.push({ plain: ctxPlain, rendered: this.tone("warning", ctxPlain) });
+		}
+
+		const branch = this.getBranch?.();
+		if (branch?.branch) {
+			parts.push({ plain: `🌿 ${branch.branch}`, rendered: this.tone("success", `🌿 ${branch.branch}`) });
+		}
+
+		const project = this.formatCliDockProjectName();
+		parts.push({ plain: `📁 ${project}`, rendered: this.tone("mdLinkUrl", `📁 ${project}`) });
+
+		const separator = ` ${this.tone("dim", "|")} `;
+		const rendered = parts.map((part) => part.rendered).join(separator);
+		const status = this.formatCliDockFooterStatus();
+		if (!status) return safeVisibleWidth(rendered) > width ? safeTruncateToWidth(rendered, width, "…") : this.pad(rendered, width);
+		return this.renderSplitRow(rendered, status.rendered, status.plain, width);
 	}
 
 	private renderGeminiFooter(width: number, contentWidth: number): string[] {
@@ -694,15 +772,25 @@ export class BoxEditor extends CustomEditor {
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
+	private renderCliDockLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
+		const lines: string[] = [];
+		lines.push(...this.renderInputBoxFrame(inputLines, contentInnerWidth).map((line) => this.renderPanelLine(line, width)));
+		lines.push(this.renderPanelLine(this.renderCliDockStatusLine(contentInnerWidth), width));
+		return this.appendAutocomplete(lines, autocompleteLines, width);
+	}
+
 	render(width: number): string[] {
 		const editorStyle = this.userZoneStyle.editor;
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const promptText = this.styleFg(this.themeExtraColor("bashPromptColor", editorStyle.promptColor), editorStyle.prompt);
+		const promptColor = editorStyle.layout === "cli-dock"
+			? editorStyle.promptColor
+			: this.themeExtraColor("bashPromptColor", editorStyle.promptColor);
+		const promptText = this.styleFg(promptColor, editorStyle.prompt);
 		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
-		const promptPrefix = `${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
+		const promptPrefix = `${editorStyle.layout === "cli-dock" ? " " : ""}${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;
 		const prefixWidth = safeVisibleWidth(promptPrefix);
-		const inputInnerWidth = contentInnerWidth;
+		const inputInnerWidth = Math.max(1, contentInnerWidth - (editorStyle.layout === "cli-dock" ? 2 : 0));
 		const contentWidth = Math.max(1, inputInnerWidth - prefixWidth);
 		const parentLines = super.render(contentWidth);
 		if (parentLines.length === 0) return parentLines;
@@ -710,15 +798,25 @@ export class BoxEditor extends CustomEditor {
 		const bottomBorderIndex = findLastBorderIndex(parentLines);
 		const autocompleteLines = bottomBorderIndex >= 0 ? parentLines.slice(bottomBorderIndex + 1) : [];
 		const displayLines = this.renderInputContentLines(text, contentWidth);
+		if (editorStyle.layout === "cli-dock" && text.length === 0 && displayLines[0] !== undefined) {
+			const placeholder = this.tone("dim", " Type a prompt or / for commands");
+			const available = Math.max(0, contentWidth - safeVisibleWidth(displayLines[0]));
+			displayLines[0] = `${displayLines[0]}${safeVisibleWidth(placeholder) > available ? safeTruncateToWidth(placeholder, available, "") : placeholder}`;
+		}
 
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const available = Math.max(1, inputInnerWidth - safeVisibleWidth(prefix));
-			return this.renderPanelLine(`${prefix}${this.pad(line, available)}`, width);
+			const row = `${prefix}${this.pad(line, available)}`;
+			return editorStyle.layout === "cli-dock" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
 		});
 
-		return editorStyle.layout === "gemini"
-			? this.renderGeminiLayout(inputLines, autocompleteLines, width, contentInnerWidth)
-			: this.renderDroidLayout(inputLines, autocompleteLines, width, contentInnerWidth);
+		const layoutRenderers: Record<string, (inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number) => string[]> = {
+			"cli-dock": (il, al, w, ciw) => this.renderCliDockLayout(il, al, w, ciw),
+			"gemini": (il, al, w, ciw) => this.renderGeminiLayout(il, al, w, ciw),
+			"droid": (il, al, w, ciw) => this.renderDroidLayout(il, al, w, ciw),
+		};
+		const renderer = layoutRenderers[editorStyle.layout] ?? layoutRenderers.droid;
+		return renderer(inputLines, autocompleteLines, width, contentInnerWidth);
 	}
 }
