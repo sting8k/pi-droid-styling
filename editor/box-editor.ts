@@ -6,6 +6,7 @@ import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
+import type { InputBoxStyle } from "../config.js";
 
 type SlashAutocompleteItem = {
 	value?: string;
@@ -36,7 +37,6 @@ type ModelInfoProvider = () => {
 	thinkingLevel?: string;
 } | undefined;
 
-type InputBoxStyleOverride = "auto" | "halfblock" | "line" | "solid";
 type ResolvedInputFrame = "none" | "halfblock" | "line" | "solid" | "outline";
 
 type BranchInfo = {
@@ -142,7 +142,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getFooterStatus?: FooterStatusProvider,
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
-		private readonly inputBoxStyle?: InputBoxStyleOverride,
+		private readonly inputBoxStyle?: InputBoxStyle,
 	) {
 		super(tui, theme, kb);
 	}
@@ -811,9 +811,12 @@ export class BoxEditor extends CustomEditor {
 			return editorStyle.layout === "droid-cli" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
 		});
 
-		if (editorStyle.layout === "droid-cli") return this.renderDroidCliLayout(inputLines, autocompleteLines, width, contentInnerWidth);
-		return editorStyle.layout === "gemini"
-			? this.renderGeminiLayout(inputLines, autocompleteLines, width, contentInnerWidth)
-			: this.renderDroidLayout(inputLines, autocompleteLines, width, contentInnerWidth);
+		const layoutRenderers: Record<string, (inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number) => string[]> = {
+			"droid-cli": (il, al, w, ciw) => this.renderDroidCliLayout(il, al, w, ciw),
+			"gemini": (il, al, w, ciw) => this.renderGeminiLayout(il, al, w, ciw),
+			"droid": (il, al, w, ciw) => this.renderDroidLayout(il, al, w, ciw),
+		};
+		const renderer = layoutRenderers[editorStyle.layout] ?? layoutRenderers.droid;
+		return renderer(inputLines, autocompleteLines, width, contentInnerWidth);
 	}
 }
