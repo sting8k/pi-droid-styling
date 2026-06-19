@@ -18,6 +18,7 @@ type WidgetFactory = (tui: TuiLike, theme: ThemeLike) => any;
 
 type SessionUiLike = {
 	theme?: ThemeLike;
+	terminal?: { columns?: number };
 	setWidget?(key: string, content: string[] | WidgetFactory | undefined, options?: unknown): void;
 };
 
@@ -181,13 +182,19 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 		return [`${label}${tail}`];
 	}
 
-	const marker = color(theme, "accent", "▶ ");
+	const marker = color(theme, "accent", bold(theme, "› "));
 	const spacer = " ";
 	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
 	const budget = width - fixedWidth;
+	// Not enough room for `› ` + at least one body char: drop the current-task
+	// segment and keep label + counts so the line never exceeds `width`.
+	if (budget < 3) {
+		const base = `${label}${tail}`;
+		return visibleWidth(base) > width ? [safeTruncateToWidth(base, width, "…")] : [base];
+	}
 	let body = current.text;
 	if (visibleWidth(body) > budget) {
-		body = safeTruncateToWidth(body, Math.max(1, budget), "…");
+		body = safeTruncateToWidth(body, budget, "…");
 	}
 	return [`${label}${spacer}${marker}${body}${tail}`];
 }
@@ -220,9 +227,11 @@ function getRenderWidth(args: unknown[], tui: TuiLike): number {
 }
 
 function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike, style: TasksWidgetStyle): any {
-	if (!component || typeof component.render !== "function" || component[WRAPPED_COMPONENT]) return component;
-	component[WRAPPED_COMPONENT] = true;
-	const baseRender = component.render.bind(component);
+	if (!component || typeof component.render !== "function") return component;
+	const meta = component[WRAPPED_COMPONENT];
+	if (meta && meta.style === style) return component;
+	const baseRender = (meta ? meta.baseRender : component.render.bind(component));
+	component[WRAPPED_COMPONENT] = { baseRender, style };
 	let cachedKey = "";
 	let cachedLines: string[] | undefined;
 
@@ -241,14 +250,16 @@ function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike,
 }
 
 function wrapTaskWidgetFactory(factory: WidgetFactory, style: TasksWidgetStyle): WidgetFactory {
-	if ((factory as any)[WRAPPED_FACTORY]) return factory;
-	const wrapped = ((tui: TuiLike, theme: ThemeLike) => wrapTaskWidgetComponent(factory(tui, theme), tui, theme, style)) as WidgetFactory;
-	(wrapped as any)[WRAPPED_FACTORY] = true;
+	const meta = (factory as any)[WRAPPED_FACTORY];
+	if (meta && meta.style === style) return factory;
+	const base = meta ? meta.base : factory;
+	const wrapped = ((tui: TuiLike, theme: ThemeLike) => wrapTaskWidgetComponent(base(tui, theme), tui, theme, style)) as WidgetFactory;
+	(wrapped as any)[WRAPPED_FACTORY] = { base, style };
 	return wrapped;
 }
 
-function styleStaticTaskWidgetLines(content: string[], theme: ThemeLike | undefined, style: TasksWidgetStyle): string[] {
-	return stylePiTasksWidgetLines(content, theme ?? {}, 80, style);
+function styleStaticTaskWidgetLines(content: string[], theme: ThemeLike | undefined, style: TasksWidgetStyle, width = 80): string[] {
+	return stylePiTasksWidgetLines(content, theme ?? {}, width, style);
 }
 
 export function installPiTasksWidgetStyling(sessionUi: SessionUiLike, style: TasksWidgetStyle = "default"): (() => void) | undefined {
@@ -262,7 +273,9 @@ export function installPiTasksWidgetStyling(sessionUi: SessionUiLike, style: Tas
 			return originalSetWidget.call(sessionUi, key, content, options);
 		}
 		if (Array.isArray(content)) {
-			return originalSetWidget.call(sessionUi, key, styleStaticTaskWidgetLines(content, sessionUi.theme, style), options);
+			const cols = sessionUi.terminal?.columns;
+			const width = typeof cols === "number" && Number.isFinite(cols) ? Math.max(1, Math.floor(cols)) : 80;
+			return originalSetWidget.call(sessionUi, key, styleStaticTaskWidgetLines(content, sessionUi.theme, style, width), options);
 		}
 		if (typeof content === "function") {
 			return originalSetWidget.call(sessionUi, key, wrapTaskWidgetFactory(content, style), options);

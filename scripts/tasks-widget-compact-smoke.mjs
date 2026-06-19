@@ -117,7 +117,7 @@ async function runCompactRendererSmoke() {
 		"✳ #2  Refactor box-editor render",
 		"◻ #3  Add tests",
 	]);
-	assert(r.includes("Tasks ▶ Refactor box-editor render"), `running current task, got: ${r}`);
+	assert(r.includes("Tasks › Refactor box-editor render"), `running current task, got: ${r}`);
 	assert(/\(1\/3\)$/.test(r), `counts (1/3), got: ${r}`);
 	console.log("compact: running ok");
 
@@ -166,6 +166,20 @@ async function runCompactRendererSmoke() {
 	assert(r.includes("(1/3)"), `narrow keeps counts, got: ${r}`);
 	assert(stripAnsi(r).length <= 30, `narrow respects width, got len ${stripAnsi(r).length}`);
 	console.log("compact: width truncation ok");
+
+	// narrow width drops current segment but keeps counts and never overflows
+	for (const w of [16, 12, 8]) {
+		const narrow = one([
+			"● Tasks",
+			"✔ #1  Scan repo",
+			"✳ #2  Refactor box-editor render",
+			"◻ #3  Add tests",
+		], w);
+		assert(stripAnsi(narrow).length <= w, `width=${w} must not overflow, got len ${stripAnsi(narrow).length}: ${narrow}`);
+		// counts only survive when width can fit label + tail
+		if (w >= 16) assert(narrow.includes("(1/3)"), `width=${w} must keep counts, got: ${narrow}`);
+	}
+	console.log("compact: narrow no-overflow ok");
 
 	// default style still multi-line
 	const multi = stylePiTasksWidgetLines([
