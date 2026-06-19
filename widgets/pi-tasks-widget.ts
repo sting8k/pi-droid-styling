@@ -251,12 +251,12 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 	const tailParts: string[] = [];
 	if (allDone) {
 		tailParts.push(color(theme, "success", " done"));
-	} else if (!current && counts.inProgress > 0) {
-		tailParts.push(color(theme, "dim", " running"));
 	} else if (!current) {
 		tailParts.push(color(theme, "dim", " idle"));
 	}
-	tailParts.push(color(theme, "dim", ` (${counts.completed}/${total})`));
+	const running = counts.inProgress;
+	const runningText = running > 0 ? ` · ${running} running` : "";
+	tailParts.push(color(theme, "dim", ` (${counts.completed}/${total} done${runningText})`));
 	if (blocked > 0) tailParts.push(color(theme, "dim", ` ${blocked} blocked`));
 	const tail = tailParts.join("");
 

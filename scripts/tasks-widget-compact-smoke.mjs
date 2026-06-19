@@ -118,7 +118,7 @@ async function runCompactRendererSmoke() {
 		"◻ #3 Add tests",
 	]);
 	assert(r.includes("● Tasks › [2] Refactor editor · 4s"), `active time, got: ${r}`);
-	assert(/ \(1\/3\)$/.test(r), `counts (1/3), got: ${r}`);
+	assert(/ \(1\/3 done · 1 running\)$/.test(r), `counts (1/3 done · 1 running), got: ${r}`);
 	assert(!r.includes("… · 4s"), `active ellipsis should be stripped, got: ${r}`);
 	console.log("compact: active time ok");
 
@@ -128,7 +128,7 @@ async function runCompactRendererSmoke() {
 		"✔ #1 Scan repo",
 		"✔ #2 Refactor editor",
 	]);
-	assert(/● Tasks done \(2\/2\)$/.test(r), `all done, got: ${r}`);
+	assert(/● Tasks done \(2\/2 done\)$/.test(r), `all done, got: ${r}`);
 	console.log("compact: all done ok");
 
 	// idle/no rows fallback
@@ -144,7 +144,7 @@ async function runCompactRendererSmoke() {
 		"◻ #3 Add docs",
 	]);
 	assert(r.includes("1 blocked"), `blocked indicator, got: ${r}`);
-	assert(/ \(1\/3\)/.test(r), `counts with blocked, got: ${r}`);
+	assert(/ \(1\/3 done · 1 running\)/.test(r), `counts with blocked, got: ${r}`);
 	console.log("compact: blocked ok");
 
 	// header counts win over visible rows when overflow hides tasks
@@ -154,7 +154,7 @@ async function runCompactRendererSmoke() {
 		"✔ #2 Refactor editor",
 		"… and 3 more",
 	]);
-	assert(/ \(4\/5\)$/.test(r), `overflow uses header counts (4/5), got: ${r}`);
+	assert(/ \(4\/5 done · 1 running\)$/.test(r), `overflow uses header counts (4/5 done · 1 running), got: ${r}`);
 	console.log("compact: overflow header counts ok");
 
 	// if header says work is running but the current row is hidden, do not report idle
@@ -164,7 +164,7 @@ async function runCompactRendererSmoke() {
 		"✔ #2 Also completed",
 		"… and 3 more",
 	]);
-	assert(/● Tasks running \(4\/5\)$/.test(r), `hidden running should not look idle, got: ${r}`);
+	assert(/● Tasks idle \(4\/5 done · 1 running\)$/.test(r), `hidden running should not look idle, got: ${r}`);
 	console.log("compact: hidden running summary ok");
 
 	// active spinner is the current task, not a stale non-active in-progress row
@@ -250,7 +250,7 @@ async function runCompactRendererSmoke() {
 		longName,
 		"◻ #3 Add tests",
 	], 60);
-	assert(r.includes("(1/3)"), `long name keeps counts, got: ${r}`);
+	assert(r.includes("(1/3 done · 1 running)"), `long name keeps counts, got: ${r}`);
 	assert(stripAnsi(r).length <= 60, `long name respects width=60, got len ${stripAnsi(r).length}: ${r}`);
 	assert(r.includes("›"), `long name shows current marker, got: ${r}`);
 	console.log("compact: real-width truncation ok");
