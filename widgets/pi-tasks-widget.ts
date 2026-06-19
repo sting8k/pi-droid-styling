@@ -1,4 +1,5 @@
 import { safeTruncateToWidth } from "../render-budget.js";
+import type { TasksWidgetStyle } from "../config.js";
 import { stripAnsi } from "../theme/ansi.js";
 
 type ThemeLike = {
@@ -136,7 +137,65 @@ function renderTaskRow(theme: ThemeLike, row: TaskRow, idWidth: number): string 
 	return `${WIDGET_ROW_PREFIX}${icon} ${id}  ${text}${suffix}`;
 }
 
-export function stylePiTasksWidgetLines(lines: string[], theme: ThemeLike, width: number): string[] {
+function visibleWidth(s: string): number {
+	return stripAnsi(s).length;
+}
+
+function parseOverflowCount(parsed: ParsedLine[]): number {
+	const ov = parsed.find((p): p is { kind: "overflow"; text: string } => p.kind === "overflow");
+	if (!ov) return 0;
+	const m = ov.text.match(/(\d+)\s+more/);
+	return m ? Number(m[1]) : 0;
+}
+
+function pickCurrentTask(tasks: TaskRow[]): TaskRow | undefined {
+	return tasks.find((t) => t.status === "running") ?? tasks.find((t) => t.status === "active");
+}
+
+function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number): string[] {
+	const tasks = parsed.filter((p): p is TaskRow => p.kind === "task");
+	const overflowN = parseOverflowCount(parsed);
+	const total = tasks.length + overflowN;
+	const label = `${WIDGET_ROW_PREFIX}${color(theme, "accent", bold(theme, "Tasks"))}`;
+
+	if (tasks.length === 0 && overflowN === 0) {
+		return [`${label}${color(theme, "dim", " · idle")}`];
+	}
+
+	const completed = tasks.filter((t) => t.status === "completed").length;
+	const blocked = tasks.filter((t) => Boolean(t.suffix)).length;
+	const current = pickCurrentTask(tasks);
+	const allDone = completed === total && total > 0;
+
+	const tailParts: string[] = [];
+	if (allDone) {
+		tailParts.push(color(theme, "success", " done"));
+	} else if (!current) {
+		tailParts.push(color(theme, "dim", " idle"));
+	}
+	tailParts.push(color(theme, "dim", `  (${completed}/${total})`));
+	if (blocked > 0) tailParts.push(color(theme, "dim", `  ${blocked} blocked`));
+	const tail = tailParts.join("");
+
+	if (!current || allDone) {
+		return [`${label}${tail}`];
+	}
+
+	const marker = color(theme, "accent", "▶ ");
+	const spacer = " ";
+	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
+	const budget = width - fixedWidth;
+	let body = current.text;
+	if (visibleWidth(body) > budget) {
+		body = safeTruncateToWidth(body, Math.max(1, budget), "…");
+	}
+	return [`${label}${spacer}${marker}${body}${tail}`];
+}
+
+export function stylePiTasksWidgetLines(lines: string[], theme: ThemeLike, width: number, style: TasksWidgetStyle = "default"): string[] {
+	if (style === "compact") {
+		return renderCompactLine(lines.map(parseTaskWidgetLine), theme, Math.max(1, Math.floor(width)));
+	}
 	const parsed = lines.map(parseTaskWidgetLine);
 	const idWidth = parsed.reduce((max, line) => line.kind === "task" ? Math.max(max, line.id.length) : max, 1);
 	const maxWidth = Math.max(1, Math.floor(width));
@@ -160,7 +219,7 @@ function getRenderWidth(args: unknown[], tui: TuiLike): number {
 	return typeof columns === "number" && Number.isFinite(columns) ? columns : 80;
 }
 
-function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike): any {
+function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike, style: TasksWidgetStyle): any {
 	if (!component || typeof component.render !== "function" || component[WRAPPED_COMPONENT]) return component;
 	component[WRAPPED_COMPONENT] = true;
 	const baseRender = component.render.bind(component);
@@ -171,28 +230,28 @@ function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike)
 		const lines = baseRender(...args);
 		if (!Array.isArray(lines)) return lines;
 		const width = getRenderWidth(args, tui);
-		const cacheKey = `${width}\n${lines.map(normalizeWidgetLineForCache).join("\n")}`;
+		const cacheKey = `${width}\n${style}\n${lines.map(normalizeWidgetLineForCache).join("\n")}`;
 		if (cachedLines && cachedKey === cacheKey) return cachedLines;
 		cachedKey = cacheKey;
-		cachedLines = stylePiTasksWidgetLines(lines, theme, width);
+		cachedLines = stylePiTasksWidgetLines(lines, theme, width, style);
 		return cachedLines;
 	};
 
 	return component;
 }
 
-function wrapTaskWidgetFactory(factory: WidgetFactory): WidgetFactory {
+function wrapTaskWidgetFactory(factory: WidgetFactory, style: TasksWidgetStyle): WidgetFactory {
 	if ((factory as any)[WRAPPED_FACTORY]) return factory;
-	const wrapped = ((tui: TuiLike, theme: ThemeLike) => wrapTaskWidgetComponent(factory(tui, theme), tui, theme)) as WidgetFactory;
+	const wrapped = ((tui: TuiLike, theme: ThemeLike) => wrapTaskWidgetComponent(factory(tui, theme), tui, theme, style)) as WidgetFactory;
 	(wrapped as any)[WRAPPED_FACTORY] = true;
 	return wrapped;
 }
 
-function styleStaticTaskWidgetLines(content: string[], theme: ThemeLike | undefined): string[] {
-	return stylePiTasksWidgetLines(content, theme ?? {}, 80);
+function styleStaticTaskWidgetLines(content: string[], theme: ThemeLike | undefined, style: TasksWidgetStyle): string[] {
+	return stylePiTasksWidgetLines(content, theme ?? {}, 80, style);
 }
 
-export function installPiTasksWidgetStyling(sessionUi: SessionUiLike): (() => void) | undefined {
+export function installPiTasksWidgetStyling(sessionUi: SessionUiLike, style: TasksWidgetStyle = "default"): (() => void) | undefined {
 	if (!sessionUi || typeof sessionUi.setWidget !== "function") return undefined;
 	const host = sessionUi as SessionUiLike & { [PATCH_STATE]?: { dispose(): void } };
 	if (host[PATCH_STATE]) return () => host[PATCH_STATE]?.dispose();
@@ -203,10 +262,10 @@ export function installPiTasksWidgetStyling(sessionUi: SessionUiLike): (() => vo
 			return originalSetWidget.call(sessionUi, key, content, options);
 		}
 		if (Array.isArray(content)) {
-			return originalSetWidget.call(sessionUi, key, styleStaticTaskWidgetLines(content, sessionUi.theme), options);
+			return originalSetWidget.call(sessionUi, key, styleStaticTaskWidgetLines(content, sessionUi.theme, style), options);
 		}
 		if (typeof content === "function") {
-			return originalSetWidget.call(sessionUi, key, wrapTaskWidgetFactory(content), options);
+			return originalSetWidget.call(sessionUi, key, wrapTaskWidgetFactory(content, style), options);
 		}
 		return originalSetWidget.call(sessionUi, key, content, options);
 	};

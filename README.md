@@ -47,6 +47,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "inputBox": {
     "style": "auto"
   },
+  "tasksWidgetStyle": "compact",
   "fixedUserZone": false,
   "forceOSC11": false
 }
@@ -59,6 +60,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `userZoneStyle` | `"gemini"` \| `"droid"` \| `"cli-dock"` | `"gemini"` | Input-zone preset. `gemini` = compact header/divider/status/halfblock-input/footer layout. `droid` = boxed legacy layout. `cli-dock` = opt-in Droid CLI-style bottom dock with a true outlined `›` prompt box, placeholder, model/context/branch/project status on the left, and MCP/footer status on the right. |
 | `inputBox.style` | `"auto"` \| `"halfblock"` \| `"line"` \| `"solid"` | `"auto"` | Input-frame override. `auto` = preset default (gemini uses halfblock, droid uses its native boxed layout). `solid` uses selected-background input plus a bottom padding row without half-block glyphs for terminals with `▀`/`▄` seams. `cli-dock` intentionally keeps its outline box even if this is set to `line`. |
 | `fixedUserZone` | `bool` | `false` | When enabled, status/widgets/editor/footer stay fixed at the bottom while chat/feed scrolls above. |
+| `tasksWidgetStyle` | `"default"` \| `"compact"` | `"compact"` | Tasks sidebar widget style. `compact` = one-line summary `Tasks ▶ <current task>  (done/total)` with `idle`/`done`/blocked variants; current-task text is truncated to fit while counts are preserved. `default` = multi-line per-task list with icons. Auto-scaffolded into the config file on first load.
 | `forceOSC11` | `bool` | `false` | Enable OSC 11 terminal background sync on Windows/WSL (off by default).
 
 ## Profiling

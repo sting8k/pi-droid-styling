@@ -9,6 +9,19 @@ export type InputBoxStyle = "auto" | "halfblock" | "line" | "solid";
 
 export interface InputBoxConfig {
 	style: InputBoxStyle;
+} 
+
+export type TasksWidgetStyle = "default" | "compact";
+
+const TASKS_WIDGET_STYLE_SET: Record<TasksWidgetStyle, true> = { default: true, compact: true };
+
+function isTasksWidgetStyle(value: unknown): value is TasksWidgetStyle {
+	return typeof value === "string" && Object.prototype.hasOwnProperty.call(TASKS_WIDGET_STYLE_SET, value);
+}
+
+function normalizeTasksWidgetStyle(value: unknown): TasksWidgetStyle {
+	if (value === undefined) return DEFAULTS.tasksWidgetStyle;
+	return isTasksWidgetStyle(value) ? value : DEFAULTS.tasksWidgetStyle;
 }
 
 export interface DroidStylingConfig {
@@ -18,6 +31,7 @@ export interface DroidStylingConfig {
 	customWorkingMessage: CustomWorkingMessageConfig;
 	userZoneStyle: UserZoneStyleName;
 	inputBox: InputBoxConfig;
+	tasksWidgetStyle: TasksWidgetStyle;
 	fixedUserZone: boolean;
 	forceOSC11: boolean;
 }
@@ -40,6 +54,7 @@ const DEFAULTS: DroidStylingConfig = {
 	customWorkingMessage: DEFAULT_CUSTOM_WORKING_MESSAGE,
 	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
 	inputBox: DEFAULT_INPUT_BOX,
+	tasksWidgetStyle: "compact",
 	fixedUserZone: false,
 	forceOSC11: false,
 };
@@ -142,6 +157,17 @@ function backfillInputBox(config: Record<string, unknown>): boolean {
 	return true;
 }
 
+function backfillTasksWidgetStyle(config: Record<string, unknown>): boolean {
+	const value = config.tasksWidgetStyle;
+	if (value === undefined) {
+		config.tasksWidgetStyle = DEFAULTS.tasksWidgetStyle;
+		return true;
+	}
+	if (isTasksWidgetStyle(value)) return false;
+	config.tasksWidgetStyle = DEFAULTS.tasksWidgetStyle;
+	return true;
+}
+
 function normalizeConfig(raw: unknown): DroidStylingConfig {
 	if (!isRecord(raw)) return defaultConfig();
 	const config = raw as Record<string, unknown>;
@@ -152,6 +178,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		customWorkingMessage: customWorkingMessageOrDefault(config.customWorkingMessage),
 		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
 		inputBox: inputBoxOrDefault(config.inputBox),
+		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 	};
@@ -184,6 +211,7 @@ function backfillMissingDefaults(raw: unknown): void {
 	if (backfillCustomWorkingMessage(config)) changed = true;
 	if (backfillUserZoneStyle(config)) changed = true;
 	if (backfillInputBox(config)) changed = true;
+	if (backfillTasksWidgetStyle(config)) changed = true;
 	if (!changed) return;
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
