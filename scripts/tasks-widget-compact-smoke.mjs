@@ -156,6 +156,17 @@ async function runCompactRendererSmoke() {
 	assert(/\(1\/5\)$/.test(r), `overflow total (1/5), got: ${r}`);
 	console.log("compact: overflow ok");
 
+	// compact drops token, keeps time dim
+	r = one([
+		"● Tasks",
+		"✔ #1  Scan repo · 12s · 1.2k tok",
+		"✳ #2  Refactor editor · 4s · 0.8k tok",
+		"◻ #3  Add tests",
+	]);
+	assert(r.includes("› Refactor editor · 4s"), `keep time, got: ${r}`);
+	assert(!/tok/.test(r), `drop token, got: ${r}`);
+	console.log("compact: metrics time-only ok");
+
 	// width truncation keeps counts, cuts current text
 	r = one([
 		"● Tasks",

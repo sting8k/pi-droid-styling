@@ -100,6 +100,31 @@ function parseTaskWidgetLine(line: string): ParsedLine {
 	};
 }
 
+const TIME_PATTERN = /^\d+(?:\.\d+)?[smh](?:\d+[smh])*$/;
+const TOKEN_PATTERN = /^~?\d+(?:\.\d+)?k?(?:\s*(?:tok|tokens?))?$/i;
+
+// Strip trailing ` · <time> · <token>` metrics from a task body.
+// Returns the cleaned body plus the time and token segments so callers can
+// choose what to re-render (we keep time, drop token).
+function splitMetrics(text: string): { body: string; time: string; token: string } {
+	const parts = text.split(/\s+·\s+/);
+	if (parts.length < 2) return { body: text, time: "", token: "" };
+	let token = "";
+	let time = "";
+	let i = parts.length - 1;
+	if (TOKEN_PATTERN.test(parts[i]!.trim())) {
+		token = parts[i]!.trim();
+		i -= 1;
+	}
+	if (i >= 1 && TIME_PATTERN.test(parts[i]!.trim())) {
+		time = parts[i]!.trim();
+		i -= 1;
+	}
+	if (!time && !token) return { body: text, time: "", token: "" };
+	const body = parts.slice(0, i + 1).join(" · ").trimEnd();
+	return { body, time, token };
+}
+
 function splitStats(text: string): { body: string; stats: string } {
 	const match = text.match(/^(.*?)(\s+\([^)]*\))$/);
 	if (!match) return { body: text, stats: "" };
@@ -123,11 +148,13 @@ function renderTaskIcon(theme: ThemeLike, status: TaskRow["status"]): string {
 }
 
 function renderTaskText(theme: ThemeLike, row: TaskRow): string {
-	const { body, stats } = splitStats(row.text);
-	if (row.status === "completed") return color(theme, "dim", strike(theme, body));
-	if (row.status === "active") return `${color(theme, "accent", body)}${color(theme, "dim", stats)}`;
-	if (row.status === "running") return `${body}${color(theme, "dim", stats)}`;
-	return body;
+	const { body: noMetrics, time } = splitMetrics(row.text);
+	const { body, stats } = splitStats(noMetrics);
+	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
+	if (row.status === "completed") return `${color(theme, "dim", strike(theme, body))}${color(theme, "dim", stats)}${timeStyled}`;
+	if (row.status === "active") return `${color(theme, "accent", body)}${color(theme, "dim", stats)}${timeStyled}`;
+	if (row.status === "running") return `${body}${color(theme, "dim", stats)}${timeStyled}`;
+	return `${body}${stats}${timeStyled}`;
 }
 
 function renderTaskRow(theme: ThemeLike, row: TaskRow, idWidth: number): string {
@@ -184,19 +211,24 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 
 	const marker = color(theme, "accent", bold(theme, "› "));
 	const spacer = " ";
+	// Drop token metrics; keep time so the compact line stays glanceable.
+	const { body: bodyNoMetrics, time } = splitMetrics(current.text);
+	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
+	const timeWidth = visibleWidth(timeStyled);
 	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
 	const budget = width - fixedWidth;
-	// Not enough room for `› ` + at least one body char: drop the current-task
-	// segment and keep label + counts so the line never exceeds `width`.
-	if (budget < 3) {
+	// Need room for `› ` + at least one body char (+ optional time). Otherwise
+	// drop the current-task segment and keep label + counts (never overflow).
+	if (budget < 1 + timeWidth) {
 		const base = `${label}${tail}`;
 		return visibleWidth(base) > width ? [safeTruncateToWidth(base, width, "…")] : [base];
 	}
-	let body = current.text;
-	if (visibleWidth(body) > budget) {
-		body = safeTruncateToWidth(body, budget, "…");
+	let body = bodyNoMetrics;
+	const bodyBudget = budget - timeWidth;
+	if (visibleWidth(body) > bodyBudget) {
+		body = safeTruncateToWidth(body, Math.max(1, bodyBudget), "…");
 	}
-	return [`${label}${spacer}${marker}${body}${tail}`];
+	return [`${label}${spacer}${marker}${body}${timeStyled}${tail}`];
 }
 
 export function stylePiTasksWidgetLines(lines: string[], theme: ThemeLike, width: number, style: TasksWidgetStyle = "default"): string[] {
