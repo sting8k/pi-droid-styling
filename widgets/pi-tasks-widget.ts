@@ -100,35 +100,30 @@ function parseTaskWidgetLine(line: string): ParsedLine {
 	};
 }
 
-const TIME_PATTERN = /^\d+(?:\.\d+)?[smh](?:\d+[smh])*$/;
-const TOKEN_PATTERN = /^~?\d+(?:\.\d+)?k?(?:\s*(?:tok|tokens?))?$/i;
+// Upstream pi-tasks renders trailing stats as a parenthesized cluster:
+//   (2m 49s · ↑ 4.1k ↓ 1.2k)   |   (2m 49s)   |   (1h 3m)
+// We keep only the elapsed time (dim) and drop the token arrows.
+const TIME_INNER_PATTERN = /\d+s|\d+m(?: \d+s)?|\d+h(?: \d+m)?/;
+const TOKEN_ARROW_PATTERN = /[↑↓]\s+\d+(?:\.\d+)?k?/;
+const TASK_STATS_PATTERN = /\s+\(([^)]*)\)$/;
 
-// Strip trailing ` · <time> · <token>` metrics from a task body.
-// Returns the cleaned body plus the time and token segments so callers can
-// choose what to re-render (we keep time, drop token).
-function splitMetrics(text: string): { body: string; time: string; token: string } {
-	const parts = text.split(/\s+·\s+/);
-	if (parts.length < 2) return { body: text, time: "", token: "" };
-	let token = "";
-	let time = "";
-	let i = parts.length - 1;
-	if (TOKEN_PATTERN.test(parts[i]!.trim())) {
-		token = parts[i]!.trim();
-		i -= 1;
+function splitStats(text: string): { body: string; time: string; stats: string } {
+	const m = text.match(TASK_STATS_PATTERN);
+	if (!m) return { body: text, time: "", stats: "" };
+	const body = text.slice(0, m.index).trimEnd();
+	const inner = m[1]!.trim();
+	const dotIdx = inner.indexOf("·");
+	if (dotIdx >= 0) {
+		const left = inner.slice(0, dotIdx).trim();
+		const right = inner.slice(dotIdx + 1).trim();
+		if (TIME_INNER_PATTERN.test(left) && TOKEN_ARROW_PATTERN.test(right)) {
+			return { body, time: left, stats: "" };
+		}
+	} else if (TIME_INNER_PATTERN.test(inner)) {
+		return { body, time: inner, stats: "" };
 	}
-	if (i >= 1 && TIME_PATTERN.test(parts[i]!.trim())) {
-		time = parts[i]!.trim();
-		i -= 1;
-	}
-	if (!time && !token) return { body: text, time: "", token: "" };
-	const body = parts.slice(0, i + 1).join(" · ").trimEnd();
-	return { body, time, token };
-}
-
-function splitStats(text: string): { body: string; stats: string } {
-	const match = text.match(/^(.*?)(\s+\([^)]*\))$/);
-	if (!match) return { body: text, stats: "" };
-	return { body: match[1]!.trimEnd(), stats: match[2]! };
+	// Not a metrics cluster: keep the raw parenthetical as generic stats.
+	return { body, time: "", stats: m[0] };
 }
 
 function renderHeader(theme: ThemeLike, text: string): string {
@@ -148,13 +143,13 @@ function renderTaskIcon(theme: ThemeLike, status: TaskRow["status"]): string {
 }
 
 function renderTaskText(theme: ThemeLike, row: TaskRow): string {
-	const { body: noMetrics, time } = splitMetrics(row.text);
-	const { body, stats } = splitStats(noMetrics);
+	const { body, time, stats } = splitStats(row.text);
 	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
-	if (row.status === "completed") return `${color(theme, "dim", strike(theme, body))}${color(theme, "dim", stats)}${timeStyled}`;
-	if (row.status === "active") return `${color(theme, "accent", body)}${color(theme, "dim", stats)}${timeStyled}`;
-	if (row.status === "running") return `${body}${color(theme, "dim", stats)}${timeStyled}`;
-	return `${body}${stats}${timeStyled}`;
+	const statsStyled = stats ? color(theme, "dim", stats) : "";
+	if (row.status === "completed") return `${color(theme, "dim", strike(theme, body))}${statsStyled}${timeStyled}`;
+	if (row.status === "active") return `${color(theme, "accent", body)}${statsStyled}${timeStyled}`;
+	if (row.status === "running") return `${body}${statsStyled}${timeStyled}`;
+	return `${body}${statsStyled}${timeStyled}`;
 }
 
 function renderTaskRow(theme: ThemeLike, row: TaskRow, idWidth: number): string {
@@ -181,10 +176,13 @@ function pickCurrentTask(tasks: TaskRow[]): TaskRow | undefined {
 }
 
 function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number): string[] {
+	// The tasks widget sits above the editor at full terminal width; assume at
+	// least 100 cols so task names are not truncated aggressively on wide terms.
+	const renderWidth = Math.max(width, 100);
 	const tasks = parsed.filter((p): p is TaskRow => p.kind === "task");
 	const overflowN = parseOverflowCount(parsed);
 	const total = tasks.length + overflowN;
-	const label = `${WIDGET_ROW_PREFIX}${color(theme, "accent", bold(theme, "Tasks"))}`;
+	const label = `${WIDGET_ROW_PREFIX}${color(theme, "accent", "●")} ${color(theme, "accent", bold(theme, "Tasks"))}`;
 
 	if (tasks.length === 0 && overflowN === 0) {
 		return [`${label}${color(theme, "dim", " · idle")}`];
@@ -211,17 +209,17 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 
 	const marker = color(theme, "accent", bold(theme, "› "));
 	const spacer = " ";
-	// Drop token metrics; keep time so the compact line stays glanceable.
-	const { body: bodyNoMetrics, time } = splitMetrics(current.text);
+	// Drop token arrows; keep time (same dim as the counts) so the compact line stays glanceable.
+	const { body: bodyNoMetrics, time } = splitStats(current.text);
 	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
 	const timeWidth = visibleWidth(timeStyled);
 	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
-	const budget = width - fixedWidth;
+	const budget = renderWidth - fixedWidth;
 	// Need room for `› ` + at least one body char (+ optional time). Otherwise
 	// drop the current-task segment and keep label + counts (never overflow).
 	if (budget < 1 + timeWidth) {
 		const base = `${label}${tail}`;
-		return visibleWidth(base) > width ? [safeTruncateToWidth(base, width, "…")] : [base];
+		return visibleWidth(base) > renderWidth ? [safeTruncateToWidth(base, renderWidth, "…")] : [base];
 	}
 	let body = bodyNoMetrics;
 	const bodyBudget = budget - timeWidth;

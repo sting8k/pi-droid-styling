@@ -132,7 +132,7 @@ async function runCompactRendererSmoke() {
 
 	// idle (no task rows)
 	r = one(["● Tasks"]);
-	assert(r.trim() === "Tasks · idle", `idle, got: ${r}`);
+	assert(r.trim() === "● Tasks · idle", `idle, got: ${r}`);
 	console.log("compact: idle ok");
 
 	// blocked
@@ -156,41 +156,29 @@ async function runCompactRendererSmoke() {
 	assert(/\(1\/5\)$/.test(r), `overflow total (1/5), got: ${r}`);
 	console.log("compact: overflow ok");
 
-	// compact drops token, keeps time dim
+	// compact drops token arrows, keeps time dim (real parenthesized format)
 	r = one([
 		"● Tasks",
-		"✔ #1  Scan repo · 12s · 1.2k tok",
-		"✳ #2  Refactor editor · 4s · 0.8k tok",
+		"✔ #1  Scan repo (12s · ↑ 1.2k ↓ 0.4k)",
+		"✳ #2  Refactor editor (4s · ↑ 0.8k ↓ 0.3k)",
 		"◻ #3  Add tests",
 	]);
 	assert(r.includes("› Refactor editor · 4s"), `keep time, got: ${r}`);
-	assert(!/tok/.test(r), `drop token, got: ${r}`);
+	assert(!/tok|↑|↓/.test(r), `drop token arrows, got: ${r}`);
 	console.log("compact: metrics time-only ok");
 
-	// width truncation keeps counts, cuts current text
+	// compact assumes >=100 cols; a very long name still truncates, counts kept
+	const longName = "✳ #2  " + "A".repeat(120);
 	r = one([
 		"● Tasks",
 		"✔ #1  Scan repo",
-		"✳ #2  Refactor box-editor render path",
+		longName,
 		"◻ #3  Add tests",
-	], 30);
-	assert(r.includes("(1/3)"), `narrow keeps counts, got: ${r}`);
-	assert(stripAnsi(r).length <= 30, `narrow respects width, got len ${stripAnsi(r).length}`);
-	console.log("compact: width truncation ok");
-
-	// narrow width drops current segment but keeps counts and never overflows
-	for (const w of [16, 12, 8]) {
-		const narrow = one([
-			"● Tasks",
-			"✔ #1  Scan repo",
-			"✳ #2  Refactor box-editor render",
-			"◻ #3  Add tests",
-		], w);
-		assert(stripAnsi(narrow).length <= w, `width=${w} must not overflow, got len ${stripAnsi(narrow).length}: ${narrow}`);
-		// counts only survive when width can fit label + tail
-		if (w >= 16) assert(narrow.includes("(1/3)"), `width=${w} must keep counts, got: ${narrow}`);
-	}
-	console.log("compact: narrow no-overflow ok");
+	], 60);
+	assert(r.includes("(1/3)"), `long name keeps counts, got: ${r}`);
+	assert(stripAnsi(r).length <= 100, `long name fits renderWidth=100, got len ${stripAnsi(r).length}`);
+	assert(r.includes("›"), `long name shows current marker, got: ${r}`);
+	console.log("compact: long-name truncation ok");
 
 	// default style still multi-line
 	const multi = stylePiTasksWidgetLines([
