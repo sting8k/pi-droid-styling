@@ -30,8 +30,15 @@ type TaskRow = {
 	suffix: string;
 };
 
+type HeaderCounts = {
+	total: number;
+	completed: number;
+	inProgress: number;
+	pending: number;
+};
+
 type ParsedLine =
-	| { kind: "header"; text: string }
+	| { kind: "header"; text: string; counts?: HeaderCounts }
 	| { kind: "overflow"; text: string }
 	| TaskRow
 	| { kind: "unknown"; text: string };
@@ -41,7 +48,7 @@ const WRAPPED_FACTORY = Symbol.for("pi-droid-styling.pi-tasks-widget.factory");
 const WRAPPED_COMPONENT = Symbol.for("pi-droid-styling.pi-tasks-widget.component");
 const SPINNER_PATTERN = /[✳✴✵✶✷✸✹✺✻✼✽]/g;
 const SPINNER_CHARS = "✳✴✵✶✷✸✹✺✻✼✽";
-const TASK_ROW_PATTERN = /^\s*([✳✴✵✶✷✸✹✺✻✼✽✔◼◻])\s+#(\d+)\s+(.+)$/;
+const TASK_ROW_PATTERN = /^\s*([✳✴✵✶✷✸✹✺✻✼✽✔◼◻])\s+#(\S+)\s+(.+)$/;
 const BLOCKED_SUFFIX = " › blocked by ";
 const WIDGET_ROW_PREFIX = "   ";
 
@@ -61,11 +68,27 @@ function normalizeWidgetLineForCache(line: string): string {
 	return stripAnsi(line).replace(SPINNER_PATTERN, "●");
 }
 
+function parseHeaderCounts(text: string): HeaderCounts | undefined {
+	const match = text.match(/^(\d+)\s+tasks?\s+\((.*)\)$/);
+	if (!match) return undefined;
+	const counts: HeaderCounts = { total: Number(match[1]), completed: 0, inProgress: 0, pending: 0 };
+	for (const part of match[2]!.split(/,\s*/)) {
+		const done = part.match(/^(\d+)\s+done$/);
+		if (done) { counts.completed = Number(done[1]); continue; }
+		const running = part.match(/^(\d+)\s+in progress$/);
+		if (running) { counts.inProgress = Number(running[1]); continue; }
+		const open = part.match(/^(\d+)\s+open$/);
+		if (open) { counts.pending = Number(open[1]); }
+	}
+	return counts;
+}
+
 function parseTaskWidgetLine(line: string): ParsedLine {
 	const text = stripAnsi(line).trimEnd();
 	const headerMatch = text.match(/^●\s+(.+)$/);
 	if (headerMatch) {
-		return { kind: "header", text: headerMatch[1]!.replace(/\bin progress\b/g, "running") };
+		const rawText = headerMatch[1]!;
+		return { kind: "header", text: rawText.replace(/\bin progress\b/g, "running"), counts: parseHeaderCounts(rawText) };
 	}
 
 	const overflowMatch = text.match(/^\s*…\s+and\s+\d+\s+more$/);
@@ -100,12 +123,17 @@ function parseTaskWidgetLine(line: string): ParsedLine {
 	};
 }
 
-// Upstream pi-tasks can expose metrics in two shapes depending on source/version:
-//   (2m 49s · ↑ 4.1k ↓ 1.2k)   |   (2m 49s)
-//   · 2m 49s · ↑ 4.1k ↓ 1.2k   |   · 4s · 0.8k tok
-// We keep only the elapsed time (dim) and drop token counters.
+// Upstream pi-tasks metrics are terminal suffixes. Strip only recognized
+// metric shapes; leave ordinary task parentheses like `(3 files)` untouched.
 const TIME_SEGMENT_PATTERN = /^(?:\d+s|\d+m(?: \d+s)?|\d+h(?: \d+m)?|\d+(?:\.\d+)?[smh](?:\d+[smh])*)$/;
+const ARROW_TOKENS_PATTERN = /^(?:[↑↓]\s+\d+(?:\.\d+)?k?)(?:\s+[↑↓]\s+\d+(?:\.\d+)?k?)*$/;
+const LEGACY_TOKEN_PATTERN = /^~?\d+(?:\.\d+)?k?(?:\s*(?:tok|tokens?))?$/i;
 const TASK_STATS_PATTERN = /\s+\(([^)]*)\)$/;
+
+function isTokenMetrics(text: string): boolean {
+	const trimmed = text.trim();
+	return ARROW_TOKENS_PATTERN.test(trimmed) || LEGACY_TOKEN_PATTERN.test(trimmed);
+}
 
 function splitDotMetrics(text: string): { body: string; time: string } | undefined {
 	const parts = text.split(/\s+·\s+/);
@@ -114,30 +142,26 @@ function splitDotMetrics(text: string): { body: string; time: string } | undefin
 	if (TIME_SEGMENT_PATTERN.test(last)) {
 		return { body: parts.slice(0, -1).join(" · ").trimEnd(), time: last };
 	}
-	if (parts.length >= 2) {
-		const maybeTime = parts[parts.length - 2]!.trim();
-		if (TIME_SEGMENT_PATTERN.test(maybeTime)) {
-			return { body: parts.slice(0, -2).join(" · ").trimEnd(), time: maybeTime };
-		}
+	const maybeTime = parts[parts.length - 2]!.trim();
+	if (TIME_SEGMENT_PATTERN.test(maybeTime) && isTokenMetrics(last)) {
+		return { body: parts.slice(0, -2).join(" · ").trimEnd(), time: maybeTime };
 	}
 	return undefined;
 }
 
-function splitStats(text: string): { body: string; time: string; stats: string } {
+function splitStats(text: string): { body: string; time: string } {
 	const parenthesized = text.match(TASK_STATS_PATTERN);
 	if (parenthesized) {
 		const body = text.slice(0, parenthesized.index).trimEnd();
 		const inner = parenthesized[1]!.trim();
 		const metrics = splitDotMetrics(inner);
-		if (metrics?.time) return { body, time: metrics.time, stats: "" };
-		if (TIME_SEGMENT_PATTERN.test(inner)) return { body, time: inner, stats: "" };
-		// Not a metrics cluster: keep the raw parenthetical as generic stats.
-		return { body, time: "", stats: parenthesized[0] };
+		if (metrics?.time) return { body, time: metrics.time };
+		if (TIME_SEGMENT_PATTERN.test(inner)) return { body, time: inner };
 	}
 
 	const trailing = splitDotMetrics(text);
-	if (trailing?.time) return { body: trailing.body, time: trailing.time, stats: "" };
-	return { body: text, time: "", stats: "" };
+	if (trailing?.time) return trailing;
+	return { body: text, time: "" };
 }
 
 function renderHeader(theme: ThemeLike, text: string): string {
@@ -157,13 +181,14 @@ function renderTaskIcon(theme: ThemeLike, status: TaskRow["status"]): string {
 }
 
 function renderTaskText(theme: ThemeLike, row: TaskRow): string {
-	const { body, time, stats } = splitStats(row.text);
-	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
-	const statsStyled = stats ? color(theme, "dim", stats) : "";
-	if (row.status === "completed") return `${color(theme, "dim", strike(theme, body))}${statsStyled}${timeStyled}`;
-	if (row.status === "active") return `${color(theme, "accent", body)}${statsStyled}${timeStyled}`;
-	if (row.status === "running") return `${body}${statsStyled}${timeStyled}`;
-	return `${body}${statsStyled}${timeStyled}`;
+	const parsed = row.status === "active" || row.status === "running"
+		? splitStats(row.text)
+		: { body: row.text, time: "" };
+	const timeStyled = parsed.time ? color(theme, "dim", ` · ${parsed.time}`) : "";
+	if (row.status === "completed") return color(theme, "dim", strike(theme, parsed.body));
+	if (row.status === "active") return `${color(theme, "accent", parsed.body)}${timeStyled}`;
+	if (row.status === "running") return `${parsed.body}${timeStyled}`;
+	return parsed.body;
 }
 
 function renderTaskRow(theme: ThemeLike, row: TaskRow, idWidth: number): string {
@@ -186,59 +211,71 @@ function parseOverflowCount(parsed: ParsedLine[]): number {
 }
 
 function pickCurrentTask(tasks: TaskRow[]): TaskRow | undefined {
-	return tasks.find((t) => t.status === "running") ?? tasks.find((t) => t.status === "active");
+	return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "running");
+}
+
+function getCounts(parsed: ParsedLine[], tasks: TaskRow[]): HeaderCounts {
+	const header = parsed.find((p): p is { kind: "header"; text: string; counts: HeaderCounts } => p.kind === "header" && Boolean(p.counts));
+	if (header) return header.counts;
+	return {
+		total: tasks.length + parseOverflowCount(parsed),
+		completed: tasks.filter((t) => t.status === "completed").length,
+		inProgress: tasks.filter((t) => t.status === "active" || t.status === "running").length,
+		pending: tasks.filter((t) => t.status === "pending").length,
+	};
 }
 
 function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number): string[] {
-	// The tasks widget sits above the editor at full terminal width; assume at
-	// least 100 cols so task names are not truncated aggressively on wide terms.
-	const renderWidth = Math.max(width, 100);
+	const renderWidth = Math.max(1, Math.floor(width));
 	const tasks = parsed.filter((p): p is TaskRow => p.kind === "task");
-	const overflowN = parseOverflowCount(parsed);
-	const total = tasks.length + overflowN;
+	const counts = getCounts(parsed, tasks);
+	const total = counts.total;
 	const label = `${WIDGET_ROW_PREFIX}${color(theme, "accent", "●")} ${color(theme, "accent", bold(theme, "Tasks"))}`;
 
-	if (tasks.length === 0 && overflowN === 0) {
+	if (tasks.length === 0 && total === 0) {
 		return [`${label}${color(theme, "dim", " · idle")}`];
 	}
 
-	const completed = tasks.filter((t) => t.status === "completed").length;
 	const blocked = tasks.filter((t) => Boolean(t.suffix)).length;
 	const current = pickCurrentTask(tasks);
-	const allDone = completed === total && total > 0;
+	const allDone = counts.completed === total && total > 0;
 
 	const tailParts: string[] = [];
 	if (allDone) {
 		tailParts.push(color(theme, "success", " done"));
+	} else if (!current && counts.inProgress > 0) {
+		tailParts.push(color(theme, "dim", " running"));
 	} else if (!current) {
 		tailParts.push(color(theme, "dim", " idle"));
 	}
-	tailParts.push(color(theme, "dim", `  (${completed}/${total})`));
-	if (blocked > 0) tailParts.push(color(theme, "dim", `  ${blocked} blocked`));
+	tailParts.push(color(theme, "dim", ` (${counts.completed}/${total})`));
+	if (blocked > 0) tailParts.push(color(theme, "dim", ` ${blocked} blocked`));
 	const tail = tailParts.join("");
 
 	if (!current || allDone) {
-		return [`${label}${tail}`];
+		const base = `${label}${tail}`;
+		return [visibleWidth(base) > renderWidth ? safeTruncateToWidth(base, renderWidth, "…") : base];
 	}
 
 	const marker = color(theme, "accent", bold(theme, "› "));
 	const spacer = " ";
-	// Drop token arrows; keep time (same dim as the counts) so the compact line stays glanceable.
-	const { body: bodyNoMetrics, time } = splitStats(current.text);
-	const timeStyled = time ? color(theme, "dim", ` · ${time}`) : "";
-	const timeWidth = visibleWidth(timeStyled);
+	const parsedCurrent = splitStats(current.text);
+	let body = parsedCurrent.body.replace(/…$/, "");
+	let timeStyled = parsedCurrent.time ? color(theme, "dim", ` · ${parsedCurrent.time}`) : "";
+	let timeWidth = visibleWidth(timeStyled);
 	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
 	const budget = renderWidth - fixedWidth;
-	// Need room for `› ` + at least one body char (+ optional time). Otherwise
-	// drop the current-task segment and keep label + counts (never overflow).
-	if (budget < 1 + timeWidth) {
+	if (budget < 1) {
 		const base = `${label}${tail}`;
-		return visibleWidth(base) > renderWidth ? [safeTruncateToWidth(base, renderWidth, "…")] : [base];
+		return [visibleWidth(base) > renderWidth ? safeTruncateToWidth(base, renderWidth, "…") : base];
 	}
-	let body = bodyNoMetrics;
-	const bodyBudget = budget - timeWidth;
+	if (budget - timeWidth < 1 && timeStyled) {
+		timeStyled = "";
+		timeWidth = 0;
+	}
+	const bodyBudget = Math.max(1, budget - timeWidth);
 	if (visibleWidth(body) > bodyBudget) {
-		body = safeTruncateToWidth(body, Math.max(1, bodyBudget), "…");
+		body = safeTruncateToWidth(body, bodyBudget, "…");
 	}
 	return [`${label}${spacer}${marker}${body}${timeStyled}${tail}`];
 }

@@ -108,94 +108,128 @@ async function runCompactRendererSmoke() {
 	const widget = await importBuilt("widgets/pi-tasks-widget.js");
 	const { stylePiTasksWidgetLines } = widget;
 
-	const one = (lines, width = 80) => stripAnsi(stylePiTasksWidgetLines(lines, noTheme, width, "compact").join("\\n"));
+	const one = (lines, width = 80) => stripAnsi(stylePiTasksWidgetLines(lines, noTheme, width, "compact").join("\n"));
 
-	// running task present
+	// active task with upstream no-token metrics: keep time, strip active ellipsis
 	let r = one([
-		"● Tasks",
-		"✔ #1  Scan repo (3 files)",
-		"✳ #2  Refactor box-editor render",
-		"◻ #3  Add tests",
+		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"✔ #1 Scan repo",
+		"✳ #2 Refactor editor… (4s)",
+		"◻ #3 Add tests",
 	]);
-	assert(r.includes("Tasks › Refactor box-editor render"), `running current task, got: ${r}`);
-	assert(/\(1\/3\)$/.test(r), `counts (1/3), got: ${r}`);
-	console.log("compact: running ok");
+	assert(r.includes("● Tasks › Refactor editor · 4s"), `active time, got: ${r}`);
+	assert(/ \(1\/3\)$/.test(r), `counts (1/3), got: ${r}`);
+	assert(!r.includes("… · 4s"), `active ellipsis should be stripped, got: ${r}`);
+	console.log("compact: active time ok");
 
-	// all completed
+	// all completed uses header counts
 	r = one([
-		"● Tasks",
-		"✔ #1  Scan repo",
-		"✔ #2  Refactor editor",
+		"● 2 tasks (2 done)",
+		"✔ #1 Scan repo",
+		"✔ #2 Refactor editor",
 	]);
-	assert(/Tasks done  \(2\/2\)$/.test(r), `all done, got: ${r}`);
+	assert(/● Tasks done \(2\/2\)$/.test(r), `all done, got: ${r}`);
 	console.log("compact: all done ok");
 
-	// idle (no task rows)
+	// idle/no rows fallback
 	r = one(["● Tasks"]);
 	assert(r.trim() === "● Tasks · idle", `idle, got: ${r}`);
 	console.log("compact: idle ok");
 
-	// blocked
+	// blocked indicator is based on visible blocked rows
 	r = one([
-		"● Tasks",
-		"✔ #1  Scan repo",
-		"✳ #2  Write tests › blocked by #1",
-		"◻ #3  Add docs",
+		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"✔ #1 Scan repo",
+		"✳ #2 Write tests… (5s) › blocked by #1",
+		"◻ #3 Add docs",
 	]);
 	assert(r.includes("1 blocked"), `blocked indicator, got: ${r}`);
-	assert(/\(1\/3\)/.test(r), `counts with blocked, got: ${r}`);
+	assert(/ \(1\/3\)/.test(r), `counts with blocked, got: ${r}`);
 	console.log("compact: blocked ok");
 
-	// overflow increments total
+	// header counts win over visible rows when overflow hides tasks
 	r = one([
-		"● Tasks",
-		"✳ #1  Scan repo",
-		"✔ #2  Refactor editor",
+		"● 5 tasks (4 done, 1 in progress)",
+		"✳ #1 Scan repo… (9s)",
+		"✔ #2 Refactor editor",
 		"… and 3 more",
 	]);
-	assert(/\(1\/5\)$/.test(r), `overflow total (1/5), got: ${r}`);
-	console.log("compact: overflow ok");
+	assert(/ \(4\/5\)$/.test(r), `overflow uses header counts (4/5), got: ${r}`);
+	console.log("compact: overflow header counts ok");
 
-	// compact drops token arrows, keeps time dim (real parenthesized format)
+	// if header says work is running but the current row is hidden, do not report idle
 	r = one([
-		"● Tasks",
-		"✔ #1  Scan repo (12s · ↑ 1.2k ↓ 0.4k)",
-		"✳ #2  Refactor editor (4s · ↑ 0.8k ↓ 0.3k)",
-		"◻ #3  Add tests",
+		"● 5 tasks (4 done, 1 in progress)",
+		"✔ #1 Completed visible",
+		"✔ #2 Also completed",
+		"… and 3 more",
 	]);
-	assert(r.includes("› Refactor editor · 4s"), `keep time, got: ${r}`);
-	assert(!/tok|↑|↓/.test(r), `drop token arrows, got: ${r}`);
+	assert(/● Tasks running \(4\/5\)$/.test(r), `hidden running should not look idle, got: ${r}`);
+	console.log("compact: hidden running summary ok");
 
-	// compact also keeps time from the older/trailing metric shape
+	// active spinner is the current task, not a stale non-active in-progress row
 	r = one([
-		"● Tasks",
-		"✔ #1  Scan repo · 12s · 1.2k tok",
-		"✳ #2  Refactor editor · 4s · 0.8k tok",
-		"◻ #3  Add tests",
+		"● 3 tasks (0 done, 2 in progress, 1 open)",
+		"◼ #2 Waiting on IO",
+		"✳ #3 Actually running… (7s)",
+		"◻ #4 Add docs",
+	]);
+	assert(r.includes("› Actually running · 7s"), `active should win over running, got: ${r}`);
+	assert(!r.includes("Waiting on IO"), `stale running picked, got: ${r}`);
+	console.log("compact: active selection ok");
+
+	// compact drops token arrows, keeps time dim segment text (real parenthesized format)
+	r = one([
+		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"✔ #1 Scan repo",
+		"✳ #2 Refactor editor… (2m 49s · ↑ 4.1k ↓ 1.2k)",
+		"◻ #3 Add tests",
+	]);
+	assert(r.includes("› Refactor editor · 2m 49s"), `keep time, got: ${r}`);
+	assert(!/↑|↓|4\.1k|1\.2k/.test(r), `drop token arrows, got: ${r}`);
+	console.log("compact: parenthesized metrics ok");
+
+	// compact also keeps time from older/trailing metric shape, but only when token segment is metric-like
+	r = one([
+		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"✔ #1 Scan repo",
+		"✳ #2 Refactor editor · 4s · 0.8k tok",
+		"◻ #3 Add tests",
 	]);
 	assert(r.includes("› Refactor editor · 4s"), `keep trailing time, got: ${r}`);
-	assert(!/tok/.test(r), `drop trailing token, got: ${r}`);
-	console.log("compact: metrics time-only ok");
+	assert(!/tok|0\.8k/.test(r), `drop trailing token, got: ${r}`);
+	console.log("compact: trailing metrics ok");
 
-	// compact assumes >=100 cols; a very long name still truncates, counts kept
-	const longName = "✳ #2  " + "A".repeat(120);
+	// ordinary parentheses in task names are preserved; only the final metric suffix is stripped
 	r = one([
-		"● Tasks",
-		"✔ #1  Scan repo",
+		"● 2 tasks (0 done, 1 in progress, 1 open)",
+		"✳ #2 Handle files (3 cases)… (4s)",
+		"◻ #3 Add tests",
+	]);
+	assert(r.includes("› Handle files (3 cases) · 4s"), `ordinary parentheses preserved, got: ${r}`);
+	console.log("compact: ordinary parentheses ok");
+
+	// real width is respected: no min-width 100 lie
+	const longName = "✳ #2 " + "A".repeat(120) + "… (4s)";
+	r = one([
+		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"✔ #1 Scan repo",
 		longName,
-		"◻ #3  Add tests",
+		"◻ #3 Add tests",
 	], 60);
 	assert(r.includes("(1/3)"), `long name keeps counts, got: ${r}`);
-	assert(stripAnsi(r).length <= 100, `long name fits renderWidth=100, got len ${stripAnsi(r).length}`);
+	assert(stripAnsi(r).length <= 60, `long name respects width=60, got len ${stripAnsi(r).length}: ${r}`);
 	assert(r.includes("›"), `long name shows current marker, got: ${r}`);
-	console.log("compact: long-name truncation ok");
+	console.log("compact: real-width truncation ok");
 
-	// default style still multi-line
+	// default style still multi-line and drops active token metrics only
 	const multi = stylePiTasksWidgetLines([
-		"● Tasks",
-		"✳ #1  Scan repo",
-	], noTheme, 80, "default");
+		"● 2 tasks (0 done, 1 in progress, 1 open)",
+		"✳ #1 Handle files (3 cases)… (4s · ↑ 800 ↓ 300)",
+	], noTheme, 80, "default").map(stripAnsi);
 	assert(Array.isArray(multi) && multi.length === 2, `default multi-line, got ${multi.length} lines`);
+	assert(multi[1].includes("Handle files (3 cases)… · 4s"), `default keeps time and name parens, got: ${multi[1]}`);
+	assert(!/↑|↓|800|300/.test(multi[1]), `default drops token metrics, got: ${multi[1]}`);
 	console.log("compact: default style multi-line ok");
 }
 
