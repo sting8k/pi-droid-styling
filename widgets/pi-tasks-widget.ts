@@ -266,12 +266,13 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 	}
 
 	const marker = color(theme, "accent", bold(theme, "› "));
+	const idPrefix = color(theme, "dim", `[${current.id}] `);
 	const spacer = " ";
 	const parsedCurrent = splitStats(current.text);
 	let body = parsedCurrent.body.replace(/…$/, "");
 	let timeStyled = parsedCurrent.time ? color(theme, "dim", ` · ${parsedCurrent.time}`) : "";
 	let timeWidth = visibleWidth(timeStyled);
-	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(tail);
+	const fixedWidth = visibleWidth(label) + visibleWidth(spacer) + visibleWidth(marker) + visibleWidth(idPrefix) + visibleWidth(tail);
 	const budget = renderWidth - fixedWidth;
 	if (budget < 1) {
 		const base = `${label}${tail}`;
@@ -285,7 +286,7 @@ function renderCompactLine(parsed: ParsedLine[], theme: ThemeLike, width: number
 	if (visibleWidth(body) > bodyBudget) {
 		body = safeTruncateToWidth(body, bodyBudget, "…");
 	}
-	return [`${label}${spacer}${marker}${body}${timeStyled}${tail}`];
+	return [`${label}${spacer}${marker}${idPrefix}${body}${timeStyled}${tail}`];
 }
 
 export function stylePiTasksWidgetLines(lines: string[], theme: ThemeLike, width: number, style: TasksWidgetStyle = "default"): string[] {

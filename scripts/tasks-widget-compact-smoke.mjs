@@ -117,7 +117,7 @@ async function runCompactRendererSmoke() {
 		"✳ #2 Refactor editor… (4s)",
 		"◻ #3 Add tests",
 	]);
-	assert(r.includes("● Tasks › Refactor editor · 4s"), `active time, got: ${r}`);
+	assert(r.includes("● Tasks › [2] Refactor editor · 4s"), `active time, got: ${r}`);
 	assert(/ \(1\/3\)$/.test(r), `counts (1/3), got: ${r}`);
 	assert(!r.includes("… · 4s"), `active ellipsis should be stripped, got: ${r}`);
 	console.log("compact: active time ok");
@@ -174,7 +174,7 @@ async function runCompactRendererSmoke() {
 		"✳ #3 Actually running… (7s)",
 		"◻ #4 Add docs",
 	]);
-	assert(r.includes("› Actually running · 7s"), `active should win over running, got: ${r}`);
+	assert(r.includes("› [3] Actually running · 7s"), `active should win over running, got: ${r}`);
 	assert(!r.includes("Waiting on IO"), `stale running picked, got: ${r}`);
 	console.log("compact: active selection ok");
 
@@ -189,13 +189,13 @@ async function runCompactRendererSmoke() {
 		];
 		Date.now = () => 0;
 		r = one(rotating);
-		assert(r.includes("› First running"), `cycle bucket 0, got: ${r}`);
+		assert(r.includes("› [2] First running"), `cycle bucket 0, got: ${r}`);
 		Date.now = () => 3000;
 		r = one(rotating);
-		assert(r.includes("› Second running"), `cycle bucket 1, got: ${r}`);
+		assert(r.includes("› [3] Second running"), `cycle bucket 1, got: ${r}`);
 		Date.now = () => 6000;
 		r = one(rotating);
-		assert(r.includes("› First running"), `cycle bucket 2 wraps, got: ${r}`);
+		assert(r.includes("› [2] First running"), `cycle bucket 2 wraps, got: ${r}`);
 
 		Date.now = () => 3000;
 		r = one([
@@ -204,7 +204,7 @@ async function runCompactRendererSmoke() {
 			"✳ #3 Active spinner… (7s)",
 			"◻ #4 Add docs",
 		]);
-		assert(r.includes("› Active spinner · 7s"), `active should still win over non-active running, got: ${r}`);
+		assert(r.includes("› [3] Active spinner · 7s"), `active should still win over non-active running, got: ${r}`);
 		assert(!r.includes("Stale running"), `non-active running should not beat active, got: ${r}`);
 	} finally {
 		Date.now = realNow;
@@ -218,7 +218,7 @@ async function runCompactRendererSmoke() {
 		"✳ #2 Refactor editor… (2m 49s · ↑ 4.1k ↓ 1.2k)",
 		"◻ #3 Add tests",
 	]);
-	assert(r.includes("› Refactor editor · 2m 49s"), `keep time, got: ${r}`);
+	assert(r.includes("› [2] Refactor editor · 2m 49s"), `keep time, got: ${r}`);
 	assert(!/↑|↓|4\.1k|1\.2k/.test(r), `drop token arrows, got: ${r}`);
 	console.log("compact: parenthesized metrics ok");
 
@@ -229,7 +229,7 @@ async function runCompactRendererSmoke() {
 		"✳ #2 Refactor editor · 4s · 0.8k tok",
 		"◻ #3 Add tests",
 	]);
-	assert(r.includes("› Refactor editor · 4s"), `keep trailing time, got: ${r}`);
+	assert(r.includes("› [2] Refactor editor · 4s"), `keep trailing time, got: ${r}`);
 	assert(!/tok|0\.8k/.test(r), `drop trailing token, got: ${r}`);
 	console.log("compact: trailing metrics ok");
 
@@ -239,7 +239,7 @@ async function runCompactRendererSmoke() {
 		"✳ #2 Handle files (3 cases)… (4s)",
 		"◻ #3 Add tests",
 	]);
-	assert(r.includes("› Handle files (3 cases) · 4s"), `ordinary parentheses preserved, got: ${r}`);
+	assert(r.includes("› [2] Handle files (3 cases) · 4s"), `ordinary parentheses preserved, got: ${r}`);
 	console.log("compact: ordinary parentheses ok");
 
 	// real width is respected: no min-width 100 lie
