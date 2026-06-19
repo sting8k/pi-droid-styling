@@ -165,6 +165,16 @@ async function runCompactRendererSmoke() {
 	]);
 	assert(r.includes("› Refactor editor · 4s"), `keep time, got: ${r}`);
 	assert(!/tok|↑|↓/.test(r), `drop token arrows, got: ${r}`);
+
+	// compact also keeps time from the older/trailing metric shape
+	r = one([
+		"● Tasks",
+		"✔ #1  Scan repo · 12s · 1.2k tok",
+		"✳ #2  Refactor editor · 4s · 0.8k tok",
+		"◻ #3  Add tests",
+	]);
+	assert(r.includes("› Refactor editor · 4s"), `keep trailing time, got: ${r}`);
+	assert(!/tok/.test(r), `drop trailing token, got: ${r}`);
 	console.log("compact: metrics time-only ok");
 
 	// compact assumes >=100 cols; a very long name still truncates, counts kept

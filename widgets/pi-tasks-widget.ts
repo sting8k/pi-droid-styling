@@ -100,30 +100,44 @@ function parseTaskWidgetLine(line: string): ParsedLine {
 	};
 }
 
-// Upstream pi-tasks renders trailing stats as a parenthesized cluster:
-//   (2m 49s · ↑ 4.1k ↓ 1.2k)   |   (2m 49s)   |   (1h 3m)
-// We keep only the elapsed time (dim) and drop the token arrows.
-const TIME_INNER_PATTERN = /\d+s|\d+m(?: \d+s)?|\d+h(?: \d+m)?/;
-const TOKEN_ARROW_PATTERN = /[↑↓]\s+\d+(?:\.\d+)?k?/;
+// Upstream pi-tasks can expose metrics in two shapes depending on source/version:
+//   (2m 49s · ↑ 4.1k ↓ 1.2k)   |   (2m 49s)
+//   · 2m 49s · ↑ 4.1k ↓ 1.2k   |   · 4s · 0.8k tok
+// We keep only the elapsed time (dim) and drop token counters.
+const TIME_SEGMENT_PATTERN = /^(?:\d+s|\d+m(?: \d+s)?|\d+h(?: \d+m)?|\d+(?:\.\d+)?[smh](?:\d+[smh])*)$/;
 const TASK_STATS_PATTERN = /\s+\(([^)]*)\)$/;
 
-function splitStats(text: string): { body: string; time: string; stats: string } {
-	const m = text.match(TASK_STATS_PATTERN);
-	if (!m) return { body: text, time: "", stats: "" };
-	const body = text.slice(0, m.index).trimEnd();
-	const inner = m[1]!.trim();
-	const dotIdx = inner.indexOf("·");
-	if (dotIdx >= 0) {
-		const left = inner.slice(0, dotIdx).trim();
-		const right = inner.slice(dotIdx + 1).trim();
-		if (TIME_INNER_PATTERN.test(left) && TOKEN_ARROW_PATTERN.test(right)) {
-			return { body, time: left, stats: "" };
-		}
-	} else if (TIME_INNER_PATTERN.test(inner)) {
-		return { body, time: inner, stats: "" };
+function splitDotMetrics(text: string): { body: string; time: string } | undefined {
+	const parts = text.split(/\s+·\s+/);
+	if (parts.length < 2) return undefined;
+	const last = parts[parts.length - 1]!.trim();
+	if (TIME_SEGMENT_PATTERN.test(last)) {
+		return { body: parts.slice(0, -1).join(" · ").trimEnd(), time: last };
 	}
-	// Not a metrics cluster: keep the raw parenthetical as generic stats.
-	return { body, time: "", stats: m[0] };
+	if (parts.length >= 2) {
+		const maybeTime = parts[parts.length - 2]!.trim();
+		if (TIME_SEGMENT_PATTERN.test(maybeTime)) {
+			return { body: parts.slice(0, -2).join(" · ").trimEnd(), time: maybeTime };
+		}
+	}
+	return undefined;
+}
+
+function splitStats(text: string): { body: string; time: string; stats: string } {
+	const parenthesized = text.match(TASK_STATS_PATTERN);
+	if (parenthesized) {
+		const body = text.slice(0, parenthesized.index).trimEnd();
+		const inner = parenthesized[1]!.trim();
+		const metrics = splitDotMetrics(inner);
+		if (metrics?.time) return { body, time: metrics.time, stats: "" };
+		if (TIME_SEGMENT_PATTERN.test(inner)) return { body, time: inner, stats: "" };
+		// Not a metrics cluster: keep the raw parenthetical as generic stats.
+		return { body, time: "", stats: parenthesized[0] };
+	}
+
+	const trailing = splitDotMetrics(text);
+	if (trailing?.time) return { body: trailing.body, time: trailing.time, stats: "" };
+	return { body: text, time: "", stats: "" };
 }
 
 function renderHeader(theme: ThemeLike, text: string): string {
