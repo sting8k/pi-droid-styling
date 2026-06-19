@@ -178,6 +178,39 @@ async function runCompactRendererSmoke() {
 	assert(!r.includes("Waiting on IO"), `stale running picked, got: ${r}`);
 	console.log("compact: active selection ok");
 
+	// multiple non-active in-progress rows rotate every 3 seconds
+	const realNow = Date.now;
+	try {
+		const rotating = [
+			"● 3 tasks (0 done, 2 in progress, 1 open)",
+			"◼ #2 First running",
+			"◼ #3 Second running",
+			"◻ #4 Add docs",
+		];
+		Date.now = () => 0;
+		r = one(rotating);
+		assert(r.includes("› First running"), `cycle bucket 0, got: ${r}`);
+		Date.now = () => 3000;
+		r = one(rotating);
+		assert(r.includes("› Second running"), `cycle bucket 1, got: ${r}`);
+		Date.now = () => 6000;
+		r = one(rotating);
+		assert(r.includes("› First running"), `cycle bucket 2 wraps, got: ${r}`);
+
+		Date.now = () => 3000;
+		r = one([
+			"● 3 tasks (0 done, 2 in progress, 1 open)",
+			"◼ #2 Stale running",
+			"✳ #3 Active spinner… (7s)",
+			"◻ #4 Add docs",
+		]);
+		assert(r.includes("› Active spinner · 7s"), `active should still win over non-active running, got: ${r}`);
+		assert(!r.includes("Stale running"), `non-active running should not beat active, got: ${r}`);
+	} finally {
+		Date.now = realNow;
+	}
+	console.log("compact: 3s current-task cycle ok");
+
 	// compact drops token arrows, keeps time dim segment text (real parenthesized format)
 	r = one([
 		"● 3 tasks (1 done, 1 in progress, 1 open)",

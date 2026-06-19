@@ -51,6 +51,7 @@ const SPINNER_CHARS = "✳✴✵✶✷✸✹✺✻✼✽";
 const TASK_ROW_PATTERN = /^\s*([✳✴✵✶✷✸✹✺✻✼✽✔◼◻])\s+#(\S+)\s+(.+)$/;
 const BLOCKED_SUFFIX = " › blocked by ";
 const WIDGET_ROW_PREFIX = "   ";
+const TASK_CYCLE_MS = 3000;
 
 function color(theme: ThemeLike, colorName: string, text: string): string {
 	return typeof theme?.fg === "function" ? theme.fg(colorName, text) : text;
@@ -210,8 +211,15 @@ function parseOverflowCount(parsed: ParsedLine[]): number {
 	return m ? Number(m[1]) : 0;
 }
 
-function pickCurrentTask(tasks: TaskRow[]): TaskRow | undefined {
-	return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "running");
+function getTaskCycleBucket(now = Date.now()): number {
+	return Math.floor(now / TASK_CYCLE_MS);
+}
+
+function pickCurrentTask(tasks: TaskRow[], now = Date.now()): TaskRow | undefined {
+	const active = tasks.filter((t) => t.status === "active");
+	const candidates = active.length > 0 ? active : tasks.filter((t) => t.status === "running");
+	if (candidates.length === 0) return undefined;
+	return candidates[getTaskCycleBucket(now) % candidates.length];
 }
 
 function getCounts(parsed: ParsedLine[], tasks: TaskRow[]): HeaderCounts {
@@ -320,7 +328,8 @@ function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike,
 		const lines = baseRender(...args);
 		if (!Array.isArray(lines)) return lines;
 		const width = getRenderWidth(args, tui);
-		const cacheKey = `${width}\n${style}\n${lines.map(normalizeWidgetLineForCache).join("\n")}`;
+		const cycleKey = style === "compact" ? `\ncycle:${getTaskCycleBucket()}` : "";
+		const cacheKey = `${width}\n${style}${cycleKey}\n${lines.map(normalizeWidgetLineForCache).join("\n")}`;
 		if (cachedLines && cachedKey === cacheKey) return cachedLines;
 		cachedKey = cacheKey;
 		cachedLines = stylePiTasksWidgetLines(lines, theme, width, style);
