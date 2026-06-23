@@ -266,6 +266,56 @@ async function runCompactRendererSmoke() {
 	console.log("compact: default style multi-line ok");
 }
 
+async function runCompactCacheSmoke() {
+	const widget = await importBuilt("widgets/pi-tasks-widget.js");
+	const { installPiTasksWidgetStyling } = widget;
+
+	function createWrappedComponent(lines) {
+		let storedContent;
+		const sessionUi = {
+			theme: noTheme,
+			terminal: { columns: 80 },
+			setWidget(_key, content) { storedContent = content; },
+		};
+		const dispose = installPiTasksWidgetStyling(sessionUi, "compact");
+		sessionUi.setWidget("tasks", () => ({ render: () => lines }), { placement: "aboveEditor" });
+		const component = storedContent({ terminal: { columns: 80 } }, noTheme);
+		return { component, dispose };
+	}
+
+	const realNow = Date.now;
+	try {
+		Date.now = () => 0;
+		let wrapped = createWrappedComponent([
+			"● 2 tasks (0 done, 1 in progress, 1 open)",
+			"✳ #1 Single active… (4s)",
+			"◻ #2 Add docs",
+		]);
+		const singleFirst = wrapped.component.render();
+		Date.now = () => 3000;
+		const singleSecond = wrapped.component.render();
+		assert(singleSecond === singleFirst, "single running task should not invalidate cache every 3s");
+		wrapped.dispose?.();
+
+		Date.now = () => 0;
+		wrapped = createWrappedComponent([
+			"● 3 tasks (0 done, 2 in progress, 1 open)",
+			"◼ #1 First running",
+			"◼ #2 Second running",
+			"◻ #3 Add docs",
+		]);
+		const multiFirst = stripAnsi(wrapped.component.render()[0]);
+		Date.now = () => 3000;
+		const multiSecond = stripAnsi(wrapped.component.render()[0]);
+		assert(multiFirst !== multiSecond, `multiple running tasks should invalidate cache each cycle, got ${multiFirst}`);
+		assert(multiFirst.includes("[1] First running") && multiSecond.includes("[2] Second running"), `cycle cache output wrong: ${multiFirst} -> ${multiSecond}`);
+		wrapped.dispose?.();
+	} finally {
+		Date.now = realNow;
+	}
+	console.log("compact: conditional cycle cache ok");
+}
+
 async function runConfigSmoke() {
 	async function loadFresh(homeDir) {
 		mkdirSync(homeDir, { recursive: true });
@@ -319,6 +369,7 @@ async function main() {
 	prepareWorkDir();
 	compileSurface();
 	await runCompactRendererSmoke();
+	await runCompactCacheSmoke();
 	await runConfigSmoke();
 	console.log("tasks-widget-compact smoke ok");
 	rmSync(workDir, { recursive: true, force: true });

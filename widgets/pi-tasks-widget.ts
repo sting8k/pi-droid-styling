@@ -222,6 +222,12 @@ function pickCurrentTask(tasks: TaskRow[], now = Date.now()): TaskRow | undefine
 	return candidates[getTaskCycleBucket(now) % candidates.length];
 }
 
+function needsTaskCycle(lines: string[]): boolean {
+	const tasks = lines.map(parseTaskWidgetLine).filter((p): p is TaskRow => p.kind === "task");
+	const active = tasks.filter((t) => t.status === "active");
+	return active.length > 1 || (active.length === 0 && tasks.filter((t) => t.status === "running").length > 1);
+}
+
 function getCounts(parsed: ParsedLine[], tasks: TaskRow[]): HeaderCounts {
 	const header = parsed.find((p): p is { kind: "header"; text: string; counts: HeaderCounts } => p.kind === "header" && Boolean(p.counts));
 	if (header) return header.counts;
@@ -329,7 +335,7 @@ function wrapTaskWidgetComponent(component: any, tui: TuiLike, theme: ThemeLike,
 		const lines = baseRender(...args);
 		if (!Array.isArray(lines)) return lines;
 		const width = getRenderWidth(args, tui);
-		const cycleKey = style === "compact" ? `\ncycle:${getTaskCycleBucket()}` : "";
+		const cycleKey = style === "compact" && needsTaskCycle(lines) ? `\ncycle:${getTaskCycleBucket()}` : "";
 		const cacheKey = `${width}\n${style}${cycleKey}\n${lines.map(normalizeWidgetLineForCache).join("\n")}`;
 		if (cachedLines && cachedKey === cacheKey) return cachedLines;
 		cachedKey = cacheKey;
