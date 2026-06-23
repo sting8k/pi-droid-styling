@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
 		const config = loadConfig();
 		const userZoneStyle = resolveUserZoneStyle(config.userZoneStyle);
 		disposePiTasksWidgetStylingForCurrentSession?.();
-		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi);
+		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi, config.tasksWidgetStyle);
 		restoreTerminalBackgroundForCurrentSession?.();
 		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
