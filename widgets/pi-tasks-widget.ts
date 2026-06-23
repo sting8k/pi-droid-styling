@@ -61,9 +61,6 @@ function bold(theme: ThemeLike, text: string): string {
 	return typeof theme?.bold === "function" ? theme.bold(text) : text;
 }
 
-function strike(theme: ThemeLike, text: string): string {
-	return typeof theme?.strikethrough === "function" ? theme.strikethrough(text) : text;
-}
 
 function normalizeWidgetLineForCache(line: string): string {
 	return stripAnsi(line).replace(SPINNER_PATTERN, "●");
@@ -165,40 +162,6 @@ function splitStats(text: string): { body: string; time: string } {
 	return { body: text, time: "" };
 }
 
-function renderHeader(theme: ThemeLike, text: string): string {
-	const label = color(theme, "accent", bold(theme, "Tasks"));
-	const separator = color(theme, "dim", " · ");
-	return `${WIDGET_ROW_PREFIX}${label}${separator}${color(theme, "dim", text)}`;
-}
-
-function renderOverflow(theme: ThemeLike, text: string): string {
-	return `${WIDGET_ROW_PREFIX}${color(theme, "dim", text.replace(/^…/, "⋯"))}`;
-}
-
-function renderTaskIcon(theme: ThemeLike, status: TaskRow["status"]): string {
-	if (status === "completed") return color(theme, "success", "✓");
-	if (status === "pending") return color(theme, "dim", "○");
-	return color(theme, "accent", "●");
-}
-
-function renderTaskText(theme: ThemeLike, row: TaskRow): string {
-	const parsed = row.status === "active" || row.status === "running"
-		? splitStats(row.text)
-		: { body: row.text, time: "" };
-	const timeStyled = parsed.time ? color(theme, "dim", ` · ${parsed.time}`) : "";
-	if (row.status === "completed") return color(theme, "dim", strike(theme, parsed.body));
-	if (row.status === "active") return `${color(theme, "accent", parsed.body)}${timeStyled}`;
-	if (row.status === "running") return `${parsed.body}${timeStyled}`;
-	return parsed.body;
-}
-
-function renderTaskRow(theme: ThemeLike, row: TaskRow, idWidth: number): string {
-	const id = color(theme, "dim", `#${row.id.padStart(idWidth)}`);
-	const icon = renderTaskIcon(theme, row.status);
-	const text = renderTaskText(theme, row);
-	const suffix = row.suffix ? color(theme, "dim", row.suffix) : "";
-	return `${WIDGET_ROW_PREFIX}${icon} ${id}  ${text}${suffix}`;
-}
 
 function visibleWidth(s: string): number {
 	return stripAnsi(s).length;
@@ -299,20 +262,7 @@ export function stylePiTasksWidgetLines(lines: string[], theme: ThemeLike, width
 	if (style === "compact") {
 		return renderCompactLine(lines.map(parseTaskWidgetLine), theme, Math.max(1, Math.floor(width)));
 	}
-	const parsed = lines.map(parseTaskWidgetLine);
-	const idWidth = parsed.reduce((max, line) => line.kind === "task" ? Math.max(max, line.id.length) : max, 1);
-	const maxWidth = Math.max(1, Math.floor(width));
-
-	return parsed.map((line) => {
-		const rendered = line.kind === "header"
-			? renderHeader(theme, line.text)
-			: line.kind === "overflow"
-				? renderOverflow(theme, line.text)
-				: line.kind === "task"
-					? renderTaskRow(theme, line, idWidth)
-					: line.text;
-		return safeTruncateToWidth(rendered, maxWidth, "…");
-	});
+	return lines;
 }
 
 function getRenderWidth(args: unknown[], tui: TuiLike): number {
@@ -362,8 +312,11 @@ function styleStaticTaskWidgetLines(content: string[], theme: ThemeLike | undefi
 export function installPiTasksWidgetStyling(sessionUi: SessionUiLike, style: TasksWidgetStyle = "default"): (() => void) | undefined {
 	if (!sessionUi || typeof sessionUi.setWidget !== "function") return undefined;
 	const host = sessionUi as SessionUiLike & { [PATCH_STATE]?: { dispose(): void } };
+	if (style === "default") {
+		host[PATCH_STATE]?.dispose();
+		return undefined;
+	}
 	if (host[PATCH_STATE]) return () => host[PATCH_STATE]?.dispose();
-
 	const originalSetWidget = sessionUi.setWidget;
 	const patchedSetWidget = function patchedPiTasksSetWidget(key: string, content: string[] | WidgetFactory | undefined, options?: unknown): void {
 		if (key !== "tasks" || content === undefined) {

@@ -255,15 +255,15 @@ async function runCompactRendererSmoke() {
 	assert(r.includes("›"), `long name shows current marker, got: ${r}`);
 	console.log("compact: real-width truncation ok");
 
-	// default style still multi-line and drops active token metrics only
-	const multi = stylePiTasksWidgetLines([
+	// default style is a pass-through: no token stripping, recoloring, or truncation.
+	const defaultLines = [
 		"● 2 tasks (0 done, 1 in progress, 1 open)",
 		"✳ #1 Handle files (3 cases)… (4s · ↑ 800 ↓ 300)",
-	], noTheme, 80, "default").map(stripAnsi);
-	assert(Array.isArray(multi) && multi.length === 2, `default multi-line, got ${multi.length} lines`);
-	assert(multi[1].includes("Handle files (3 cases)… · 4s"), `default keeps time and name parens, got: ${multi[1]}`);
-	assert(!/↑|↓|800|300/.test(multi[1]), `default drops token metrics, got: ${multi[1]}`);
-	console.log("compact: default style multi-line ok");
+	];
+	const multi = stylePiTasksWidgetLines(defaultLines, noTheme, 10, "default");
+	assert(multi === defaultLines, "default renderer should pass through by identity");
+	assert(multi[1].includes("↑ 800 ↓ 300"), `default renderer should not strip token metrics, got: ${multi[1]}`);
+	console.log("compact: default renderer pass-through ok");
 }
 
 async function runCompactCacheSmoke() {
@@ -314,6 +314,35 @@ async function runCompactCacheSmoke() {
 		Date.now = realNow;
 	}
 	console.log("compact: conditional cycle cache ok");
+}
+
+async function runDefaultNoInterferenceSmoke() {
+	const widget = await importBuilt("widgets/pi-tasks-widget.js");
+	const { installPiTasksWidgetStyling } = widget;
+	const taskLines = [
+		"● 2 tasks (0 done, 1 in progress, 1 open)",
+		"✳ #1 Handle files… (4s · ↑ 800 ↓ 300)",
+	];
+	let storedContent;
+	const sessionUi = {
+		theme: noTheme,
+		terminal: { columns: 80 },
+		setWidget(_key, content) { storedContent = content; },
+	};
+	const originalSetWidget = sessionUi.setWidget;
+
+	const compactDispose = installPiTasksWidgetStyling(sessionUi, "compact");
+	assert(typeof compactDispose === "function", "compact style should install a pi-tasks patch");
+	assert(sessionUi.setWidget !== originalSetWidget, "compact style should patch setWidget");
+
+	const defaultDispose = installPiTasksWidgetStyling(sessionUi, "default");
+	assert(defaultDispose === undefined, "default style should not install a pi-tasks patch");
+	assert(sessionUi.setWidget === originalSetWidget, "default style should restore original setWidget");
+
+	sessionUi.setWidget("tasks", taskLines, { placement: "aboveEditor" });
+	assert(storedContent === taskLines, "default style should pass pi-tasks content through by identity");
+	assert(storedContent[1].includes("↑ 800 ↓ 300"), `default style should not strip pi-tasks content, got: ${storedContent[1]}`);
+	console.log("compact: default no-interference ok");
 }
 
 async function runConfigSmoke() {
@@ -370,6 +399,7 @@ async function main() {
 	compileSurface();
 	await runCompactRendererSmoke();
 	await runCompactCacheSmoke();
+	await runDefaultNoInterferenceSmoke();
 	await runConfigSmoke();
 	console.log("tasks-widget-compact smoke ok");
 	rmSync(workDir, { recursive: true, force: true });
