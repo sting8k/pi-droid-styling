@@ -49,6 +49,7 @@ type BranchProvider = () => BranchInfo | null;
 type ResponseSpeedProvider = () => number | null;
 type FooterStatusProvider = () => string | null;
 type MetadataPlacementProvider = () => "footer" | "sidebar";
+type FooterTokenUsageProvider = () => string | null;
 
 function isBorderLine(line: string): boolean {
 	const clean = stripAnsi(line).replace(/\s/g, "");
@@ -143,6 +144,7 @@ export class BoxEditor extends CustomEditor {
 		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 		private readonly inputBoxStyle?: InputBoxStyle,
+		private readonly getFooterTokenUsage?: FooterTokenUsageProvider,
 	) {
 		super(tui, theme, kb);
 	}
@@ -565,11 +567,16 @@ export class BoxEditor extends CustomEditor {
 		return this.pad(`${trimmedLeft}${gap}${right}`, width);
 	}
 
+	private formatFooterTokenUsage(): string {
+		return normalizeSingleLine(stripAnsi(this.getFooterTokenUsage?.() ?? ""));
+	}
+
 	private renderRuntimeRow(width: number): string {
 		const usageParts = this.formatRuntimeParts();
 		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
 		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
-		const rightPlain = normalizeSingleLine(stripAnsi(footerStatus));
+		const tokenUsage = this.formatFooterTokenUsage();
+		const rightPlain = [tokenUsage, normalizeSingleLine(stripAnsi(footerStatus))].filter(Boolean).join("  ");
 		const right = this.tone("dim", rightPlain);
 		return this.renderSplitRow(left, right, rightPlain, width);
 	}
@@ -697,17 +704,22 @@ export class BoxEditor extends CustomEditor {
 
 		const separator = ` ${this.tone("dim", "|")} `;
 		const rendered = parts.map((part) => part.rendered).join(separator);
+		const tokenUsage = this.formatFooterTokenUsage();
 		const status = this.formatCliDockFooterStatus();
-		if (!status) return safeVisibleWidth(rendered) > width ? safeTruncateToWidth(rendered, width, "…") : this.pad(rendered, width);
-		return this.renderSplitRow(rendered, status.rendered, status.plain, width);
+		const rightPlain = [tokenUsage, status?.plain].filter(Boolean).join("  ");
+		if (!rightPlain) return safeVisibleWidth(rendered) > width ? safeTruncateToWidth(rendered, width, "…") : this.pad(rendered, width);
+		const right = [tokenUsage ? this.tone("dim", tokenUsage) : null, status?.rendered].filter(Boolean).join(this.tone("dim", "  "));
+		return this.renderSplitRow(rendered, right, rightPlain, width);
 	}
 
 	private renderGeminiFooter(width: number, contentWidth: number): string[] {
 		const style = this.userZoneStyle.editor;
 		const footerStatus = this.metadataInSidebar() ? "" : normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
+		const tokenUsage = this.formatFooterTokenUsage();
+		const rightAffordance = [tokenUsage, footerStatus].filter(Boolean).join("  ");
 		const items = [
 			{ value: this.formatCwd(), weight: 2 },
-			{ value: footerStatus, weight: 1 },
+			{ value: rightAffordance, weight: 1 },
 		].filter((item) => item.value.length > 0);
 		if (items.length === 0) return [];
 

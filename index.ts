@@ -41,7 +41,7 @@ import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
 import { createWorkingLoaderController, workingStateForAssistantMessage, type WorkingLoaderController } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installTuiPadding } from "./tui-padding.js";
-import { getFooterStatusLine, installFooterStatsPatch } from "./footer-patch.js";
+import { getFooterStatusLine, getFooterTokenUsageLine, installFooterStatsPatch } from "./footer-patch.js";
 import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
 import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
@@ -274,6 +274,7 @@ export default function (pi: ExtensionAPI) {
 				theme: fixedZoneTheme,
 				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
 				userZoneStyle,
+				getShortcutHintPrefix: getFooterTokenUsageLine,
 				sidebar: {
 					enabled: false,
 					theme: fixedZoneTheme,
@@ -331,6 +332,7 @@ export default function (pi: ExtensionAPI) {
 				() => fixedZoneSidebarActive ? "sidebar" : "footer",
 				userZoneStyle,
 				config.inputBox.style,
+				config.fixedUserZone ? () => null : getFooterTokenUsageLine,
 			);
 		});
 	});

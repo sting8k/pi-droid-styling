@@ -56,6 +56,7 @@ export interface TerminalSplitOptions {
 	theme?: FixedZoneNoticeTheme & { frameBgAnsi?: () => string };
 	scrollFrameMs?: number;
 	userZoneStyle?: UserZoneStyle;
+	getShortcutHintPrefix?: () => string | null;
 	sidebar?: {
 		enabled: boolean;
 		getInfo?: FixedZoneSidebarInfoProvider;
@@ -610,11 +611,13 @@ export class TerminalSplitCompositor {
 			scrollHint: this.scrollOffset > 0 ? style.jumpBottomHint : style.jumpTopHint,
 			hintRightInset: style.scrollHintRightInset,
 			scrollHintPlacement: style.scrollHintPlacement,
+			scrollHintPrefix: this.options.getShortcutHintPrefix?.() ?? undefined,
 		};
 	}
 
 	private getClusterStateKey(): string {
-		return `${this.scrollOffset > 0 ? "scrolled" : "bottom"}:${fixedZoneNoticeKey(this.notice)}`;
+		const shortcutPrefix = this.options.getShortcutHintPrefix?.() ?? "";
+		return `${this.scrollOffset > 0 ? "scrolled" : "bottom"}:${fixedZoneNoticeKey(this.notice)}:${shortcutPrefix}`;
 	}
 
 	private refreshCluster(width = this.getSidebarLayout().contentWidth, rawRows = this.getRawRows()): FixedZoneCluster {

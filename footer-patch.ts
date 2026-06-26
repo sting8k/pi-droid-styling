@@ -3,17 +3,20 @@ import { FooterComponent } from "@earendil-works/pi-coding-agent";
 const PATCHED = Symbol.for("pi-droid-styling.footer-stats.patched");
 const ORIGINAL_RENDER = Symbol.for("pi-droid-styling.footer-stats.original-render");
 const FOOTER_STATE = Symbol.for("pi-droid-styling.footer-stats.state");
-const PATCH_VERSION = 2;
+const PATCH_VERSION = 5;
+
+const ANSI_PATTERN = /\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 type FooterState = {
 	latestStatusLines: string[];
+	latestTokenUsageLine: string | null;
 };
 
 function footerState(): FooterState {
 	const globalState = globalThis as Record<symbol, FooterState | undefined>;
 	let state = globalState[FOOTER_STATE];
 	if (!state) {
-		state = { latestStatusLines: [] };
+		state = { latestStatusLines: [], latestTokenUsageLine: null };
 		globalState[FOOTER_STATE] = state;
 	}
 	return state;
@@ -34,6 +37,39 @@ function readExtensionStatusLines(owner: any): string[] {
 	} catch {
 		return [];
 	}
+}
+
+function stripAnsi(text: string): string {
+	return text.replace(ANSI_PATTERN, "");
+}
+
+function formatCompactToken(n: number): string {
+	if (n < 1000) return n.toString();
+	if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
+	if (n < 1000000) return `${Math.round(n / 1000)}k`;
+	if (n < 10000000) return `${(n / 1000000).toFixed(1)}M`;
+	return `${Math.round(n / 1000000)}M`;
+}
+
+function computeTokenUsageLine(session: any): string | null {
+	if (!session?.sessionManager?.getEntries) return null;
+	const entries = session.sessionManager.getEntries();
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (entry?.type === "message" && entry?.message?.role === "assistant") {
+			const u = entry.message.usage;
+			if (!u || entry.message.stopReason === "aborted" || entry.message.stopReason === "error") continue;
+			const inp = formatCompactToken(u.input ?? 0);
+			const out = formatCompactToken(u.output ?? 0);
+			const cr = formatCompactToken(u.cacheRead ?? 0);
+			return `[${inp} ${out} R${cr}]`;
+		}
+	}
+	return null;
+}
+
+export function getFooterTokenUsageLine(): string | null {
+	return footerState().latestTokenUsageLine;
 }
 
 export function getFooterStatusLine(): string | null {
@@ -72,14 +108,14 @@ export function installFooterStatsPatch() {
 			if (sanitized !== l) lines[i] = sanitized;
 		}
 
-		// lines[0] = pwd/branch/session, lines[1] = stats, lines[2+] = extension statuses.
-		// The custom input dock owns footer metadata now. Capture extension status lines
-		// for the dock, then suppress core footer chrome to avoid duplicate bottom rows.
+		// Capture extension statuses and compute token usage directly from session
+		// entries (not parsed from the rendered stats line, which can be truncated).
 		const directStatusLines = readExtensionStatusLines(this);
 		const statusLines = directStatusLines.length > 0
 			? directStatusLines
 			: lines.slice(2).filter((line) => Boolean(line?.trim()));
 		if (statusLines.length > 0) footerState().latestStatusLines = statusLines;
+		footerState().latestTokenUsageLine = computeTokenUsageLine(this.session);
 		return [];
 	};
 }

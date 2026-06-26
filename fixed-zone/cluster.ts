@@ -24,6 +24,7 @@ export type FixedZoneScrollHintPlacement = "cursor" | "lastLine";
 export interface FixedZoneClusterOptions {
 	scrollHint?: string;
 	hintRightInset?: number;
+	scrollHintPrefix?: string;
 	scrollHintPlacement?: FixedZoneScrollHintPlacement;
 }
 
@@ -101,12 +102,14 @@ function applyScrollHintButton(
 	width: number,
 	rightInset = DEFAULT_CONTENT_INSET,
 	placement: FixedZoneScrollHintPlacement = "cursor",
+	prefix?: string,
 ): FixedZoneCluster["cursor"] {
 	if (!hint) return cursor;
 	const rowIndex = placement === "lastLine" ? lines.length - 1 : (cursor ? cursor.row - 1 : -1);
 	if (rowIndex < 0) return cursor;
 	const line = lines[rowIndex] ?? "";
-	const right = scrollHintButton(hint);
+	const prefixText = prefix?.trim();
+	const right = prefixText ? `${dim(prefixText)}  ${scrollHintButton(hint)}` : scrollHintButton(hint);
 	const safeInset = Math.max(0, Math.min(rightInset, Math.floor((width - 1) / 2)));
 	if (placement === "lastLine") {
 		lines[rowIndex] = appendAfterContent(line, right, width, rightInset);
@@ -143,7 +146,7 @@ export function renderFixedUserZoneCluster(renderables: HiddenRenderable[], widt
 		}
 	}
 
-	cursor = applyScrollHintButton(lines, cursor, options.scrollHint, width, options.hintRightInset, options.scrollHintPlacement);
+	cursor = applyScrollHintButton(lines, cursor, options.scrollHint, width, options.hintRightInset, options.scrollHintPlacement, options.scrollHintPrefix);
 
 	if (maxRows <= 0 || lines.length <= maxRows) return { lines, cursor };
 
