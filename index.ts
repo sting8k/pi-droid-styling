@@ -10,48 +10,57 @@ import {
   copyToClipboard,
 } from "@earendil-works/pi-coding-agent";
 
-import { BoxEditor } from "./editor/box-editor.js";
-import { FIXED_ZONE_SCROLL_FRAME_MS, installFixedUserZone } from "./fixed-zone/install.js";
-import { createFixedZoneTheme } from "./fixed-zone/theme.js";
-import { createAssistantSpeedTracker } from "./core/assistant-speed.js";
-import { createGitBranchFetcher } from "./core/git-status.js";
-import { getPiVersion } from "./core/pi-version.js";
-import { readSessionMetadata } from "./core/session-metadata.js";
-import { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } from "./performance/debounce-update.js";
-import { installToolExecutionUpdateDebounce } from "./performance/debounce-tool-updates.js";
-import { installFinishedRenderCache } from "./performance/finished-render-cache.js";
-import { loadConfig } from "./config.js";
-import { resolveUserZoneStyle } from "./user-zone/designs.js";
-import { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
-import { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
-import { installAssistantStreamingMarkdownCache } from "./messages/streaming-markdown-cache.js";
-import { installUserMessagePrefix } from "./messages/user-prefix.js";
-import { installCoreMessageBlockStyling, setCoreMessageBlockTheme } from "./messages/core-message-blocks.js";
-import { installRenderFrameDebug } from "./performance/render-frame-debug.js";
-import { installRenderAutowrapGuard } from "./performance/render-autowrap-guard.js";
-import { installRenderFrameBackground } from "./performance/render-frame-background.js";
-import { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
-import { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
-import { installRenderWidthGuard } from "./performance/render-width-guard.js";
-import { setFullTheme } from "./theme/theme-extras.js";
-import { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
-import { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
-import { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
-import { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
-import { createWorkingLoaderController, workingStateForAssistantMessage, type WorkingLoaderController } from "./tool-tags/loader-accent.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
-import { installTuiPadding } from "./tui-padding.js";
-import { getFooterStatusLine, getFooterTokenUsageLine, installFooterStatsPatch } from "./footer-patch.js";
-import { virtualizeChatContainer } from "./performance/virtualize-chat.js";
-import { flushProfile, profileCount } from "./performance/profiler.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
-import { installPiTasksWidgetStyling } from "./widgets/pi-tasks-widget.js";
+
+type SessionModules = typeof import("./session-modules.js");
+type AssistantSpeedTracker = ReturnType<SessionModules["createAssistantSpeedTracker"]>;
+type WorkingLoaderController = ReturnType<SessionModules["createWorkingLoaderController"]>;
+type WorkingStateForAssistantMessage = SessionModules["workingStateForAssistantMessage"];
+type SetAssistantUpdateRenderRequester = SessionModules["setAssistantUpdateRenderRequester"];
+type RenderFrameDebugModule = typeof import("./performance/render-frame-debug.js");
 
 let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
 let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
 let restoreTerminalBackgroundForCurrentSession: (() => void) | undefined;
 let disposePiTasksWidgetStylingForCurrentSession: (() => void) | undefined;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
+const FIXED_ZONE_SCROLL_FRAME_MS = 20;
+const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
+let setAssistantUpdateRenderRequesterForCurrentSession: SetAssistantUpdateRenderRequester | undefined;
+let sessionModulesPromise: Promise<SessionModules> | undefined;
+
+let renderFrameDebugModulePromise: Promise<RenderFrameDebugModule> | undefined;
+function loadSessionModules(): Promise<SessionModules> {
+	sessionModulesPromise ??= import("./session-modules.js");
+	return sessionModulesPromise;
+}
+
+function loadRenderFrameDebugModule(): Promise<RenderFrameDebugModule> {
+	renderFrameDebugModulePromise ??= import("./performance/render-frame-debug.js");
+	return renderFrameDebugModulePromise;
+}
+
+function isProfileEnabled(env = process.env): boolean {
+	return TRUE_ENV_VALUES.has(String(env.PI_DROID_PROFILE ?? "").trim().toLowerCase());
+}
+
+let profilerModulePromise: Promise<typeof import("./performance/profiler.js")> | undefined;
+
+function loadProfilerModule(): Promise<typeof import("./performance/profiler.js")> {
+	profilerModulePromise ??= import("./performance/profiler.js");
+	return profilerModulePromise;
+}
+
+function profileCount(name: string, value?: number): void {
+	if (!isProfileEnabled()) return;
+	void loadProfilerModule().then((profiler) => profiler.profileCount(name, value));
+}
+
+function flushProfile(reason: string): void {
+	if (!isProfileEnabled()) return;
+	void loadProfilerModule().then((profiler) => profiler.flushProfile(reason));
+}
 
 function isRemoteClipboardSession(env = process.env): boolean {
 	// jump's browser terminal receives clipboard writes through OSC 52, but
@@ -60,23 +69,21 @@ function isRemoteClipboardSession(env = process.env): boolean {
 }
 
 export default function (pi: ExtensionAPI) {
-	installCompactToolSpacing();
-	installDefaultBadge();
-	installQuickEditRenderer(ToolExecutionComponent);
-	installMarkdownCodeBlockRenderer();
-	installFooterStatsPatch();
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
-	registerToolCallTags(pi);
-	installCoreMessageBlockStyling({
-		CompactionSummaryMessageComponent,
-		SkillInvocationMessageComponent,
-		BranchSummaryMessageComponent,
-		CustomMessageComponent,
-	});
+	let sessionRunSerial = 0;
+	let toolCallTagsRegistration: Promise<void> | undefined;
+	const ensureToolCallTagsRegistered = () => {
+		toolCallTagsRegistration ??= registerToolCallTags(pi).catch((error) => {
+			toolCallTagsRegistration = undefined;
+			throw error;
+		});
+		return toolCallTagsRegistration;
+	};
 
 	let currentThinkingLevel: string | undefined;
-	const assistantSpeedTracker = createAssistantSpeedTracker();
+	let assistantSpeedTracker: AssistantSpeedTracker | undefined;
+	let workingStateForAssistantMessageForCurrentSession: WorkingStateForAssistantMessage | undefined;
 	let workingLoaderController: WorkingLoaderController | undefined;
 	const runningToolCalls = new Set<string>();
 
@@ -93,16 +100,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_start", (event) => {
-		assistantSpeedTracker.handleMessageStart(event.message);
+		assistantSpeedTracker?.handleMessageStart(event.message);
 		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
-			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+			workingLoaderController?.setState(workingStateForAssistantMessageForCurrentSession?.(event.message) ?? "answering");
 		}
 	});
 
 	pi.on("message_update", (event) => {
-		assistantSpeedTracker.handleMessageUpdate(event.message);
+		assistantSpeedTracker?.handleMessageUpdate(event.message);
 		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
-			workingLoaderController?.setState(workingStateForAssistantMessage(event.message));
+			workingLoaderController?.setState(workingStateForAssistantMessageForCurrentSession?.(event.message) ?? "answering");
 		}
 	});
 
@@ -111,7 +118,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", (event) => {
-		assistantSpeedTracker.handleMessageEnd(event.message);
+		assistantSpeedTracker?.handleMessageEnd(event.message);
 	});
 
 	pi.on("tool_execution_start", (event) => {
@@ -131,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		sessionRunSerial++;
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
 		syncThemeExtrasForCurrentSession = undefined;
@@ -138,7 +146,7 @@ export default function (pi: ExtensionAPI) {
 		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
-		setAssistantUpdateRenderRequester(undefined);
+		setAssistantUpdateRenderRequesterForCurrentSession?.(undefined);
 		workingLoaderController?.dispose();
 		workingLoaderController = undefined;
 		disposePiTasksWidgetStylingForCurrentSession?.();
@@ -151,13 +159,32 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
+		const sessionRun = ++sessionRunSerial;
+		const isCurrentSessionRun = () => sessionRun === sessionRunSerial;
 		profileCount("session.start");
+		const modules = await loadSessionModules();
+		if (!isCurrentSessionRun()) return;
+		assistantSpeedTracker ??= modules.createAssistantSpeedTracker();
+		const tracker = assistantSpeedTracker;
+		workingStateForAssistantMessageForCurrentSession = modules.workingStateForAssistantMessage;
+		setAssistantUpdateRenderRequesterForCurrentSession = modules.setAssistantUpdateRenderRequester;
+		modules.installCompactToolSpacing();
+		modules.installDefaultBadge();
+		modules.installQuickEditRenderer(ToolExecutionComponent);
+		modules.installMarkdownCodeBlockRenderer();
+		modules.installFooterStatsPatch();
+		modules.installCoreMessageBlockStyling({
+			CompactionSummaryMessageComponent,
+			SkillInvocationMessageComponent,
+			BranchSummaryMessageComponent,
+			CustomMessageComponent,
+		});
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
-		setAssistantUpdateRenderRequester(undefined);
+		modules.setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
-		assistantSpeedTracker.resetSession();
+		tracker.resetSession();
 		workingLoaderController?.dispose();
 		workingLoaderController = undefined;
 		runningToolCalls.clear();
@@ -167,15 +194,30 @@ export default function (pi: ExtensionAPI) {
 			if (!isStaleContextError(error)) throw error;
 			currentThinkingLevel = undefined;
 		}
-		const config = loadConfig();
-		const userZoneStyle = resolveUserZoneStyle(config.userZoneStyle);
+		const config = modules.loadConfig();
+		await ensureToolCallTagsRegistered();
+		if (!isCurrentSessionRun()) return;
+		const fixedZoneModules = config.fixedUserZone
+			? await Promise.all([
+				import("./fixed-zone/install.js"),
+				import("./fixed-zone/theme.js"),
+				import("./core/pi-version.js"),
+				import("./core/session-metadata.js"),
+			])
+			: undefined;
+		if (!isCurrentSessionRun()) return;
+		const renderFrameDebugModule = process.env.PI_DROID_RENDER_DEBUG === "1"
+			? await loadRenderFrameDebugModule()
+			: undefined;
+		if (!isCurrentSessionRun()) return;
+		const userZoneStyle = modules.resolveUserZoneStyle(config.userZoneStyle);
 		disposePiTasksWidgetStylingForCurrentSession?.();
-		disposePiTasksWidgetStylingForCurrentSession = installPiTasksWidgetStyling(sessionUi, config.tasksWidgetStyle);
+		disposePiTasksWidgetStylingForCurrentSession = modules.installPiTasksWidgetStyling(sessionUi, config.tasksWidgetStyle);
 		restoreTerminalBackgroundForCurrentSession?.();
 		restoreTerminalBackgroundForCurrentSession = undefined;
 		disposeFixedUserZoneForCurrentSession?.();
 		disposeFixedUserZoneForCurrentSession = undefined;
-		workingLoaderController = createWorkingLoaderController(sessionUi, config.customWorkingMessage);
+		workingLoaderController = modules.createWorkingLoaderController(sessionUi, config.customWorkingMessage);
 		workingLoaderController.configure();
 
 		// Treat `alwaysExpanded` as the session-start preference only.
@@ -186,12 +228,12 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// No setTheme() call — use whatever theme is selected in settings
-		installAssistantStreamingMarkdownCache(AssistantMessageComponent);
-		installAssistantMessagePrefix(sessionUi.theme);
-		installUserMessagePrefix(sessionUi.theme);
-		installAssistantUpdateDebounce(AssistantMessageComponent);
-		installToolExecutionUpdateDebounce(ToolExecutionComponent);
-		installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
+		modules.installAssistantStreamingMarkdownCache(AssistantMessageComponent);
+		modules.installAssistantMessagePrefix(sessionUi.theme);
+		modules.installUserMessagePrefix(sessionUi.theme);
+		modules.installAssistantUpdateDebounce(AssistantMessageComponent);
+		modules.installToolExecutionUpdateDebounce(ToolExecutionComponent);
+		modules.installFinishedRenderCache(AssistantMessageComponent, ToolExecutionComponent);
 
 		let lastForcedThemeScanAt = 0;
 		const syncThemeExtras = (force = false) => {
@@ -203,7 +245,7 @@ export default function (pi: ExtensionAPI) {
 					lastForcedThemeScanAt = now;
 				}
 			}
-			setFullTheme(sessionUi.theme, force);
+			modules.setFullTheme(sessionUi.theme, force);
 		};
 		syncThemeExtrasForCurrentSession = syncThemeExtras;
 		syncThemeExtras(true);
@@ -220,86 +262,89 @@ export default function (pi: ExtensionAPI) {
 			interactiveModePrototype.updateEditorBorderColor = wrappedUpdateEditorBorderColor;
 		}
 
-		setDefaultBadgeTheme(sessionUi.theme);
-		setToolSpacingTheme(sessionUi.theme);
-		setCoreMessageBlockTheme(sessionUi.theme);
+		modules.setDefaultBadgeTheme(sessionUi.theme);
+		modules.setToolSpacingTheme(sessionUi.theme);
+		modules.setCoreMessageBlockTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			const uiTheme = (sessionUi.theme ?? theme) as any;
 			restoreTerminalBackgroundForCurrentSession?.();
-			restoreTerminalBackgroundForCurrentSession = applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
-			installRenderThrottle(tui as any);
-			setAssistantUpdateRenderRequester(() => tui.requestRender());
-			virtualizeChatContainer(tui as any);
-			installTuiPadding(tui as any);
-			installRenderAutowrapGuard(tui as any);
-			const piVersion = getPiVersion();
+			restoreTerminalBackgroundForCurrentSession = modules.applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
+			modules.installRenderThrottle(tui as any);
+			modules.setAssistantUpdateRenderRequester(() => tui.requestRender());
+			modules.virtualizeChatContainer(tui as any);
+			modules.installTuiPadding(tui as any);
+			modules.installRenderAutowrapGuard(tui as any);
 			let fixedZoneSidebarActive = false;
 			let fixedZoneSelectionCopySerial = Promise.resolve();
 			let fixedZoneSelectionCopySeq = 0;
-			const fetchBranch = createGitBranchFetcher(sessionCwd, () => tui.requestRender());
-			const fixedZoneTheme = createFixedZoneTheme(uiTheme);
-			disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
-				enabled: config.fixedUserZone,
-				onCopySelection: (text, clipboard) => {
-					const copySeq = ++fixedZoneSelectionCopySeq;
-					const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
-					if (terminalClipboardEmitted) clipboard.showNotice("success", "Selected text copied to clipboard");
+			const fetchBranch = modules.createGitBranchFetcher(sessionCwd, () => tui.requestRender());
+			if (fixedZoneModules) {
+				const [{ installFixedUserZone }, { createFixedZoneTheme }, { getPiVersion }, { readSessionMetadata }] = fixedZoneModules;
+				const piVersion = getPiVersion();
+				const fixedZoneTheme = createFixedZoneTheme(uiTheme);
+				disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
+					enabled: config.fixedUserZone,
+					onCopySelection: (text, clipboard) => {
+						const copySeq = ++fixedZoneSelectionCopySeq;
+						const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
+						if (terminalClipboardEmitted) clipboard.showNotice("success", "Selected text copied to clipboard");
 
-					fixedZoneSelectionCopySerial = fixedZoneSelectionCopySerial
-						.catch(() => undefined)
-						.then(() => copyToClipboard(text))
-						.then(
-							() => {
-								if (copySeq !== fixedZoneSelectionCopySeq) return;
-								if (terminalClipboardEmitted) return; // optimistic success already shown
-								const remoteClipboard = isRemoteClipboardSession();
-								const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
-								clipboard.showNotice(
-									remoteClipboard && !fallbackOsc52Emitted ? "warning" : "success",
-									remoteClipboard && !fallbackOsc52Emitted ? "Copy failed" : "Selected text copied to clipboard",
-								);
-							},
-							() => {
-								if (copySeq !== fixedZoneSelectionCopySeq) return;
-								const fallbackOsc52Emitted = terminalClipboardEmitted || clipboard.emitOsc52Clipboard();
-								clipboard.showNotice(
-									fallbackOsc52Emitted ? "warning" : "error",
-									fallbackOsc52Emitted ? "Copy may not work in all applications" : "Copy failed",
-								);
-							},
-						);
-				},
-				requestScrollRender: () => requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
-				theme: fixedZoneTheme,
-				scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
-				userZoneStyle,
-				getShortcutHintPrefix: getFooterTokenUsageLine,
-				sidebar: {
-					enabled: false,
-					theme: fixedZoneTheme,
-					onActiveChange: (active) => { fixedZoneSidebarActive = active; },
-					getInfo: () => {
-						const git = fetchBranch();
-						const sessionMetadata = readSessionMetadata(ctx);
-						return {
-							sessionId: sessionMetadata.id,
-							sessionName: sessionMetadata.name,
-							cwd: sessionCwd,
-							branch: git?.branch,
-							insertions: git?.insertions,
-							deletions: git?.deletions,
-							modifiedFiles: git?.modifiedFiles,
-							piVersion,
-						};
+						fixedZoneSelectionCopySerial = fixedZoneSelectionCopySerial
+							.catch(() => undefined)
+							.then(() => copyToClipboard(text))
+							.then(
+								() => {
+									if (copySeq !== fixedZoneSelectionCopySeq) return;
+									if (terminalClipboardEmitted) return; // optimistic success already shown
+									const remoteClipboard = isRemoteClipboardSession();
+									const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
+									clipboard.showNotice(
+										remoteClipboard && !fallbackOsc52Emitted ? "warning" : "success",
+										remoteClipboard && !fallbackOsc52Emitted ? "Copy failed" : "Selected text copied to clipboard",
+									);
+								},
+								() => {
+									if (copySeq !== fixedZoneSelectionCopySeq) return;
+									const fallbackOsc52Emitted = terminalClipboardEmitted || clipboard.emitOsc52Clipboard();
+									clipboard.showNotice(
+										fallbackOsc52Emitted ? "warning" : "error",
+										fallbackOsc52Emitted ? "Copy may not work in all applications" : "Copy failed",
+									);
+								},
+							);
 					},
-				},
-			});
-			installRenderWidthGuard(tui as any);
-			installRenderFrameBackground(tui as any, uiTheme);
-			installRenderPhysicalSync(tui as any);
-			installRenderFrameDebug(tui as any);
-			return new BoxEditor(
+					requestScrollRender: () => modules.requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
+					theme: fixedZoneTheme,
+					scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
+					userZoneStyle,
+					getShortcutHintPrefix: modules.getFooterTokenUsageLine,
+					sidebar: {
+						enabled: false,
+						theme: fixedZoneTheme,
+						onActiveChange: (active) => { fixedZoneSidebarActive = active; },
+						getInfo: () => {
+							const git = fetchBranch();
+							const sessionMetadata = readSessionMetadata(ctx);
+							return {
+								sessionId: sessionMetadata.id,
+								sessionName: sessionMetadata.name,
+								cwd: sessionCwd,
+								branch: git?.branch,
+								insertions: git?.insertions,
+								deletions: git?.deletions,
+								modifiedFiles: git?.modifiedFiles,
+								piVersion,
+							};
+						},
+					},
+				});
+			}
+			modules.installRenderWidthGuard(tui as any);
+			modules.installRenderFrameBackground(tui as any, uiTheme);
+			modules.installRenderPhysicalSync(tui as any);
+			renderFrameDebugModule?.installRenderFrameDebug(tui as any);
+			return new modules.BoxEditor(
 				tui, theme, kb, uiTheme, sessionCwd,
 				() => {
 					try {
@@ -327,12 +372,12 @@ export default function (pi: ExtensionAPI) {
 					}
 				},
 				fetchBranch,
-				() => assistantSpeedTracker.getWordsPerSecond(),
-				getFooterStatusLine,
+				() => tracker.getWordsPerSecond(),
+				modules.getFooterStatusLine,
 				() => fixedZoneSidebarActive ? "sidebar" : "footer",
 				userZoneStyle,
 				config.inputBox.style,
-				config.fixedUserZone ? () => null : getFooterTokenUsageLine,
+				config.fixedUserZone ? () => null : modules.getFooterTokenUsageLine,
 			);
 		});
 	});

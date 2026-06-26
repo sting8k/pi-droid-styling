@@ -1,25 +1,24 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerBashTool } from "./bash.js";
-import { registerEditTool } from "./edit.js";
-import { registerFindTool } from "./find.js";
-import { registerGrepTool } from "./grep.js";
-import { registerLsTool } from "./ls.js";
-import { registerReadTool } from "./read.js";
-import { registerWriteTool } from "./write.js";
+type ToolRegistrar = (pi: ExtensionAPI) => void | Promise<void>;
+type ToolRegistrarModule = Record<string, ToolRegistrar>;
 
-const toolRegistry: Record<string, (pi: ExtensionAPI) => void | Promise<void>> = {
-	read: registerReadTool,
-	write: registerWriteTool,
-	edit: registerEditTool,
-	ls: registerLsTool,
-	find: registerFindTool,
-	grep: registerGrepTool,
-	bash: registerBashTool,
-};
+async function loadRegistrar(specifier: string, exportName: string): Promise<ToolRegistrar> {
+	const module = await import(specifier) as ToolRegistrarModule;
+	const register = module[exportName];
+	if (typeof register !== "function") throw new Error(`Missing tool registrar ${exportName}`);
+	return register;
+}
 
-export function registerToolCallTags(pi: ExtensionAPI): void {
-	for (const register of Object.values(toolRegistry)) {
-		register(pi);
-	}
+export async function registerToolCallTags(pi: ExtensionAPI): Promise<void> {
+	const registers = await Promise.all([
+		loadRegistrar("./read.js", "registerReadTool"),
+		loadRegistrar("./write.js", "registerWriteTool"),
+		loadRegistrar("./edit.js", "registerEditTool"),
+		loadRegistrar("./ls.js", "registerLsTool"),
+		loadRegistrar("./find.js", "registerFindTool"),
+		loadRegistrar("./grep.js", "registerGrepTool"),
+		loadRegistrar("./bash.js", "registerBashTool"),
+	]);
+	await Promise.all(registers.map((register) => register(pi)));
 }
