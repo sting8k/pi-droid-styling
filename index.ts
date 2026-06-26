@@ -18,6 +18,7 @@ type AssistantSpeedTracker = ReturnType<SessionModules["createAssistantSpeedTrac
 type WorkingLoaderController = ReturnType<SessionModules["createWorkingLoaderController"]>;
 type WorkingStateForAssistantMessage = SessionModules["workingStateForAssistantMessage"];
 type SetAssistantUpdateRenderRequester = SessionModules["setAssistantUpdateRenderRequester"];
+type RenderFrameDebugModule = typeof import("./performance/render-frame-debug.js");
 
 let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
 let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
@@ -29,9 +30,15 @@ const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 let setAssistantUpdateRenderRequesterForCurrentSession: SetAssistantUpdateRenderRequester | undefined;
 let sessionModulesPromise: Promise<SessionModules> | undefined;
 
+let renderFrameDebugModulePromise: Promise<RenderFrameDebugModule> | undefined;
 function loadSessionModules(): Promise<SessionModules> {
 	sessionModulesPromise ??= import("./session-modules.js");
 	return sessionModulesPromise;
+}
+
+function loadRenderFrameDebugModule(): Promise<RenderFrameDebugModule> {
+	renderFrameDebugModulePromise ??= import("./performance/render-frame-debug.js");
+	return renderFrameDebugModulePromise;
 }
 
 function isProfileEnabled(env = process.env): boolean {
@@ -64,6 +71,7 @@ function isRemoteClipboardSession(env = process.env): boolean {
 export default function (pi: ExtensionAPI) {
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
+	let sessionRunSerial = 0;
 	let toolCallTagsRegistration: Promise<void> | undefined;
 	const ensureToolCallTagsRegistered = () => {
 		toolCallTagsRegistration ??= registerToolCallTags(pi).catch((error) => {
@@ -130,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		sessionRunSerial++;
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
 		syncThemeExtrasForCurrentSession = undefined;
@@ -151,8 +160,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		const sessionRun = ++sessionRunSerial;
+		const isCurrentSessionRun = () => sessionRun === sessionRunSerial;
 		profileCount("session.start");
 		const modules = await loadSessionModules();
+		if (!isCurrentSessionRun()) return;
 		assistantSpeedTracker ??= modules.createAssistantSpeedTracker();
 		const tracker = assistantSpeedTracker;
 		workingStateForAssistantMessageForCurrentSession = modules.workingStateForAssistantMessage;
@@ -184,6 +196,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		const config = modules.loadConfig();
 		await ensureToolCallTagsRegistered();
+		if (!isCurrentSessionRun()) return;
 		const fixedZoneModules = config.fixedUserZone
 			? await Promise.all([
 				import("./fixed-zone/install.js"),
@@ -192,6 +205,11 @@ export default function (pi: ExtensionAPI) {
 				import("./core/session-metadata.js"),
 			])
 			: undefined;
+		if (!isCurrentSessionRun()) return;
+		const renderFrameDebugModule = process.env.PI_DROID_RENDER_DEBUG === "1"
+			? await loadRenderFrameDebugModule()
+			: undefined;
+		if (!isCurrentSessionRun()) return;
 		const userZoneStyle = modules.resolveUserZoneStyle(config.userZoneStyle);
 		disposePiTasksWidgetStylingForCurrentSession?.();
 		disposePiTasksWidgetStylingForCurrentSession = modules.installPiTasksWidgetStyling(sessionUi, config.tasksWidgetStyle);
@@ -325,9 +343,7 @@ export default function (pi: ExtensionAPI) {
 			modules.installRenderWidthGuard(tui as any);
 			modules.installRenderFrameBackground(tui as any, uiTheme);
 			modules.installRenderPhysicalSync(tui as any);
-			if (process.env.PI_DROID_RENDER_DEBUG === "1") {
-				void import("./performance/render-frame-debug.js").then(({ installRenderFrameDebug }) => installRenderFrameDebug(tui as any));
-			}
+			renderFrameDebugModule?.installRenderFrameDebug(tui as any);
 			return new modules.BoxEditor(
 				tui, theme, kb, uiTheme, sessionCwd,
 				() => {
