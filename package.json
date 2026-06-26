@@ -1,6 +1,6 @@
 {
   "name": "pi-droid-styling",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",

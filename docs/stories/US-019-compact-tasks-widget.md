@@ -10,7 +10,7 @@ normal
 
 ## Product Contract
 
-`pi-droid-styling` offers a `tasksWidgetStyle` config (`"default" | "compact"`, default `"compact"`) that selects how the `tasks` widget is restyled. In `compact` mode the whole widget collapses to a single summary line `Tasks ▶ <current task>  (done/total)` with `idle`/`done`/`N blocked` variants; counts are preserved under width truncation while the current-task text is cut first. `default` mode keeps the existing multi-line per-task list. The key auto-scaffolds into the config file on first load and backfills into existing configs missing it.
+`pi-droid-styling` offers a `tasksWidgetStyle` config (`"default" | "compact"`, default `"compact"`) that selects whether the extension patches the `tasks` widget. In `compact` mode the whole widget collapses to a single summary line `● Tasks › [N] <current task> · <time> (x/y done · n running)` with `idle`/`done`/blocked variants; counts are preserved under width truncation while the current-task text is cut first. `default` mode does not patch `pi-tasks`; it leaves the upstream widget untouched. The key auto-scaffolds into the config file on first load and backfills into existing configs missing it.
 
 ## Relevant Product Docs
 
@@ -25,24 +25,24 @@ normal
 - Invalid/missing values normalize to `"compact"`; existing configs without the key are backfilled and persisted.
 - Compact render produces exactly one line for running, all-done, idle, blocked, and overflow inputs.
 - Current-task text is truncated before counts when width is constrained; `(done/total)` and blocked indicator are never cut.
-- `default` style still renders the multi-line per-task list unchanged.
+- `default` style does not patch or transform the upstream `pi-tasks` widget.
 - The widget patch stays idempotent and disposable across session reload; cache key distinguishes the two styles.
 
 ## Design Notes
 
 - Commands: none.
 - Queries: none.
-- API: `installPiTasksWidgetStyling(sessionUi, style)` threads the chosen style through the `setWidget("tasks")` wrapper into `stylePiTasksWidgetLines` / `wrapTaskWidgetComponent` / `wrapTaskWidgetFactory`.
+- API: `installPiTasksWidgetStyling(sessionUi, style)` is a no-op/dispose path for `"default"`; only `"compact"` patches `setWidget("tasks")` and threads through `stylePiTasksWidgetLines` / `wrapTaskWidgetComponent` / `wrapTaskWidgetFactory`.
 - Tables: none.
-- Domain rules: compact parsing reuses the existing `parseTaskWidgetLine` text-scraping boundary; `pickCurrentTask` prefers `running` then `active`; overflow increments `total` but counts reflect only visible tasks.
+- Domain rules: compact parsing reuses the existing `parseTaskWidgetLine` text-scraping boundary; `pickCurrentTask` prefers active spinner tasks, then running tasks; overflow increments `total` but counts reflect only visible tasks.
 - UI surfaces: persistent `tasks` widget above the editor.
-- Rationale for compact default: the multi-line list is verbose for a glanceable sidebar slot; a one-line summary surfaces progress and the active task with less vertical cost. Users who want the legacy list set `tasksWidgetStyle: "default"`.
+- Rationale for compact default: the multi-line list is verbose for a glanceable sidebar slot; a one-line summary surfaces progress and the active task with less vertical cost. Users who want upstream `pi-tasks` behavior set `tasksWidgetStyle: "default"`.
 
 ## Validation
 
 | Layer | Expected proof |
 | --- | --- |
-| Unit | `npm run test:tasks-widget-compact` smoke covers renderer variants (running, all-done, idle, blocked, overflow, width truncation, default multi-line) and config normalize/scaffold/backfill. |
+| Unit | `npm run test:tasks-widget-compact` smoke covers renderer variants (running, all-done, idle, blocked, overflow, width truncation), default pass-through/no-interference, and config normalize/scaffold/backfill. |
 | Integration | Focused TypeScript check for `config.ts`, `widgets/pi-tasks-widget.ts`, `index.ts` wiring; `semantic_review` of working tree. |
 | E2E | Manual Pi smoke with `pi-tasks` installed, toggling `tasksWidgetStyle` between `compact` and `default`. |
 | Platform | Existing terminal render paths and other widgets remain unchanged outside `setWidget("tasks")`. |
