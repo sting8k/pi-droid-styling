@@ -62,7 +62,7 @@ function computeTokenUsageLine(session: any): string | null {
 			const inp = formatCompactToken(u.input ?? 0);
 			const out = formatCompactToken(u.output ?? 0);
 			const cr = formatCompactToken(u.cacheRead ?? 0);
-			return `[${inp} ${out} R${cr}]`;
+			return `[↑${inp} ↓${out} R${cr}]`;
 		}
 	}
 	return null;
