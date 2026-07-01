@@ -85,6 +85,7 @@ function compileSurface() {
 		"user-zone/designs.ts",
 		"config.ts",
 		"performance/profiler.ts",
+		"performance/virtualize-chat.ts",
 		"render-budget.ts",
 		"theme/ansi.ts",
 		"widgets/pi-tasks-widget.ts",
@@ -345,6 +346,46 @@ async function runDefaultNoInterferenceSmoke() {
 	console.log("compact: default no-interference ok");
 }
 
+async function runVirtualizeChatSmoke() {
+	const { isVirtualizedChatContainer, virtualizeChatContainer } = await importBuilt("performance/virtualize-chat.js");
+
+	const component = (label) => ({ render: () => [label] });
+	const createTui = () => ({
+		children: [
+			component("header"),
+			{
+				children: [component("m1"), component("m2"), component("m3"), component("m4")],
+				addChild(child) { this.children.push(child); },
+				removeChild(child) { this.children = this.children.filter((item) => item !== child); },
+				clear() { this.children = []; },
+				render() { return this.children.flatMap((child) => child.render(80)); },
+			},
+		],
+	});
+
+	let tui = createTui();
+	virtualizeChatContainer(tui, 2);
+	let lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(isVirtualizedChatContainer(tui.children[1]), "custom tail should mark chat as actively virtualized");
+	assert(lines.includes("2 older messages hidden"), `custom tail should hide 2, got: ${lines}`);
+	assert(!lines.includes("m1") && !lines.includes("m2") && lines.includes("m3") && lines.includes("m4"), `custom tail rendered wrong children: ${lines}`);
+
+	tui = createTui();
+	virtualizeChatContainer(tui, 0);
+	lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(!isVirtualizedChatContainer(tui.children[1]), "tail=0 should not mark chat as actively virtualized");
+	assert(!lines.includes("older messages hidden"), `tail=0 should render all without indicator, got: ${lines}`);
+	assert(["m1", "m2", "m3", "m4"].every((label) => lines.includes(label)), `tail=0 missed children: ${lines}`);
+
+	tui = createTui();
+	virtualizeChatContainer(tui, 2);
+	virtualizeChatContainer(tui, 0);
+	lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(!isVirtualizedChatContainer(tui.children[1]), "reconfigured tail=0 should clear active virtualization");
+	assert(!lines.includes("older messages hidden") && lines.includes("m1"), `reconfigured tail=0 should render all, got: ${lines}`);
+	console.log("virtualize chat smoke ok");
+}
+
 async function runConfigSmoke() {
 	async function loadFresh(homeDir) {
 		mkdirSync(homeDir, { recursive: true });
@@ -361,6 +402,7 @@ async function runConfigSmoke() {
 	let loadConfig = await loadFresh(homeDir);
 	let config = loadConfig();
 	assert(config.tasksWidgetStyle === "compact", `default should be compact, got ${config.tasksWidgetStyle}`);
+	assert(config.visibleChatTail === 30, `default visibleChatTail should be 30, got ${config.visibleChatTail}`);
 
 	// invalid value normalizes to compact
 	writeFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), JSON.stringify({ tasksWidgetStyle: "bogus" }) + "\n", "utf8");
@@ -374,15 +416,28 @@ async function runConfigSmoke() {
 	config = loadConfig();
 	assert(config.tasksWidgetStyle === "default", `explicit default should persist, got ${config.tasksWidgetStyle}`);
 
-	// auto-scaffold on missing config includes tasksWidgetStyle
+	// visibleChatTail accepts 0 as render-all
+	writeFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), JSON.stringify({ visibleChatTail: 0 }) + "\n", "utf8");
+	loadConfig = await loadFresh(homeDir);
+	config = loadConfig();
+	assert(config.visibleChatTail === 0, `visibleChatTail=0 should be preserved, got ${config.visibleChatTail}`);
+
+	// invalid visibleChatTail falls back to default
+	writeFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), JSON.stringify({ visibleChatTail: -1 }) + "\n", "utf8");
+	loadConfig = await loadFresh(homeDir);
+	config = loadConfig();
+	assert(config.visibleChatTail === 30, `invalid visibleChatTail should default to 30, got ${config.visibleChatTail}`);
+
+	// auto-scaffold on missing config includes tasksWidgetStyle and visibleChatTail
 	const freshHome = join(workDir, "home-fresh");
 	mkdirSync(freshHome, { recursive: true });
 	loadConfig = await loadFresh(freshHome);
 	loadConfig();
 	const scaffolded = JSON.parse(readFileSync(join(freshHome, ".pi", "agent", "pi-droid-styling.json"), "utf8"));
 	assert(scaffolded.tasksWidgetStyle === "compact", `scaffold should include tasksWidgetStyle=compact, got ${scaffolded.tasksWidgetStyle}`);
+	assert(scaffolded.visibleChatTail === 30, `scaffold should include visibleChatTail=30, got ${scaffolded.visibleChatTail}`);
 
-	// backfill adds the key to an existing config missing it
+	// backfill adds missing keys to an existing config
 	const backfillHome = join(workDir, "home-backfill");
 	const backfillPath = join(backfillHome, ".pi", "agent", "pi-droid-styling.json");
 	mkdirSync(join(backfillHome, ".pi", "agent"), { recursive: true });
@@ -391,6 +446,7 @@ async function runConfigSmoke() {
 	loadConfig();
 	const backfilled = JSON.parse(readFileSync(backfillPath, "utf8"));
 	assert(backfilled.tasksWidgetStyle === "compact", `backfill should add tasksWidgetStyle, got ${backfilled.tasksWidgetStyle}`);
+	assert(backfilled.visibleChatTail === 30, `backfill should add visibleChatTail, got ${backfilled.visibleChatTail}`);
 	console.log("config smoke ok");
 }
 
@@ -400,6 +456,7 @@ async function main() {
 	await runCompactRendererSmoke();
 	await runCompactCacheSmoke();
 	await runDefaultNoInterferenceSmoke();
+	await runVirtualizeChatSmoke();
 	await runConfigSmoke();
 	console.log("tasks-widget-compact smoke ok");
 	rmSync(workDir, { recursive: true, force: true });

@@ -272,7 +272,7 @@ export default function (pi: ExtensionAPI) {
 			restoreTerminalBackgroundForCurrentSession = modules.applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
 			modules.installRenderThrottle(tui as any);
 			modules.setAssistantUpdateRenderRequester(() => tui.requestRender());
-			modules.virtualizeChatContainer(tui as any);
+			modules.virtualizeChatContainer(tui as any, config.visibleChatTail);
 			modules.installTuiPadding(tui as any);
 			modules.installRenderAutowrapGuard(tui as any);
 			let fixedZoneSidebarActive = false;

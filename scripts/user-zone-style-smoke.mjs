@@ -309,6 +309,7 @@ async function runFixedZoneSmoke() {
 	const { renderFixedUserZoneCluster } = await importBuilt("fixed-zone/cluster.js");
 	const { TerminalSplitCompositor } = await importBuilt("fixed-zone/terminal-split.js");
 	const { resolveUserZoneStyle } = await importBuilt("user-zone/designs.js");
+	const { virtualizeChatContainer } = await importBuilt("performance/virtualize-chat.js");
 
 	function runInputs(styleName, inputs, options = {}) {
 		let rawRows = 18;
@@ -359,6 +360,82 @@ async function runFixedZoneSmoke() {
 	function rootIndexes(output) {
 		return Array.from(stripAnsi(output).matchAll(/root (\d+)/g), (match) => Number(match[1]));
 	}
+
+	class Container {
+		constructor(children = []) {
+			this.children = children;
+		}
+
+		addChild(child) {
+			this.children.push(child);
+		}
+
+		clear() {
+			this.children.length = 0;
+		}
+
+		render(width) {
+			return this.children.flatMap((child) => child.render(width));
+		}
+	}
+
+	class TUI extends Container {
+		constructor(terminal, children) {
+			super(children);
+			this.terminal = terminal;
+		}
+
+		requestRender() {
+			this.doRender?.();
+		}
+
+		doRender() {
+			const lines = this.render(this.terminal.columns);
+			this.terminal.write(`${lines.join("\n")}\n`);
+		}
+	}
+
+	function runFixedZoneVirtualizedTailZero() {
+		let rawRows = 18;
+		let chatRenderCalls = 0;
+		const terminal = {
+			columns: 88,
+			get rows() { return rawRows; },
+			set rows(value) { rawRows = value; },
+			write() {},
+		};
+		const header = new Container([{ render: () => ["header"] }]);
+		const messageCount = 2200;
+		const chat = new Container(Array.from({ length: messageCount }, (_value, index) => ({
+			render: () => [`msg ${index}`],
+		})));
+		const status = new Container([{ render: () => ["status"] }]);
+		const tui = new TUI(terminal, [header, chat, status]);
+		virtualizeChatContainer(tui, 0);
+		const patchedChatRender = chat.render.bind(chat);
+		chat.render = (width) => {
+			chatRenderCalls += 1;
+			return patchedChatRender(width);
+		};
+		const hidden = [{
+			target: { render: () => [] },
+			render: (width) => [
+				`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
+				"workspace ready",
+			],
+		}];
+		const compositor = new TerminalSplitCompositor(tui, hidden, { userZoneStyle: resolveUserZoneStyle("gemini") });
+		compositor.install();
+		chatRenderCalls = 0;
+		const windowed = compositor.renderWindowedRoot(80, 20);
+		const result = { lines: (windowed?.lines ?? []).map(stripAnsi), chatRenderCalls };
+		compositor.dispose();
+		return result;
+	}
+
+	const fixedTailZero = runFixedZoneVirtualizedTailZero();
+	assert(fixedTailZero.lines.includes("msg 2199"), "fixed-zone tail=0 should still render newest chat content");
+	assert(fixedTailZero.chatRenderCalls === 0, `fixed-zone tail=0 should recurse/window chat children instead of calling patched chat render, got ${fixedTailZero.chatRenderCalls}`);
 
 	assert(run("droid").includes("█"), "droid fixed-zone scrollbar glyph was not painted after scroll");
 	const geminiFixedZone = run("gemini");
