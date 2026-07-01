@@ -49,7 +49,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   },
   "tasksWidgetStyle": "compact",
   "fixedUserZone": false,
-  "forceOSC11": false
+  "forceOSC11": false,
+  "visibleChatTail": 30
 }
 ```
 
@@ -62,6 +63,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `fixedUserZone` | `bool` | `false` | When enabled, status/widgets/editor/footer stay fixed at the bottom while chat/feed scrolls above. |
 | `tasksWidgetStyle` | `"default"` \| `"compact"` | `"compact"` | Tasks sidebar widget style. `compact` = one-line summary `● Tasks › [N] <current task> · <time> (x/y done · n running)` with `idle`/`done`/blocked variants; current-task text is truncated to fit while counts are preserved. `default` = do not patch `pi-tasks`; leave the upstream widget untouched. Auto-scaffolded into the config file on first load. |
 | `forceOSC11` | `bool` | `false` | Enable OSC 11 terminal background sync on Windows/WSL (off by default). |
+| `visibleChatTail` | `number` | `30` | Number of recent chat UI children to render in long sessions. `0` disables chat virtualization and renders all history. Auto-scaffolded/backfilled into the config file. |
 
 ## Profiling
 

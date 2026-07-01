@@ -34,6 +34,7 @@ export interface DroidStylingConfig {
 	tasksWidgetStyle: TasksWidgetStyle;
 	fixedUserZone: boolean;
 	forceOSC11: boolean;
+	visibleChatTail: number;
 }
 
 const DEFAULT_CUSTOM_WORKING_MESSAGE: CustomWorkingMessageConfig = {
@@ -57,6 +58,7 @@ const DEFAULTS: DroidStylingConfig = {
 	tasksWidgetStyle: "compact",
 	fixedUserZone: false,
 	forceOSC11: false,
+	visibleChatTail: 30,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
@@ -89,6 +91,13 @@ function maxExpandedLinesOrDefault(value: unknown): number {
 	const normalized = Math.floor(value);
 	if (normalized < 0) return DEFAULTS.maxExpandedLines;
 	return Math.min(normalized, MAX_EXPANDED_LINES_LIMIT);
+}
+
+function visibleChatTailOrDefault(value: unknown): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULTS.visibleChatTail;
+	const normalized = Math.floor(value);
+	if (normalized < 0) return DEFAULTS.visibleChatTail;
+	return normalized;
 }
 
 function customWorkingMessageOrDefault(value: unknown): CustomWorkingMessageConfig {
@@ -181,6 +190,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
 		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
+		visibleChatTail: visibleChatTailOrDefault(config.visibleChatTail),
 	};
 }
 

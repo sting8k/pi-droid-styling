@@ -19,8 +19,14 @@ interface AnyContainer extends AnyComponent {
 	clear(): void;
 }
 
-/** Number of recent children to render */
-const VISIBLE_TAIL = 30;
+type VirtualizedChatState = {
+	visibleTail: number;
+};
+
+function normalizeVisibleTail(value: number): number {
+	if (!Number.isFinite(value)) return 30;
+	return Math.max(0, Math.floor(value));
+}
 
 /**
  * Find the chatContainer in TUI's direct children.
@@ -35,18 +41,24 @@ function findChatContainer(tui: AnyContainer): AnyContainer | null {
 }
 
 export const VIRTUALIZED_CHAT_PATCHED = Symbol.for("pi-droid-styling.virtualized-chat.patched");
+const VIRTUALIZED_CHAT_STATE = Symbol.for("pi-droid-styling.virtualized-chat.state");
 
-export function virtualizeChatContainer(tui: AnyContainer): void {
+export function virtualizeChatContainer(tui: AnyContainer, visibleTail = 30): void {
 	const chatContainer = findChatContainer(tui);
-	if (!chatContainer || (chatContainer as any)[VIRTUALIZED_CHAT_PATCHED]) return;
+	if (!chatContainer) return;
+	const state: VirtualizedChatState = (chatContainer as any)[VIRTUALIZED_CHAT_STATE] ?? { visibleTail: 30 };
+	state.visibleTail = normalizeVisibleTail(visibleTail);
+	(chatContainer as any)[VIRTUALIZED_CHAT_STATE] = state;
 	(chatContainer as any)[VIRTUALIZED_CHAT_PATCHED] = true;
 
 	chatContainer.render = function (width: number): string[] {
 		const children = chatContainer.children;
 		const total = children.length;
 
-		// Few enough children — render all
-		if (total <= VISIBLE_TAIL) {
+		const tail = state.visibleTail;
+
+		// Disabled or few enough children — render all
+		if (tail === 0 || total <= tail) {
 			profileCount("chat.virtualize.render.full");
 			profileSample("chat.virtualize.children.count", total);
 			const lines: string[] = [];
@@ -58,16 +70,16 @@ export function virtualizeChatContainer(tui: AnyContainer): void {
 		}
 
 		// Build indicator
-		const hidden = total - VISIBLE_TAIL;
+		const hidden = total - tail;
 		profileCount("chat.virtualize.render.capped");
 		profileSample("chat.virtualize.children.count", total);
 		profileSample("chat.virtualize.hiddenChildren.count", hidden);
-		profileSample("chat.virtualize.visibleTail.count", VISIBLE_TAIL);
+		profileSample("chat.virtualize.visibleTail.count", tail);
 		const indicator = `\x1b[2m  ··· ${hidden} older messages hidden ···\x1b[0m`;
 
 		// Render only the tail
 		const lines: string[] = [indicator, ""];
-		for (let i = total - VISIBLE_TAIL; i < total; i++) {
+		for (let i = total - tail; i < total; i++) {
 			const cl = children[i].render(width);
 			for (let j = 0; j < cl.length; j++) lines.push(cl[j]);
 		}
@@ -77,5 +89,7 @@ export function virtualizeChatContainer(tui: AnyContainer): void {
 }
 
 export function isVirtualizedChatContainer(value: unknown): boolean {
-	return typeof value === "object" && value !== null && Boolean((value as any)[VIRTUALIZED_CHAT_PATCHED]);
+	if (typeof value !== "object" || value === null || !(value as any)[VIRTUALIZED_CHAT_PATCHED]) return false;
+	const state = (value as any)[VIRTUALIZED_CHAT_STATE] as VirtualizedChatState | undefined;
+	return Boolean(state && state.visibleTail > 0);
 }
