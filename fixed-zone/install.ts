@@ -88,6 +88,7 @@ export function installFixedUserZone(
 		theme: options.theme,
 		userZoneStyle: options.userZoneStyle,
 		getShortcutHintPrefix: options.getShortcutHintPrefix,
+		visibleChatTail: options.visibleChatTail,
 		sidebar: options.sidebar,
 	});
 	let disposed = false;

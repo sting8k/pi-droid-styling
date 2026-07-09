@@ -1,6 +1,6 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import { profileCount, profileDuration, profileNow, profileSample, profileTextBytes } from "../performance/profiler.js";
-import { isVirtualizedChatContainer } from "../performance/virtualize-chat.js";
+import { getVirtualizedChatTail, isVirtualizedChatContainer, VIRTUALIZED_CHAT_HOST } from "../performance/virtualize-chat.js";
 import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
 import { paintFrameBackgroundLine, paintFrameBackgroundSegment } from "../theme/frame-background.js";
@@ -57,6 +57,8 @@ export interface TerminalSplitOptions {
 	scrollFrameMs?: number;
 	userZoneStyle?: UserZoneStyle;
 	getShortcutHintPrefix?: () => string | null;
+	/** Recent chat UI children to keep while windowing. 0 = render all. */
+	visibleChatTail?: number;
 	sidebar?: {
 		enabled: boolean;
 		getInfo?: FixedZoneSidebarInfoProvider;
@@ -118,6 +120,7 @@ const DISABLE_AUTOWRAP = "\x1b[?7l";
 const ENABLE_AUTOWRAP = "\x1b[?7h";
 const RESET_TERMINAL_SEGMENT = "\x1b[0m\x1b]8;;\x07";
 const CLEAR_VIEWPORT = "\x1b[2J\x1b[H";
+const CLEAR_VIEWPORT_AND_SCROLLBACK = "\x1b[3J\x1b[2J\x1b[H";
 
 function setScrollRegion(top: number, bottom: number): string {
 	return `\x1b[${top};${bottom}r`;
@@ -362,7 +365,7 @@ export class TerminalSplitCompositor {
 		const layout = this.getSidebarLayout(this.getRawColumns());
 		const cluster = this.refreshCluster(layout.contentWidth, rawRows);
 		this.syncScrollRegion(this.getScrollBottom(rawRows, cluster.lines.length));
-		this.clearViewport();
+		this.clearViewport(true);
 		Object.defineProperty(terminal, "rows", {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
@@ -433,7 +436,7 @@ export class TerminalSplitCompositor {
 		}
 		this.writeRaw(DISABLE_MOUSE);
 		this.scrollRegionBottom = 0;
-		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())) + CLEAR_VIEWPORT);
+		this.writeRaw(setScrollRegion(1, Math.max(1, this.getRawRows())) + CLEAR_VIEWPORT_AND_SCROLLBACK);
 		this.tui.requestRender(true);
 	}
 
@@ -448,8 +451,8 @@ export class TerminalSplitCompositor {
 		this.writeRaw(DISABLE_AUTOWRAP + data + ENABLE_AUTOWRAP);
 	}
 
-	private clearViewport(): void {
-		this.writeRaw(CLEAR_VIEWPORT);
+	private clearViewport(clearScrollback = false): void {
+		this.writeRaw(clearScrollback ? CLEAR_VIEWPORT_AND_SCROLLBACK : CLEAR_VIEWPORT);
 	}
 
 	private getRawRows(): number {
@@ -671,13 +674,63 @@ export class TerminalSplitCompositor {
 		this.writeRaw(moveCursor(this.getTuiCursorScreenRow(scrollableRows), 1));
 	}
 
+	private normalizeVisibleChatTail(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+		return Math.max(0, Math.floor(value));
+	}
+
+	private getConfiguredVisibleChatTail(): number | undefined {
+		return this.normalizeVisibleChatTail(this.options.visibleChatTail);
+	}
+
+	private getHostChatContainer(): RenderableLike | null {
+		const hosted = (this.tui as any)[VIRTUALIZED_CHAT_HOST];
+		if (hosted && typeof (hosted as RenderableLike).render === "function") return hosted as RenderableLike;
+		const root = this.tui as unknown as RenderableLike;
+		if (Array.isArray(root.children) && isRenderable(root.children[1])) return root.children[1];
+		return null;
+	}
+
+	private isCanonicalChatContainer(component: RenderableLike): boolean {
+		return this.getHostChatContainer() === component;
+	}
+
+	private resolveChatVisibleTail(component: RenderableLike): number | undefined {
+		const stateTail = getVirtualizedChatTail(component);
+		if (stateTail !== undefined) return stateTail;
+		if (!this.isCanonicalChatContainer(component)) return undefined;
+		return this.getConfiguredVisibleChatTail();
+	}
+
 	private getWindowableChildren(component: RenderableLike, isRoot = false): RenderableLike[] | null {
 		if (!Array.isArray(component.children)) return null;
 		if (isRoot) return component.children.filter(isRenderable);
-		if (isVirtualizedChatContainer(component)) {
+
+		// Keep the chat virtualization boundary while windowing:
+		// - tail > 0 → never recurse into older chat children (leaf render or sliced tail)
+		// - tail = 0 → allow full child walk (still capped by MAX_FIXED_ROOT_LINES)
+		const chatTail = this.resolveChatVisibleTail(component);
+		if (chatTail !== undefined) {
+			if (chatTail > 0) {
+				if (isVirtualizedChatContainer(component)) {
+					profileCount("fixed.root.windowRender.virtualizedChatLeaf");
+					return null;
+				}
+				const kids = component.children.filter(isRenderable);
+				if (kids.length > chatTail) {
+					profileCount("fixed.root.windowRender.chatTailSlice");
+					profileSample("fixed.root.windowRender.chatTailSlice.hidden.count", kids.length - chatTail);
+					return kids.slice(-chatTail);
+				}
+				return kids;
+			}
+			// tail=0: fall through to normal windowable recursion
+		} else if (isVirtualizedChatContainer(component)) {
+			// Defensive: patched chat with active tail but no resolved config.
 			profileCount("fixed.root.windowRender.virtualizedChatLeaf");
 			return null;
 		}
+
 		const constructorName = component.constructor?.name ?? "";
 		return WINDOWABLE_CONTAINER_NAMES.has(constructorName) ? component.children.filter(isRenderable) : null;
 	}

@@ -353,6 +353,39 @@ async function runFixedZoneSmoke() {
 		return outputs;
 	}
 
+	function installLifecycleOutput(styleName) {
+		let rawRows = 18;
+		let output = "";
+		const terminal = {
+			columns: 88,
+			get rows() { return rawRows; },
+			set rows(value) { rawRows = value; },
+			write(data) { output += String(data); },
+		};
+		const tui = {
+			terminal,
+			render: () => ["root"],
+			requestRender() { this.doRender?.(); },
+			doRender() {
+				const lines = this.render(this.terminal.columns);
+				this.terminal.write(`${lines.join("\n")}\n`);
+			},
+		};
+		const hidden = [{
+			target: { render: () => [] },
+			render: (width) => [
+				`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
+				"workspace ready",
+			],
+		}];
+		const compositor = new TerminalSplitCompositor(tui, hidden, { userZoneStyle: resolveUserZoneStyle(styleName) });
+		compositor.install();
+		const installOutput = output;
+		output = "";
+		compositor.dispose();
+		return { installOutput, disposeOutput: output };
+	}
+
 	function run(styleName) {
 		return runInputs(styleName, ["\x1b[<64;10;5M"])[0] ?? "";
 	}
@@ -436,6 +469,73 @@ async function runFixedZoneSmoke() {
 	const fixedTailZero = runFixedZoneVirtualizedTailZero();
 	assert(fixedTailZero.lines.includes("msg 2199"), "fixed-zone tail=0 should still render newest chat content");
 	assert(fixedTailZero.chatRenderCalls === 0, `fixed-zone tail=0 should recurse/window chat children instead of calling patched chat render, got ${fixedTailZero.chatRenderCalls}`);
+
+	function runFixedZoneVirtualizedTailN(tail, options = {}) {
+		let rawRows = 18;
+		let chatRenderCalls = 0;
+		const terminal = {
+			columns: 88,
+			get rows() { return rawRows; },
+			set rows(value) { rawRows = value; },
+			write() {},
+		};
+		const header = new Container([{ render: () => ["header"] }]);
+		const messageCount = 80;
+		const chat = new Container(Array.from({ length: messageCount }, (_value, index) => ({
+			render: () => [`msg ${index}`],
+		})));
+		const status = new Container([{ render: () => ["status"] }]);
+		const tui = new TUI(terminal, [header, chat, status]);
+		if (options.patchVirtualize !== false) virtualizeChatContainer(tui, tail);
+		const patchedChatRender = chat.render.bind(chat);
+		chat.render = (width) => {
+			chatRenderCalls += 1;
+			return patchedChatRender(width);
+		};
+		const hidden = [{
+			target: status,
+			render: (width) => [
+				`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
+				"workspace ready",
+			],
+		}];
+		status.render = () => [];
+		const compositor = new TerminalSplitCompositor(tui, hidden, {
+			userZoneStyle: resolveUserZoneStyle("gemini"),
+			visibleChatTail: tail,
+		});
+		compositor.install();
+		chatRenderCalls = 0;
+		const windowed = compositor.renderWindowedRoot(80, 500);
+		const lines = (windowed?.lines ?? []).map(stripAnsi);
+		const msgLines = lines.filter((line) => /^msg \d+$/.test(line.trim()));
+		const result = {
+			lines,
+			msgLines,
+			chatRenderCalls,
+			hasOld: lines.some((line) => line.includes("msg 0")),
+			hasNewest: lines.some((line) => line.includes(`msg ${messageCount - 1}`)),
+			hasIndicator: lines.some((line) => line.includes("older messages hidden")),
+		};
+		compositor.dispose();
+		return result;
+	}
+
+	const fixedTailN = runFixedZoneVirtualizedTailN(5);
+	assert(fixedTailN.hasNewest, "fixed-zone tail=N should keep newest chat content");
+	assert(!fixedTailN.hasOld, "fixed-zone tail=N must not keep oldest chat history scrollable");
+	assert(fixedTailN.msgLines.length === 5, `fixed-zone tail=5 should expose 5 chat children, got ${fixedTailN.msgLines.length}`);
+	assert(fixedTailN.hasIndicator, "fixed-zone tail=N should surface omitted-history indicator via virtualized chat leaf");
+	assert(fixedTailN.chatRenderCalls === 1, `fixed-zone tail=N should use virtualized chat leaf render, got ${fixedTailN.chatRenderCalls}`);
+
+	const fixedTailNFallback = runFixedZoneVirtualizedTailN(5, { patchVirtualize: false });
+	assert(fixedTailNFallback.hasNewest, "fixed-zone tail=N config fallback should keep newest chat content");
+	assert(!fixedTailNFallback.hasOld, "fixed-zone tail=N config fallback must not keep oldest chat history scrollable");
+	assert(fixedTailNFallback.msgLines.length === 5, `fixed-zone tail=5 config fallback should expose 5 chat children, got ${fixedTailNFallback.msgLines.length}`);
+
+	const lifecycleOutput = installLifecycleOutput("gemini");
+	assert(lifecycleOutput.installOutput.includes("\x1b[3J"), "fixed-zone install should clear terminal scrollback to hide stale full-history rows after reload");
+	assert(lifecycleOutput.disposeOutput.includes("\x1b[3J"), "fixed-zone dispose should clear terminal scrollback before restoring native rendering");
 
 	assert(run("droid").includes("█"), "droid fixed-zone scrollbar glyph was not painted after scroll");
 	const geminiFixedZone = run("gemini");

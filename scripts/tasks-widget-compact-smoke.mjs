@@ -347,7 +347,12 @@ async function runDefaultNoInterferenceSmoke() {
 }
 
 async function runVirtualizeChatSmoke() {
-	const { isVirtualizedChatContainer, virtualizeChatContainer } = await importBuilt("performance/virtualize-chat.js");
+	const {
+		installInteractiveChatVirtualization,
+		isVirtualizedChatContainer,
+		virtualizeChatContainer,
+		virtualizeChatContainerInstance,
+	} = await importBuilt("performance/virtualize-chat.js");
 
 	const component = (label) => ({ render: () => [label] });
 	const createTui = () => ({
@@ -365,6 +370,7 @@ async function runVirtualizeChatSmoke() {
 
 	let tui = createTui();
 	virtualizeChatContainer(tui, 2);
+	assert(tui.children[1].children.length === 2, `custom tail should structurally prune to 2 active children, got ${tui.children[1].children.length}`);
 	let lines = stripAnsi(tui.children[1].render(80).join("\n"));
 	assert(isVirtualizedChatContainer(tui.children[1]), "custom tail should mark chat as actively virtualized");
 	assert(lines.includes("2 older messages hidden"), `custom tail should hide 2, got: ${lines}`);
@@ -372,6 +378,7 @@ async function runVirtualizeChatSmoke() {
 
 	tui = createTui();
 	virtualizeChatContainer(tui, 0);
+	assert(tui.children[1].children.length === 4, `tail=0 should keep all children active, got ${tui.children[1].children.length}`);
 	lines = stripAnsi(tui.children[1].render(80).join("\n"));
 	assert(!isVirtualizedChatContainer(tui.children[1]), "tail=0 should not mark chat as actively virtualized");
 	assert(!lines.includes("older messages hidden"), `tail=0 should render all without indicator, got: ${lines}`);
@@ -380,9 +387,60 @@ async function runVirtualizeChatSmoke() {
 	tui = createTui();
 	virtualizeChatContainer(tui, 2);
 	virtualizeChatContainer(tui, 0);
+	assert(tui.children[1].children.length === 4, `reconfigured tail=0 should restore pruned children, got ${tui.children[1].children.length}`);
 	lines = stripAnsi(tui.children[1].render(80).join("\n"));
 	assert(!isVirtualizedChatContainer(tui.children[1]), "reconfigured tail=0 should clear active virtualization");
 	assert(!lines.includes("older messages hidden") && lines.includes("m1"), `reconfigured tail=0 should render all, got: ${lines}`);
+
+	// addChild after prune must keep the active window at the tail size
+	tui = createTui();
+	virtualizeChatContainer(tui, 2);
+	tui.children[1].addChild({ render: () => ["m5"] });
+	assert(tui.children[1].children.length === 2, `addChild should re-prune to tail size, got ${tui.children[1].children.length}`);
+	lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(lines.includes("3 older messages hidden"), `addChild prune should update hidden count, got: ${lines}`);
+	assert(lines.includes("m4") && lines.includes("m5") && !lines.includes("m3"), `addChild prune should keep newest pair: ${lines}`);
+
+	// InteractiveMode-style hook applies to the real chatContainer after message rebuild
+	let hookTail = 2;
+	class FakeInteractiveMode {
+		constructor() {
+			this.ui = { children: [] };
+			this.chatContainer = {
+				children: [component("h1"), component("h2"), component("h3"), component("h4"), component("h5")],
+				addChild(child) { this.children.push(child); },
+				removeChild(child) { this.children = this.children.filter((item) => item !== child); },
+				clear() { this.children = []; },
+				render() { return this.children.flatMap((child) => child.render(80)); },
+			};
+			this.ui.children = [component("header"), this.chatContainer];
+		}
+		renderInitialMessages() {
+			// Simulate rebuilt full history before virtualize hook runs.
+			this.chatContainer.children = [component("a"), component("b"), component("c"), component("d"), component("e")];
+		}
+	}
+	installInteractiveChatVirtualization(FakeInteractiveMode, () => hookTail);
+	const mode = new FakeInteractiveMode();
+	mode.renderInitialMessages();
+	assert(mode.chatContainer.children.length === 2, `interactive hook should prune chatContainer to tail, got ${mode.chatContainer.children.length}`);
+	const hookLines = stripAnsi(mode.chatContainer.render(80).join("\n"));
+	assert(hookLines.includes("3 older messages hidden"), `interactive hook should show indicator, got: ${hookLines}`);
+	assert(hookLines.includes("\nd\n") || hookLines.endsWith("\nd") || hookLines.split("\n").includes("d"), `interactive hook missing d: ${hookLines}`);
+	assert(hookLines.split("\n").includes("e"), `interactive hook missing e: ${hookLines}`);
+	assert(!hookLines.split("\n").includes("a") && !hookLines.split("\n").includes("b") && !hookLines.split("\n").includes("c"), `interactive hook kept wrong children: ${hookLines}`);
+
+	// Direct instance helper is the same path fixed-zone host marking uses
+	const directChat = {
+		children: [component("x1"), component("x2"), component("x3")],
+		addChild(child) { this.children.push(child); },
+		clear() { this.children = []; },
+		render() { return this.children.flatMap((child) => child.render(80)); },
+	};
+	const directTui = { children: [component("header"), directChat] };
+	virtualizeChatContainerInstance(directChat, 1, directTui);
+	assert(directChat.children.length === 1 && directChat.children[0].render(80)[0] === "x3", "instance helper should keep newest child only");
+
 	console.log("virtualize chat smoke ok");
 }
 
