@@ -107,21 +107,31 @@ export function isPatchedVirtualizedChatContainer(value: unknown): boolean {
  */
 function syncHiddenChildren(chatContainer: AnyContainer, state: VirtualizedChatState): void {
 	const tail = state.visibleTail;
-	const children = chatContainer.children;
-	if (!Array.isArray(children)) return;
+	if (!Array.isArray(chatContainer.children)) return;
 
 	if (tail === 0) {
 		if (state.hiddenChildren.length === 0) return;
-		chatContainer.children = state.hiddenChildren.concat(children);
+		chatContainer.children = state.hiddenChildren.concat(chatContainer.children);
 		state.hiddenChildren = [];
 		profileCount("chat.virtualize.restore.hidden");
 		profileSample("chat.virtualize.children.count", chatContainer.children.length);
 		return;
 	}
 
-	if (children.length > tail) {
-		const removeCount = children.length - tail;
-		const removed = children.splice(0, removeCount);
+	// Grow window (e.g. 2 → 5): pull newest parked items back into the active prefix.
+	if (chatContainer.children.length < tail && state.hiddenChildren.length > 0) {
+		const need = Math.min(tail - chatContainer.children.length, state.hiddenChildren.length);
+		const restored = state.hiddenChildren.splice(state.hiddenChildren.length - need, need);
+		chatContainer.children = restored.concat(chatContainer.children);
+		profileCount("chat.virtualize.restore.partial");
+		profileSample("chat.virtualize.hiddenChildren.count", state.hiddenChildren.length);
+		profileSample("chat.virtualize.visibleTail.count", tail);
+	}
+
+	// Shrink window: park oldest active children (oldest → newest in hiddenChildren).
+	if (chatContainer.children.length > tail) {
+		const removeCount = chatContainer.children.length - tail;
+		const removed = chatContainer.children.splice(0, removeCount);
 		state.hiddenChildren.push(...removed);
 		profileCount("chat.virtualize.prune");
 		profileSample("chat.virtualize.hiddenChildren.count", state.hiddenChildren.length);
@@ -238,6 +248,8 @@ export function isVirtualizedChatContainer(value: unknown): boolean {
 }
 
 const INTERACTIVE_CHAT_VIRTUALIZE_PATCHED = Symbol.for("pi-droid-styling.virtualized-chat.interactive-hooks");
+/** Live getter refreshed on every install so extension reloads do not freeze the first closure. */
+const INTERACTIVE_CHAT_VIRTUALIZE_GET_TAIL = Symbol.for("pi-droid-styling.virtualized-chat.interactive-get-tail");
 
 type InteractiveModeLike = {
 	chatContainer?: AnyContainer;
@@ -247,19 +259,33 @@ type InteractiveModeLike = {
 /**
  * Hook InteractiveMode methods that rebuild chat content so virtualization always
  * targets the real `this.chatContainer` (not a guessed TUI child index).
+ *
+ * Reload-safe: re-calling install updates the live getVisibleTail source without
+ * stacking wrappers.
  */
 export function installInteractiveChatVirtualization(
 	InteractiveModeClass: any,
 	getVisibleTail: () => number,
 ): void {
 	const proto = InteractiveModeClass?.prototype as (Record<PropertyKey, unknown> & InteractiveModeLike) | undefined;
-	if (!proto || (proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_PATCHED]) return;
+	if (!proto) return;
+
+	// Always refresh — extension reload installs a new module closure.
+	(proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_GET_TAIL] = getVisibleTail;
+
+	if ((proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_PATCHED]) return;
 	(proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_PATCHED] = true;
 
 	const applyFromMode = (mode: InteractiveModeLike) => {
 		const chat = mode.chatContainer;
 		if (!chat) return;
-		const tail = normalizeVisibleTail(getVisibleTail());
+		// Rebuild methods put full history into the active children array; any
+		// overflow parked from a previous tree is no longer part of that history.
+		const existing = getState(chat);
+		if (existing) existing.hiddenChildren = [];
+		const getter = (proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_GET_TAIL] as (() => number) | undefined;
+		const raw = typeof getter === "function" ? getter() : 30;
+		const tail = normalizeVisibleTail(raw);
 		virtualizeChatContainerInstance(chat, tail, mode.ui ?? null);
 		profileCount("chat.virtualize.interactiveHook.apply");
 	};

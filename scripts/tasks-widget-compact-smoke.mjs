@@ -392,6 +392,22 @@ async function runVirtualizeChatSmoke() {
 	assert(!isVirtualizedChatContainer(tui.children[1]), "reconfigured tail=0 should clear active virtualization");
 	assert(!lines.includes("older messages hidden") && lines.includes("m1"), `reconfigured tail=0 should render all, got: ${lines}`);
 
+	// Nonzero tail growth must restore from hiddenChildren (2 → 3 with 4 total)
+	tui = createTui();
+	virtualizeChatContainer(tui, 2);
+	assert(tui.children[1].children.length === 2, "precondition: tail=2 prunes to 2");
+	virtualizeChatContainer(tui, 3);
+	assert(tui.children[1].children.length === 3, `reconfigured 2→3 should restore one hidden child, got ${tui.children[1].children.length}`);
+	lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(lines.includes("1 older messages hidden"), `reconfigured 2→3 should keep one hidden, got: ${lines}`);
+	assert(!lines.includes("m1") && lines.includes("m2") && lines.includes("m3") && lines.includes("m4"), `reconfigured 2→3 wrong window: ${lines}`);
+
+	// Growth beyond total history restores all parked children
+	virtualizeChatContainer(tui, 10);
+	assert(tui.children[1].children.length === 4, `reconfigured 3→10 should restore all 4 children, got ${tui.children[1].children.length}`);
+	lines = stripAnsi(tui.children[1].render(80).join("\n"));
+	assert(!lines.includes("older messages hidden") && lines.includes("m1"), `reconfigured 3→10 should render full history, got: ${lines}`);
+
 	// addChild after prune must keep the active window at the tail size
 	tui = createTui();
 	virtualizeChatContainer(tui, 2);
@@ -429,6 +445,18 @@ async function runVirtualizeChatSmoke() {
 	assert(hookLines.includes("\nd\n") || hookLines.endsWith("\nd") || hookLines.split("\n").includes("d"), `interactive hook missing d: ${hookLines}`);
 	assert(hookLines.split("\n").includes("e"), `interactive hook missing e: ${hookLines}`);
 	assert(!hookLines.split("\n").includes("a") && !hookLines.split("\n").includes("b") && !hookLines.split("\n").includes("c"), `interactive hook kept wrong children: ${hookLines}`);
+
+	// Extension reload reinstalls with a new getter; must not keep the first closure (tail=2).
+	installInteractiveChatVirtualization(FakeInteractiveMode, () => 4);
+	mode.renderInitialMessages();
+	assert(mode.chatContainer.children.length === 4, `reinstalled interactive hook should use new getter tail=4, got ${mode.chatContainer.children.length}`);
+	const reloadedLines = stripAnsi(mode.chatContainer.render(80).join("\n"));
+	assert(reloadedLines.includes("1 older messages hidden"), `reinstalled hook should hide 1 with tail=4, got: ${reloadedLines}`);
+	assert(
+		["b", "c", "d", "e"].every((label) => reloadedLines.split("\n").includes(label))
+		&& !reloadedLines.split("\n").includes("a"),
+		`reinstalled hook wrong window: ${reloadedLines}`,
+	);
 
 	// Direct instance helper is the same path fixed-zone host marking uses
 	const directChat = {
