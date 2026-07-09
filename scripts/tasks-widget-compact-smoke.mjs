@@ -417,7 +417,8 @@ async function runVirtualizeChatSmoke() {
 	assert(lines.includes("3 older messages hidden"), `addChild prune should update hidden count, got: ${lines}`);
 	assert(lines.includes("m4") && lines.includes("m5") && !lines.includes("m3"), `addChild prune should keep newest pair: ${lines}`);
 
-	// InteractiveMode-style hook applies to the real chatContainer after message rebuild
+	// InteractiveMode-style hook applies to the real chatContainer after message rebuild.
+	// Prefer clear()+addChild (container API) so overflow parked during rebuild is preserved.
 	let hookTail = 2;
 	class FakeInteractiveMode {
 		constructor() {
@@ -432,8 +433,10 @@ async function runVirtualizeChatSmoke() {
 			this.ui.children = [component("header"), this.chatContainer];
 		}
 		renderInitialMessages() {
-			// Simulate rebuilt full history before virtualize hook runs.
-			this.chatContainer.children = [component("a"), component("b"), component("c"), component("d"), component("e")];
+			this.chatContainer.clear();
+			for (const label of ["a", "b", "c", "d", "e"]) {
+				this.chatContainer.addChild(component(label));
+			}
 		}
 	}
 	installInteractiveChatVirtualization(FakeInteractiveMode, () => hookTail);
@@ -442,9 +445,15 @@ async function runVirtualizeChatSmoke() {
 	assert(mode.chatContainer.children.length === 2, `interactive hook should prune chatContainer to tail, got ${mode.chatContainer.children.length}`);
 	const hookLines = stripAnsi(mode.chatContainer.render(80).join("\n"));
 	assert(hookLines.includes("3 older messages hidden"), `interactive hook should show indicator, got: ${hookLines}`);
-	assert(hookLines.includes("\nd\n") || hookLines.endsWith("\nd") || hookLines.split("\n").includes("d"), `interactive hook missing d: ${hookLines}`);
+	assert(hookLines.split("\n").includes("d"), `interactive hook missing d: ${hookLines}`);
 	assert(hookLines.split("\n").includes("e"), `interactive hook missing e: ${hookLines}`);
 	assert(!hookLines.split("\n").includes("a") && !hookLines.split("\n").includes("b") && !hookLines.split("\n").includes("c"), `interactive hook kept wrong children: ${hookLines}`);
+
+	// clear()+addChild rebuild must keep freshly parked overflow (not wiped by applyFromMode).
+	mode.renderInitialMessages();
+	assert(mode.chatContainer.children.length === 2, `second clear+addChild rebuild should stay at tail=2, got ${mode.chatContainer.children.length}`);
+	const rebuildLines = stripAnsi(mode.chatContainer.render(80).join("\n"));
+	assert(rebuildLines.includes("3 older messages hidden"), `clear+addChild rebuild should keep indicator, got: ${rebuildLines}`);
 
 	// Extension reload reinstalls with a new getter; must not keep the first closure (tail=2).
 	installInteractiveChatVirtualization(FakeInteractiveMode, () => 4);
@@ -457,6 +466,32 @@ async function runVirtualizeChatSmoke() {
 		&& !reloadedLines.split("\n").includes("a"),
 		`reinstalled hook wrong window: ${reloadedLines}`,
 	);
+
+	// Wholesale children assignment (no clear/addChild) must drop stale overflow from the prior tree.
+	class FakeAssignMode {
+		constructor() {
+			this.ui = { children: [] };
+			this.chatContainer = {
+				children: [component("s1"), component("s2"), component("s3"), component("s4"), component("s5")],
+				addChild(child) { this.children.push(child); },
+				removeChild(child) { this.children = this.children.filter((item) => item !== child); },
+				clear() { this.children = []; },
+				render() { return this.children.flatMap((child) => child.render(80)); },
+			};
+			this.ui.children = [component("header"), this.chatContainer];
+		}
+		renderInitialMessages() {
+			this.chatContainer.children = [component("a"), component("b"), component("c"), component("d"), component("e")];
+		}
+	}
+	installInteractiveChatVirtualization(FakeAssignMode, () => 2);
+	const assignMode = new FakeAssignMode();
+	assignMode.renderInitialMessages();
+	assert(assignMode.chatContainer.children.length === 2, "assign-mode first prune should keep tail=2");
+	assignMode.renderInitialMessages();
+	const assignLines = stripAnsi(assignMode.chatContainer.render(80).join("\n"));
+	assert(assignLines.includes("3 older messages hidden"), `assign-mode second rebuild should not accumulate stale hidden, got: ${assignLines}`);
+	assert(assignMode.chatContainer.children.length === 2, `assign-mode second rebuild should keep tail=2, got ${assignMode.chatContainer.children.length}`);
 
 	// Direct instance helper is the same path fixed-zone host marking uses
 	const directChat = {

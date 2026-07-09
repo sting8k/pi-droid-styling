@@ -26,6 +26,12 @@ type VirtualizedChatState = {
 	/** Oldest → newest among children removed from the active tree. */
 	hiddenChildren: AnyComponent[];
 	methodsPatched: boolean;
+	/**
+	 * Set when patched clear/addChild/removeChild mutate the container.
+	 * Used to distinguish API rebuilds (overflow is fresh) from wholesale
+	 * `children = [...]` assignment (overflow from the previous tree is stale).
+	 */
+	apiMutated: boolean;
 	originalAddChild: AnyContainer["addChild"];
 	originalRemoveChild?: AnyContainer["removeChild"];
 	originalClear: AnyContainer["clear"];
@@ -149,11 +155,13 @@ function ensureMethodPatches(chatContainer: AnyContainer, state: VirtualizedChat
 	}
 
 	chatContainer.addChild = (component: AnyComponent) => {
+		state.apiMutated = true;
 		state.originalAddChild(component);
 		syncHiddenChildren(chatContainer, state);
 	};
 
 	chatContainer.removeChild = (component: AnyComponent) => {
+		state.apiMutated = true;
 		const hiddenIndex = state.hiddenChildren.indexOf(component);
 		if (hiddenIndex !== -1) {
 			state.hiddenChildren.splice(hiddenIndex, 1);
@@ -168,6 +176,7 @@ function ensureMethodPatches(chatContainer: AnyContainer, state: VirtualizedChat
 	};
 
 	chatContainer.clear = () => {
+		state.apiMutated = true;
 		state.hiddenChildren = [];
 		state.originalClear();
 	};
@@ -189,6 +198,7 @@ export function virtualizeChatContainerInstance(
 		visibleTail: 30,
 		hiddenChildren: [],
 		methodsPatched: false,
+		apiMutated: false,
 		originalAddChild: chatContainer.addChild.bind(chatContainer),
 		originalClear: chatContainer.clear.bind(chatContainer),
 	};
@@ -279,10 +289,13 @@ export function installInteractiveChatVirtualization(
 	const applyFromMode = (mode: InteractiveModeLike) => {
 		const chat = mode.chatContainer;
 		if (!chat) return;
-		// Rebuild methods put full history into the active children array; any
-		// overflow parked from a previous tree is no longer part of that history.
+		// If the rebuild used patched clear/addChild, overflow is already correct.
+		// If it assigned `children = [...]` wholesale, parked overflow is stale.
 		const existing = getState(chat);
-		if (existing) existing.hiddenChildren = [];
+		if (existing) {
+			if (!existing.apiMutated) existing.hiddenChildren = [];
+			existing.apiMutated = false;
+		}
 		const getter = (proto as any)[INTERACTIVE_CHAT_VIRTUALIZE_GET_TAIL] as (() => number) | undefined;
 		const raw = typeof getter === "function" ? getter() : 30;
 		const tail = normalizeVisibleTail(raw);
