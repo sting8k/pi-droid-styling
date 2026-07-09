@@ -307,6 +307,10 @@ export function installInteractiveChatVirtualization(
 		const original = (proto as any)[methodName];
 		if (typeof original !== "function") continue;
 		(proto as any)[methodName] = function patchedInteractiveChatVirtualize(this: InteractiveModeLike, ...args: unknown[]) {
+			// Scope apiMutated to this rebuild only so a prior live addChild cannot
+			// mask a later wholesale `children = [...]` assignment.
+			const prior = this.chatContainer ? getState(this.chatContainer) : undefined;
+			if (prior) prior.apiMutated = false;
 			const result = (original as (...inner: unknown[]) => unknown).apply(this, args);
 			try {
 				applyFromMode(this);

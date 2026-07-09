@@ -488,10 +488,14 @@ async function runVirtualizeChatSmoke() {
 	const assignMode = new FakeAssignMode();
 	assignMode.renderInitialMessages();
 	assert(assignMode.chatContainer.children.length === 2, "assign-mode first prune should keep tail=2");
+	// Live mutation must not stick apiMutated across a later wholesale assign rebuild.
+	assignMode.chatContainer.addChild(component("live"));
+	assert(assignMode.chatContainer.children.length === 2, "live addChild should re-prune to tail");
 	assignMode.renderInitialMessages();
 	const assignLines = stripAnsi(assignMode.chatContainer.render(80).join("\n"));
-	assert(assignLines.includes("3 older messages hidden"), `assign-mode second rebuild should not accumulate stale hidden, got: ${assignLines}`);
+	assert(assignLines.includes("3 older messages hidden"), `assign-mode after live addChild should not accumulate stale hidden, got: ${assignLines}`);
 	assert(assignMode.chatContainer.children.length === 2, `assign-mode second rebuild should keep tail=2, got ${assignMode.chatContainer.children.length}`);
+	assert(!assignLines.split("\n").includes("live"), `assign-mode rebuild should drop prior live child: ${assignLines}`);
 
 	// Direct instance helper is the same path fixed-zone host marking uses
 	const directChat = {
