@@ -16,7 +16,7 @@ export { installRenderFrameBackground } from "./performance/render-frame-backgro
 export { installRenderPhysicalSync } from "./performance/render-physical-sync.js";
 export { installRenderThrottle, requestRenderWithFrameMs } from "./performance/render-throttle.js";
 export { installRenderWidthGuard } from "./performance/render-width-guard.js";
-export { virtualizeChatContainer } from "./performance/virtualize-chat.js";
+export { installInteractiveChatVirtualization, virtualizeChatContainer, virtualizeChatContainerInstance } from "./performance/virtualize-chat.js";
 export { setFullTheme } from "./theme/theme-extras.js";
 export { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
 export { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";

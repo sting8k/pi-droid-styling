@@ -12,6 +12,7 @@ import {
 
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
+import { installInteractiveChatVirtualization } from "./performance/virtualize-chat.js";
 
 type SessionModules = typeof import("./session-modules.js");
 type AssistantSpeedTracker = ReturnType<SessionModules["createAssistantSpeedTracker"]>;
@@ -71,6 +72,9 @@ function isRemoteClipboardSession(env = process.env): boolean {
 export default function (pi: ExtensionAPI) {
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
+	// Default matches config.ts; session_start refreshes from disk before messages render.
+	let currentVisibleChatTail = 30;
+	installInteractiveChatVirtualization(InteractiveMode, () => currentVisibleChatTail);
 	let sessionRunSerial = 0;
 	let toolCallTagsRegistration: Promise<void> | undefined;
 	const ensureToolCallTagsRegistered = () => {
@@ -195,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = modules.loadConfig();
+		currentVisibleChatTail = config.visibleChatTail;
 		await ensureToolCallTagsRegistered();
 		if (!isCurrentSessionRun()) return;
 		const fixedZoneModules = config.fixedUserZone
@@ -285,6 +290,7 @@ export default function (pi: ExtensionAPI) {
 				const fixedZoneTheme = createFixedZoneTheme(uiTheme);
 				disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
 					enabled: config.fixedUserZone,
+					visibleChatTail: config.visibleChatTail,
 					onCopySelection: (text, clipboard) => {
 						const copySeq = ++fixedZoneSelectionCopySeq;
 						const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
