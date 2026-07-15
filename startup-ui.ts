@@ -19,10 +19,10 @@ const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
 const PI_ASCII_LOGO = [
-	"┏━━━┓ ┏━┓",
-	"┃ _ ┃ ┃ ┃",
-	"┣━━━┛ ┃ ┃",
-	"┗━┛   ┗━┛",
+	"█████████",
+	"███   ███",
+	"██████   ███",
+	"███      ███",
 ] as const;
 
 let activeTheme: ThemeLike | undefined;
