@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 
 import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -33,6 +34,98 @@ type StartupInfo = {
 	model: string;
 	cwd: string;
 };
+
+/** Resolve the installed pi-coding-agent CHANGELOG.md (ships with each Pi version). */
+function resolvePiChangelogPath(): string | undefined {
+	try {
+		const resolved = import.meta.resolve("@earendil-works/pi-coding-agent");
+		let dir = dirname(fileURLToPath(resolved));
+		while (true) {
+			if (existsSync(join(dir, "package.json"))) {
+				const changelog = join(dir, "CHANGELOG.md");
+				return existsSync(changelog) ? changelog : undefined;
+			}
+			const parent = dirname(dir);
+			if (parent === dir) return undefined;
+			dir = parent;
+		}
+	} catch {
+		return undefined;
+	}
+}
+
+function stripChangelogInlineMd(text: string): string {
+	return text
+		.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+		.replace(/\*\*([^*]+)\*\*/g, "$1")
+		.replace(/`([^`]+)`/g, "$1")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/** Prefer bold feature titles; otherwise first clause before an em/en dash. */
+function changelogBulletTitle(line: string): string {
+	const bold = line.match(/\*\*([^*]+)\*\*/);
+	if (bold?.[1]) return stripChangelogInlineMd(bold[1]);
+	const cleaned = stripChangelogInlineMd(line.replace(/^\s*-\s*/, ""));
+	const clause = cleaned.split(/\s+[—–-]\s+/)[0]?.trim();
+	return clause || cleaned;
+}
+
+function extractSectionBullets(section: string, max: number): string[] {
+	const bullets: string[] = [];
+	for (const heading of ["New Features", "Added"]) {
+		const match = section.match(new RegExp(`### ${heading}\\s*\\n([\\s\\S]*?)(?=\\n### |$)`));
+		if (!match?.[1]) continue;
+		for (const line of match[1].split("\n")) {
+			if (!/^\s*-\s+/.test(line)) continue;
+			const title = changelogBulletTitle(line);
+			if (!title) continue;
+			bullets.push(title);
+			if (bullets.length >= max) return bullets;
+		}
+		if (bullets.length > 0) break;
+	}
+	return bullets;
+}
+
+function loadWhatsNewBullets(version: string, max = 2): string[] {
+	const changelogPath = resolvePiChangelogPath();
+	if (!changelogPath) return [];
+	try {
+		const md = readFileSync(changelogPath, "utf8");
+		const escaped = version.replace(/\./g, "\\.");
+		const headerRe = new RegExp(`^## \\[?${escaped}\\]?\\b.*$`, "m");
+		const header = headerRe.exec(md);
+		let section = "";
+		if (header?.index !== undefined) {
+			const start = header.index + header[0].length;
+			const rest = md.slice(start);
+			const next = rest.search(/^## /m);
+			section = next >= 0 ? rest.slice(0, next) : rest;
+		} else {
+			// Fallback: latest released section (skip Unreleased).
+			const released = /^## \[?\d+\.\d+\.\d+\]?.*$/m.exec(md);
+			if (!released || released.index === undefined) return [];
+			const start = released.index + released[0].length;
+			const rest = md.slice(start);
+			const next = rest.search(/^## /m);
+			section = next >= 0 ? rest.slice(0, next) : rest;
+		}
+		return extractSectionBullets(section, max);
+	} catch {
+		return [];
+	}
+}
+
+let cachedWhatsNew: { version: string; bullets: string[] } | undefined;
+
+function getWhatsNewBullets(): string[] {
+	if (cachedWhatsNew?.version === VERSION) return cachedWhatsNew.bullets;
+	const bullets = loadWhatsNewBullets(VERSION, 2);
+	cachedWhatsNew = { version: VERSION, bullets };
+	return bullets;
+}
 
 function formatModelLabel(
 	model: { provider?: string; id?: string } | null | undefined,
@@ -578,11 +671,16 @@ function renderClaudeWelcome(
 		}
 	}
 
+	const whatsNew = getWhatsNewBullets();
 	rightCluster.push(tipDivider);
 	rightCluster.push(tipLine(paint(bold("What's new"))));
-	rightCluster.push(tipLine(bullet(muted("Rounded welcome frame with theme accent borders"))));
-	rightCluster.push(tipLine(bullet(muted("Session model and cwd sit under the Pi logo"))));
-	rightCluster.push(tipLine(bullet(muted("Startup context files surface at a glance"))));
+	if (whatsNew.length > 0) {
+		for (const item of whatsNew) {
+			rightCluster.push(tipLine(bullet(muted(item))));
+		}
+	} else {
+		rightCluster.push(tipLine(bullet(muted(`Pi v${VERSION} — see release notes`))));
+	}
 	rightCluster.push(tipLine(`  ${paint("/changelog")} for more`));
 
 	const logo = piLogoLines(paint);
