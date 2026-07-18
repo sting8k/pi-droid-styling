@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
@@ -322,40 +322,112 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	].join("\n");
 }
 
+function centerText(text: string, width: number): string {
+	if (width <= 0) return "";
+	const w = safeVisibleWidth(text);
+	if (w >= width) return safeTruncateToWidth(text, width, "…");
+	return "".repeat(Math.floor((width - w) / 2)) + text;
+}
+
+function padRight(text: string, width: number, ellipsis?: string): string {
+	const clipped = safeTruncateToWidth(text, width, ellipsis);
+	return clipped + " ".repeat(Math.max(0, width - safeVisibleWidth(clipped)));
+}
+
+function borderLine(left: string, label: string, right: string, width: number, paint: (s: string) => string): string {
+	if (width <= 1) return "";
+	if (width < 8 || label.length === 0) {
+		return paint(safeTruncateToWidth(left + "─".repeat(Math.max(0, width - 2)) + right, width, ""));
+	}
+	const before = "─── ";
+	const after = " ─────";
+	const fixedWidth = safeVisibleWidth(before) + safeVisibleWidth(label) + safeVisibleWidth(after);
+	const fill = Math.max(0, width - 2 - fixedWidth);
+	return `${paint(left)}${paint(before)}${label}${paint(after)}${paint("─".repeat(fill))}${paint(right)}`;
+}
+
+function boxedLine(content: string, width: number, paint: (s: string) => string): string {
+	if (width <= 2) return safeTruncateToWidth(content, width, "");
+	return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
+}
+
+function twoColumn(left: string, right: string, leftWidth: number, rightWidth: number, paint: (s: string) => string): string {
+	return `${padRight(left, leftWidth)} ${paint("│")} ${padRight(right, rightWidth, "…")}`;
+}
+
 function compactHeader(theme: ThemeLike, width: number): string {
-	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => safeVisibleWidth(line)));
-	const gap = "   ";
-	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
-	const hints = [
-		theme.bold(rawKeyHint("/", "commands")),
-		theme.bold(rawKeyHint("!", "bash")),
-		theme.bold(keyHint("app.tools.expand", "more")),
-	].join(theme.fg("muted", " · "));
-	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
-	const details = [title, hints, status, ""];
+	const paint = (s: string) => theme.fg("accent", s);
+	const muted = (s: string) => theme.fg("muted", s);
+	const bold = (s: string) => theme.bold(s);
+
+	if (width < 18) return paint(`Pi v${VERSION}`);
+
 	const safeWidth = Math.max(1, width);
-	const detailWidth = safeWidth - logoWidth - safeVisibleWidth(gap);
+	const innerWidth = safeWidth - 2;
 
-	if (detailWidth >= 12) {
-		return PI_ASCII_LOGO
-			.map((line, index) => {
-				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(line)));
-				const detail = details[index] ? safeTruncateToWidth(details[index]!, detailWidth, "…") : "";
-				return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
-			})
-			.join("\n");
+	// Tips sidebar (Claude Code style) on wide terminals
+	const minTipsWidth = 18;
+	const maxTipsWidth = 26;
+	const minLogoWidth = 26;
+	const sepWidth = 3;
+	const useTips = innerWidth >= minLogoWidth + sepWidth + minTipsWidth;
+
+	let leftWidth: number;
+	let rightWidth: number;
+	if (useTips) {
+		rightWidth = Math.min(maxTipsWidth, Math.max(minTipsWidth, Math.round(innerWidth * 0.25)));
+		leftWidth = innerWidth - sepWidth - rightWidth;
+		if (leftWidth < minLogoWidth || rightWidth < minTipsWidth) {
+			leftWidth = innerWidth;
+			rightWidth = 0;
+		}
+	} else {
+		leftWidth = innerWidth;
+		rightWidth = 0;
+	}
+	const actualUseTips = rightWidth >= minTipsWidth;
+
+	// Left column: logo + branding
+	const logoLines = PI_ASCII_LOGO.map((line) => centerText(theme.fg("accent", line), leftWidth));
+	const versionLine = centerText(paint(`Pi v${VERSION}`), leftWidth);
+	const tagline = centerText(bold("Let's build something great"), leftWidth);
+	const leftLines = [...logoLines, "", versionLine, tagline];
+
+	// Right column: commands + getting started
+	const COMMAND_TIPS = ["/use-default-tui", "/compact", "/copy", "/hotkeys", "/model"];
+	const tipLines: string[] = [];
+	if (actualUseTips) {
+		tipLines.push(
+			"",
+			bold(paint("Getting started")),
+			muted("Ask Pi to build it"),
+			paint("─".repeat(Math.min(rightWidth, 16))),
+			bold(paint("Commands")),
+			...COMMAND_TIPS.map((cmd) => muted(cmd)),
+			"",
+		);
 	}
 
-	if (safeWidth >= logoWidth) {
-		return [
-			...PI_ASCII_LOGO.map((line) => theme.fg("accent", line)),
-			safeTruncateToWidth(title, safeWidth, "…"),
-			safeTruncateToWidth(hints, safeWidth, "…"),
-			safeTruncateToWidth(status, safeWidth, "…"),
-		].join("\n");
-	}
+	// Equalize line counts
+	const maxLines = Math.max(leftLines.length, tipLines.length);
+	while (leftLines.length < maxLines) leftLines.push("");
+	while (tipLines.length < maxLines) tipLines.push("");
 
-	return [title, status].map((line) => safeTruncateToWidth(line, safeWidth, "…")).join("\n");
+	// Build bordered box
+	const topBorder = borderLine("╭", `${paint("Pi")} v${VERSION}`, "╮", safeWidth, paint);
+	const bottomBorder = borderLine("╰", "", "╯", safeWidth, paint);
+	const result: string[] = [topBorder];
+
+	for (let i = 0; i < maxLines; i++) {
+		const left = leftLines[i] ?? "";
+		const right = tipLines[i] ?? "";
+		const content = actualUseTips
+			? twoColumn(left, right, leftWidth, rightWidth, paint)
+			: padRight(left, leftWidth);
+		result.push(boxedLine(content, safeWidth, paint));
+	}
+	result.push(bottomBorder);
+	return result.join("\n");
 }
 
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
