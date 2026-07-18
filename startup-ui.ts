@@ -18,12 +18,66 @@ const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
-const PI_ASCII_LOGO = [
-	"┏━━━┓ ┏━┓",
-	"┃ _ ┃ ┃ ┃",
-	"┣━━━┛ ┃ ┃",
-	"┗━┛   ┗━┛",
+const PI_CLAUDE_LOGO = [
+	"            ",
+	"            ",
+	"█████████   ",
+	"███   ███   ",
+	"██████   ███",
+	"███      ███",
+	"            ",
 ] as const;
+
+type StartupInfo = {
+	model: string;
+	effort: string;
+	cwd: string;
+	tipCommands: string[];
+};
+
+const BUILTIN_SLASH_COMMANDS = [
+	"settings", "model", "scoped-models", "export", "import", "share",
+	"copy", "name", "session", "changelog", "hotkeys", "fork",
+	"clone", "tree", "trust", "login", "logout", "new",
+	"compact", "resume", "reload", "quit", "theme",
+] as const;
+
+function collectSlashCommandNames(skills: { name: string }[], templates: { name: string }[]): string[] {
+	const names = new Set<string>(BUILTIN_SLASH_COMMANDS);
+	for (const skill of skills) if (skill.name) names.add(skill.name);
+	for (const template of templates) if (template.name) names.add(template.name);
+	return [...names].sort();
+}
+
+function pickSlashCommandTips(available: string[], count = 3): string[] {
+	const fixed = ["use-default-tui"];
+	const exclude = new Set([...fixed, "use-claude-code-tui"]);
+	const pool = available.filter((n) => !exclude.has(n));
+	for (let i = pool.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[pool[i], pool[j]] = [pool[j], pool[i]];
+	}
+	return [...fixed, ...pool.slice(0, count)].map((n) => (n.startsWith("/") ? n : `/${n}`));
+}
+
+function formatModelLabel(scopedModels: any[]): string {
+	if (scopedModels.length === 0) return "Default model";
+	const m = scopedModels[0]?.model;
+	if (!m?.id) return "Default model";
+	return m.provider ? `${m.provider}/${m.id}` : m.id;
+}
+
+function formatCwd(cwd: string): string {
+	const home = homedir();
+	return home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
+}
+
+let startupInfo: StartupInfo = {
+	model: "Loading…",
+	effort: "off",
+	cwd: "~",
+	tipCommands: ["/use-default-tui", "/compact", "/copy", "/hotkeys"],
+};
 
 let activeTheme: ThemeLike | undefined;
 const FALLBACK_THEME: ThemeLike = {
@@ -358,6 +412,7 @@ function twoColumn(left: string, right: string, leftWidth: number, rightWidth: n
 function compactHeader(theme: ThemeLike, width: number): string {
 	const paint = (s: string) => theme.fg("accent", s);
 	const muted = (s: string) => theme.fg("muted", s);
+	const dim = (s: string) => theme.fg("dim", s);
 	const bold = (s: string) => theme.bold(s);
 
 	if (width < 18) return paint(`Pi v${VERSION}`);
@@ -366,18 +421,26 @@ function compactHeader(theme: ThemeLike, width: number): string {
 	const innerWidth = safeWidth - 2;
 
 	// Tips sidebar (Claude Code style) on wide terminals
-	const minTipsWidth = 18;
-	const maxTipsWidth = 26;
-	const minLogoWidth = 26;
+	const minTipsWidth = 16;
+	const maxTipsWidth = 28;
+	const minLogoWidth = 28;
 	const sepWidth = 3;
 	const useTips = innerWidth >= minLogoWidth + sepWidth + minTipsWidth;
 
 	let leftWidth: number;
 	let rightWidth: number;
 	if (useTips) {
-		rightWidth = Math.min(maxTipsWidth, Math.max(minTipsWidth, Math.round(innerWidth * 0.25)));
+		rightWidth = Math.min(maxTipsWidth, Math.max(minTipsWidth, Math.round(innerWidth * 0.28)));
 		leftWidth = innerWidth - sepWidth - rightWidth;
-		if (leftWidth < minLogoWidth || rightWidth < minTipsWidth) {
+		if (leftWidth < minLogoWidth) {
+			leftWidth = minLogoWidth;
+			rightWidth = innerWidth - sepWidth - leftWidth;
+		}
+		if (leftWidth <= rightWidth) {
+			leftWidth = Math.ceil((innerWidth - sepWidth) * 0.65);
+			rightWidth = innerWidth - sepWidth - leftWidth;
+		}
+		if (rightWidth < minTipsWidth || leftWidth < minLogoWidth) {
 			leftWidth = innerWidth;
 			rightWidth = 0;
 		}
@@ -387,23 +450,26 @@ function compactHeader(theme: ThemeLike, width: number): string {
 	}
 	const actualUseTips = rightWidth >= minTipsWidth;
 
-	// Left column: logo + branding
-	const logoLines = PI_ASCII_LOGO.map((line) => centerText(theme.fg("accent", line), leftWidth));
-	const versionLine = centerText(paint(`Pi v${VERSION}`), leftWidth);
+	// Left column: logo + branding + session info
+	const info = startupInfo;
+	const logoLines = PI_CLAUDE_LOGO.map((line) => centerText(theme.fg("accent", line), leftWidth));
 	const tagline = centerText(bold("Let's build something great"), leftWidth);
-	const leftLines = [...logoLines, "", versionLine, tagline];
+	const modelLine = centerText(muted(`${info.model} · ${info.effort} effort`), leftWidth);
+	const cwdLine = centerText(dim(info.cwd), leftWidth);
+	const leftLines = [...logoLines, "", tagline, modelLine, cwdLine];
 
-	// Right column: commands + getting started
-	const COMMAND_TIPS = ["/use-default-tui", "/compact", "/copy", "/hotkeys", "/model"];
+	// Right column: getting started + commands
+	const tips = info.tipCommands;
 	const tipLines: string[] = [];
 	if (actualUseTips) {
+		const tipDivider = paint("─".repeat(Math.max(8, Math.min(rightWidth, 22))));
 		tipLines.push(
 			"",
 			bold(paint("Getting started")),
 			muted("Ask Pi to build it"),
-			paint("─".repeat(Math.min(rightWidth, 16))),
+			tipDivider,
 			bold(paint("Commands")),
-			...COMMAND_TIPS.map((cmd) => muted(cmd)),
+			...tips.map((cmd) => muted(cmd)),
 			"",
 		);
 	}
@@ -482,6 +548,16 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 		const scopedModels = this.session.scopedModels ?? [];
 		const availableTools = getAvailableTools(this.session);
 		const cwd = typeof this.sessionManager?.getCwd === "function" ? this.sessionManager.getCwd() : process.cwd();
+
+		// Cache session info for the claude-code-style header
+		const cmdNames = collectSlashCommandNames(skills, templates);
+		startupInfo = {
+			model: formatModelLabel(scopedModels),
+			effort: "off",
+			cwd: formatCwd(cwd),
+			tipCommands: pickSlashCommandTips(cmdNames, 3),
+		};
+
 		const agentDir = getAgentDir();
 		const systemPrompt = this.session.resourceLoader.getSystemPrompt?.();
 		const appendSystemPrompts = this.session.resourceLoader.getAppendSystemPrompt?.() ?? [];
