@@ -81,6 +81,8 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 		session = {
 			promptTemplates: [],
 			scopedModels: [],
+			model: { provider: "opencode-go", id: "deepseek-v4-flash-free" },
+			thinkingLevel: "high",
 			getActiveToolNames: () => [
 				"bash", "find", "grep", "ls", "read", "write", "TaskCreate", "TaskList", "TaskUpdate",
 				"review", "search", "customTool", "gitWrite",
@@ -122,31 +124,48 @@ function assertStartupResources({ calls, lines }) {
 	const output = lines.join("\n");
 	console.log(output);
 
-	const systemIndex = output.indexOf("System & Context");
-	const toolsIndex = output.indexOf("Available Tools");
-	assert(systemIndex >= 0, "missing System & Context panel");
-	assert(toolsIndex > systemIndex, "Available Tools panel is not below System & Context");
-	assert(/tools\D+13/.test(output), "resources summary did not count active tools");
-	assert(/Source\s+\| Count \| Tools/.test(output), "tools panel did not render Source header");
-	assert(!/Prefix\s+\|/.test(output), "old Prefix header is still rendered");
-	assert(/core\D+9\D+bash/.test(output), "builtin tools were not grouped under core");
-	assert(/review-ext\D+2\D+review, search/.test(output), "local extension tools were not grouped by extension baseDir");
-	assert(/pi-tools\D+1\D+customTool/.test(output), "npm extension tools were not grouped by package source");
-	assert(/git-tools\D+1\D+gitWrite/.test(output), "git extension tools were not grouped by git source");
-	assert(!/inactive/.test(output), "inactive tool leaked into active tools panel");
-	assert(output.includes("..."), "long path or tool list was not truncated with ...");
+	// Claude Code-style bordered welcome: greeting + tips + context + what's new
+	assert(output.includes("Welcome back!"), "missing Welcome greeting");
+	assert(output.includes("Pi v"), "missing Pi version border label");
+	assert(output.includes("╭"), "missing top rounded border");
+	assert(output.includes("╰"), "missing bottom rounded border");
+	assert(output.includes("Tips for getting started"), "missing Tips section");
+	assert(output.includes("/commands"), "missing /commands tip");
+	assert(output.includes("/model"), "missing /model tip");
+	assert(output.includes("/tree"), "missing /tree tip");
+	assert(output.includes("• Run"), "missing tip bullets");
+	assert(output.includes("Open") && output.includes("/tree"), "missing /tree tip copy");
+	assert(output.includes("Context"), "missing Context section");
+	assert(output.includes("custom system prompt"), "missing system prompt in Context");
+	assert(output.includes("AGENTS.md"), "missing context file in Context");
+	assert(output.includes("What's new"), "missing What's new section");
+	assert(output.includes("/changelog"), "missing /changelog link");
+	assert(!/inactive/.test(output), "inactive tool leaked into output");
 
-	const topBorders = lines.filter((line) => line.trimStart().startsWith("┌"));
-	assert(topBorders.length === 2, "expected exactly two expanded resource panels");
-	const borderWidths = topBorders.map((line) => line.trimStart().length);
-	assert(borderWidths[0] === borderWidths[1], "System & Context and Available Tools panel widths differ");
-	for (const line of lines.filter((line) => line.trimStart().startsWith("│") || line.trimStart().startsWith("┌") || line.trimStart().startsWith("└"))) {
-		assert(line.trimStart().length <= borderWidths[0], `panel line exceeds shared width: ${line}`);
-	}
+	// Left column meta: model + cwd only (no effort). Long provider/id may drop provider.
+	assert(output.includes("───") || output.includes("─".repeat(8)), "missing section divider");
+	assert(
+		output.includes("opencode-go/deepseek-v4-flash-free") || output.includes("deepseek-v4-flash-free"),
+		"missing live model meta (full or id-only)",
+	);
+	assert(!output.includes("Default model"), "should not fall back to Default model when session.model is set");
+	assert(!/\beffort\b/.test(output), "effort label should not appear under the logo");
 
-	for (const expectedText of ["Type", "system", "a/very", "Source", "core", "review-ext", "bash"]) {
-		assert(calls.some(([color, text]) => color === "text" && text.includes(expectedText)), `missing bright text color call for ${expectedText}`);
-	}
+	// Path truncation: the long agents path should be truncated
+	assert(output.includes("…"), "long context path was not truncated");
+
+	// Natural language tips (Claude Code-style)
+	assert(output.includes("Run") && output.includes("/commands"), "missing natural-language tip style");
+	assert(output.includes("Open") && output.includes("/tree"), "missing /tree natural-language tip style");
+
+	// System/context kinds use dim
+	assert(calls.some(([color, text]) => color === "dim" && text.includes("system")), "missing dim color call for system kind");
+	// Context path uses accent (like Claude Code's muted highlighting)
+	assert(calls.some(([color, text]) => color === "accent" && text.includes("AGENTS.md")), "missing accent color call for context path");
+	// Commands tips use accent
+	assert(calls.some(([color, text]) => color === "accent" && text.includes("/commands")), "missing accent color call for /commands");
+	// Border / section rules use accent
+	assert(calls.some(([color, text]) => color === "accent" && text.includes("─")), "missing accent color call for welcome borders");
 	console.log("startup resources smoke ok");
 }
 

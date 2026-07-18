@@ -2,13 +2,14 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
 
-const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
-const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
+const PATCHED = Symbol("pi-droid-styling.startup-ui.patched");
+const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol("pi-droid-styling.startup-ui.original-show-loaded-resources");
+const TRUE_ORIGINAL = Symbol("pi-droid-styling.startup-ui.true-original");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
 const TOOLS_PANEL_MIN_WIDTH = 64;
@@ -18,12 +19,66 @@ const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
-const PI_ASCII_LOGO = [
-	"┏━━━┓ ┏━┓",
-	"┃ _ ┃ ┃ ┃",
-	"┣━━━┛ ┃ ┃",
-	"┗━┛   ┗━┛",
+const PI_CLAUDE_LOGO = [
+	"            ",
+	"            ",
+	"█████████   ",
+	"███   ███   ",
+	"██████   ███",
+	"███      ███",
+	"            ",
 ] as const;
+
+type StartupInfo = {
+	model: string;
+	cwd: string;
+	tipCommands: string[];
+};
+
+const BUILTIN_SLASH_COMMANDS = [
+	"settings", "model", "scoped-models", "export", "import", "share",
+	"copy", "name", "session", "changelog", "hotkeys", "fork",
+	"clone", "tree", "trust", "login", "logout", "new",
+	"compact", "resume", "reload", "quit", "theme",
+] as const;
+
+function collectSlashCommandNames(skills: { name: string }[], templates: { name: string }[]): string[] {
+	const names = new Set<string>(BUILTIN_SLASH_COMMANDS);
+	for (const skill of skills) if (skill.name) names.add(skill.name);
+	for (const template of templates) if (template.name) names.add(template.name);
+	return [...names].sort();
+}
+
+function pickSlashCommandTips(available: string[], count = 3, fixed: string[] = ["use-default-tui"]): string[] {
+	const exclude = new Set([...fixed, "use-claude-code-tui"]);
+	const pool = available.filter((n) => !exclude.has(n));
+	for (let i = pool.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[pool[i], pool[j]] = [pool[j], pool[i]];
+	}
+	return [...fixed, ...pool.slice(0, count)].map((n) => (n.startsWith("/") ? n : `/${n}`));
+}
+
+function formatModelLabel(
+	model: { provider?: string; id?: string } | null | undefined,
+	scopedModels: any[] = [],
+): string {
+	if (model?.id) return model.provider ? `${model.provider}/${model.id}` : model.id;
+	const scoped = scopedModels[0]?.model;
+	if (scoped?.id) return scoped.provider ? `${scoped.provider}/${scoped.id}` : scoped.id;
+	return "Default model";
+}
+
+function formatCwd(cwd: string): string {
+	const home = homedir();
+	return home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
+}
+
+let startupInfo: StartupInfo = {
+	model: "Loading…",
+	cwd: "~",
+	tipCommands: ["/use-default-tui", "/compact", "/copy", "/hotkeys"],
+};
 
 let activeTheme: ThemeLike | undefined;
 const FALLBACK_THEME: ThemeLike = {
@@ -322,51 +377,171 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	].join("\n");
 }
 
-function compactHeader(theme: ThemeLike, width: number): string {
-	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => safeVisibleWidth(line)));
-	const gap = "   ";
-	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
-	const hints = [
-		theme.bold(rawKeyHint("/", "commands")),
-		theme.bold(rawKeyHint("!", "bash")),
-		theme.bold(keyHint("app.tools.expand", "more")),
-	].join(theme.fg("muted", " · "));
-	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
-	const details = [title, hints, status, ""];
-	const safeWidth = Math.max(1, width);
-	const detailWidth = safeWidth - logoWidth - safeVisibleWidth(gap);
+/** Claude Code welcome: slightly roomier mascot column + tips/news sidebar. */
+const WELCOME_MIN_LEFT_WIDTH = 34;
+const WELCOME_MAX_LEFT_WIDTH = 46;
+const WELCOME_MIN_RIGHT_WIDTH = 28;
+const WELCOME_COLUMN_GAP = 3; // ` │ `
 
-	if (detailWidth >= 12) {
-		return PI_ASCII_LOGO
-			.map((line, index) => {
-				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(line)));
-				const detail = details[index] ? safeTruncateToWidth(details[index]!, detailWidth, "…") : "";
-				return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
-			})
-			.join("\n");
+function padRight(text: string, width: number, ellipsis = ""): string {
+	const clipped = safeTruncateToWidth(text, width, ellipsis);
+	return clipped + " ".repeat(Math.max(0, width - safeVisibleWidth(clipped)));
+}
+
+function borderLine(left: string, label: string, right: string, width: number, paint: (s: string) => string): string {
+	if (width <= 1) return "";
+	if (width < 8 || safeVisibleWidth(label) === 0) {
+		return paint(left + "─".repeat(Math.max(0, width - 2)) + right);
+	}
+	const before = "─── ";
+	const after = " ─────";
+	const fixedWidth = safeVisibleWidth(before) + safeVisibleWidth(label) + safeVisibleWidth(after);
+	const fill = Math.max(0, width - 2 - fixedWidth);
+	return `${paint(left)}${paint(before)}${label}${paint(after)}${paint("─".repeat(fill))}${paint(right)}`;
+}
+
+function boxedLine(content: string, width: number, paint: (s: string) => string): string {
+	if (width <= 2) return safeTruncateToWidth(content, width, "");
+	return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
+}
+
+/** Center text and pad both sides so the cluster is truly mid-column (not left-biased). */
+function centerText(text: string, width: number): string {
+	if (width <= 0) return "";
+	const w = safeVisibleWidth(text);
+	if (w >= width) return safeTruncateToWidth(text, width, "…");
+	const leftPad = Math.floor((width - w) / 2);
+	const rightPad = width - w - leftPad;
+	return `${" ".repeat(leftPad)}${text}${" ".repeat(rightPad)}`;
+}
+
+function welcomeColumnWidths(innerWidth: number): { leftWidth: number; rightWidth: number; useRight: boolean } {
+	if (innerWidth <= 0) return { leftWidth: 0, rightWidth: 0, useRight: false };
+	if (innerWidth < WELCOME_MIN_LEFT_WIDTH + WELCOME_COLUMN_GAP + WELCOME_MIN_RIGHT_WIDTH) {
+		return { leftWidth: innerWidth, rightWidth: 0, useRight: false };
 	}
 
-	if (safeWidth >= logoWidth) {
-		return [
-			...PI_ASCII_LOGO.map((line) => theme.fg("accent", line)),
-			safeTruncateToWidth(title, safeWidth, "…"),
-			safeTruncateToWidth(hints, safeWidth, "…"),
-			safeTruncateToWidth(status, safeWidth, "…"),
-		].join("\n");
+	// Slightly roomier mascot column (~38%) so long model labels fit without crowding tips.
+	let leftWidth = Math.min(
+		WELCOME_MAX_LEFT_WIDTH,
+		Math.max(WELCOME_MIN_LEFT_WIDTH, Math.round(innerWidth * 0.38)),
+	);
+	let rightWidth = innerWidth - WELCOME_COLUMN_GAP - leftWidth;
+	if (rightWidth < WELCOME_MIN_RIGHT_WIDTH) {
+		rightWidth = WELCOME_MIN_RIGHT_WIDTH;
+		leftWidth = innerWidth - WELCOME_COLUMN_GAP - rightWidth;
 	}
+	if (leftWidth < WELCOME_MIN_LEFT_WIDTH || rightWidth < WELCOME_MIN_RIGHT_WIDTH) {
+		return { leftWidth: innerWidth, rightWidth: 0, useRight: false };
+	}
+	return { leftWidth, rightWidth, useRight: true };
+}
 
-	return [title, status].map((line) => safeTruncateToWidth(line, safeWidth, "…")).join("\n");
+function twoColumn(
+	left: string,
+	right: string,
+	leftWidth: number,
+	rightWidth: number,
+	paint: (s: string) => string,
+): string {
+	return `${padRight(left, leftWidth)} ${paint("│")} ${padRight(right, rightWidth, "…")}`;
+}
+
+/** Crop logo to ink bounds so trailing spaces don't pull the mark left of center. */
+function piLogoLines(paint: (s: string) => string): string[] {
+	const rows = PI_CLAUDE_LOGO.filter((line) => line.trim().length > 0);
+	let minX = Number.POSITIVE_INFINITY;
+	let maxX = -1;
+	for (const row of rows) {
+		for (let x = 0; x < row.length; x++) {
+			if (row[x] !== " ") {
+				minX = Math.min(minX, x);
+				maxX = Math.max(maxX, x);
+			}
+		}
+	}
+	if (maxX < minX) return [];
+	return rows.map((row) => paint(row.slice(minX, maxX + 1)));
+}
+
+/** Prefer keeping the model id (after `/`) when the full provider/id label is too wide. */
+function truncateModelLabel(model: string, width: number): string {
+	if (width <= 0) return "";
+	if (safeVisibleWidth(model) <= width) return model;
+	const slash = model.lastIndexOf("/");
+	if (slash > 0) {
+		const id = model.slice(slash + 1);
+		if (safeVisibleWidth(id) <= width) return id;
+		if (safeVisibleWidth(`…/${id}`) <= width) return `…/${id}`;
+		return safeTruncateToWidth(`…${id}`, width, "…");
+	}
+	return safeTruncateToWidth(model, width, "…");
+}
+
+/** Model + cwd under the logo (no effort). Truncate long provider/id labels cleanly. */
+function fitWelcomeMeta(model: string, cwd: string, width: number): string[] {
+	return [truncateModelLabel(model, width), safeTruncateToWidth(cwd, width, "…")];
+}
+
+/** Pad lines equally above/below so a column cluster sits mid-height. */
+function padVerticalCenter(lines: string[], targetHeight: number): string[] {
+	const spare = Math.max(0, targetHeight - lines.length);
+	const padTop = Math.floor(spare / 2);
+	const padBottom = spare - padTop;
+	return [
+		...Array.from({ length: padTop }, () => ""),
+		...lines,
+		...Array.from({ length: padBottom }, () => ""),
+	];
+}
+
+/**
+ * Claude Code left column: greeting + logo + meta as one tight cluster.
+ * Vertical centering is applied later (shared with the tips column).
+ */
+function balanceLeftColumn(
+	greeting: string,
+	logo: string[],
+	meta: string[],
+	leftWidth: number,
+): string[] {
+	return [
+		centerText(greeting, leftWidth),
+		"",
+		...logo.map((line) => centerText(line, leftWidth)),
+		"",
+		...meta.map((line) => centerText(line, leftWidth)),
+	];
+}
+
+/**
+ * Hide Pi's built-in header (logo/tips) while capturing theme for the chat welcome.
+ * Pi wraps the header slot with Spacer(1) above/below — an empty custom header still
+ * leaves those blanks. Strip Spacers after Pi inserts the custom header (index is
+ * captured before the factory runs, so we must not mutate siblings inside it).
+ */
+function stripHeaderSpacers(tui: { children?: unknown[] } | null | undefined): void {
+	if (!tui || typeof tui !== "object") return;
+	const rootChildren = tui.children;
+	const headerContainer = Array.isArray(rootChildren) ? rootChildren[0] : undefined;
+	const siblings = (headerContainer as { children?: unknown[] } | undefined)?.children;
+	if (!Array.isArray(siblings)) return;
+	(headerContainer as { children: unknown[] }).children = siblings.filter(
+		(child) => !(child instanceof Spacer),
+	);
 }
 
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
 	if (isQuietStartup(cwd)) return;
-	ui.setHeader((_tui, theme) => {
-		const headerTheme = theme as ThemeLike;
-		activeTheme = headerTheme;
+	ui.setHeader((tui, theme) => {
+		activeTheme = theme as ThemeLike;
+		const strip = () => stripHeaderSpacers(tui as { children?: unknown[] });
+		queueMicrotask(strip);
+		setTimeout(strip, 0).unref?.();
 		return {
 			invalidate() {},
-			render(width: number): string[] {
-				return indentStartupLines(compactHeader(headerTheme, startupBodyWidth(width)).split("\n"));
+			render(): string[] {
+				return [];
 			},
 		};
 	});
@@ -384,11 +559,122 @@ export function suppressStartupModelScopeLog(): void {
 	};
 }
 
+function renderClaudeWelcome(
+	theme: ThemeLike,
+	info: StartupInfo,
+	systemContextItems: SystemContextItem[],
+	width: number,
+): string[] {
+	const paint = (s: string) => theme.fg("accent", s);
+	const muted = (s: string) => theme.fg("muted", s);
+	const dim = (s: string) => theme.fg("dim", s);
+	const bold = (s: string) => theme.bold(s);
+
+	if (width < 24) return [`${paint("Pi")} ${muted(`v${VERSION}`)}`];
+
+	const boxWidth = Math.max(24, width);
+	const innerWidth = boxWidth - 2;
+	const { leftWidth, rightWidth, useRight } = welcomeColumnWidths(innerWidth);
+	const tipColWidth = useRight ? rightWidth : innerWidth;
+	// Same gutter for Tips/What's new text and both dividers — keep left/right edges flush.
+	const tipGutter = 1;
+	const tipInnerWidth = Math.max(1, tipColWidth - tipGutter * 2);
+	const tipDivider =
+		`${" ".repeat(tipGutter)}${muted("─".repeat(tipInnerWidth))}${" ".repeat(tipGutter)}`;
+	const tipLine = (text: string) =>
+		`${" ".repeat(tipGutter)}${safeTruncateToWidth(text, tipInnerWidth, "…")}`;
+	const bullet = (text: string) => `• ${text}`;
+
+	const rightCluster: string[] = [
+		tipLine(paint(bold("Tips for getting started"))),
+		tipLine(bullet(`Run ${paint("/commands")} to browse all available commands`)),
+		tipLine(bullet(`Use ${paint("/model")} to switch AI models`)),
+		tipLine(bullet(`Open ${paint("/tree")} to browse and jump session branches`)),
+	];
+
+	if (systemContextItems.length > 0) {
+		rightCluster.push(tipDivider);
+		rightCluster.push(tipLine(paint(bold("Context"))));
+		for (const item of systemContextItems) {
+			const maxPath = Math.max(18, tipInnerWidth - 12);
+			const path = item.path.length > maxPath
+				? "…" + item.path.slice(-(maxPath - 1))
+				: item.path;
+			rightCluster.push(tipLine(bullet(`${dim(item.kind)}  ${paint(path)}`)));
+		}
+	}
+
+	rightCluster.push(tipDivider);
+	rightCluster.push(tipLine(paint(bold("What's new"))));
+	rightCluster.push(tipLine(bullet(muted("Rounded welcome frame with theme accent borders"))));
+	rightCluster.push(tipLine(bullet(muted("Tips pull from your live slash-command pool"))));
+	rightCluster.push(tipLine(bullet(muted("Startup context files surface at a glance"))));
+	rightCluster.push(tipLine(`  ${paint("/changelog")} for more`));
+
+	const logo = piLogoLines(paint);
+	const metaWidth = useRight ? leftWidth : innerWidth;
+	const [modelLine, cwdLine] = fitWelcomeMeta(info.model, info.cwd, metaWidth);
+	const meta = [muted(modelLine), dim(cwdLine)];
+
+	let bodyLines: string[];
+	if (useRight) {
+		const leftCluster = balanceLeftColumn(bold("Welcome back!"), logo, meta, leftWidth);
+		// +2 so left always gets ≥1 blank above/below (was uneven when right ≈ left height).
+		const targetHeight = Math.max(leftCluster.length, rightCluster.length) + 2;
+		const leftLines = padVerticalCenter(leftCluster, targetHeight);
+		const rightLines = padVerticalCenter(rightCluster, targetHeight);
+		bodyLines = [];
+		for (let i = 0; i < targetHeight; i++) {
+			bodyLines.push(twoColumn(leftLines[i] ?? "", rightLines[i] ?? "", leftWidth, rightWidth, paint));
+		}
+	} else {
+		// Narrow terminal: stack greeting → logo → tips → meta inside one box.
+		bodyLines = [
+			centerText(bold("Welcome back!"), innerWidth),
+			"",
+			...logo.map((line) => centerText(line, innerWidth)),
+			"",
+			...rightCluster,
+			"",
+			...meta.map((line) => centerText(line, innerWidth)),
+		];
+	}
+
+	// Border title: Pi stays accent; version matches What's new body (muted gray).
+	const titleLabel = `${paint("Pi")} ${muted(`v${VERSION}`)}`;
+	const lines = [borderLine("╭", titleLabel, "╮", boxWidth, paint)];
+	for (const content of bodyLines) {
+		lines.push(boxedLine(content, boxWidth, paint));
+	}
+	lines.push(borderLine("╰", "", "╯", boxWidth, paint));
+	return lines.map((line) => safeTruncateToWidth(line, boxWidth, ""));
+}
+
+class WelcomeBanner {
+	constructor(
+		private readonly theme: ThemeLike,
+		private readonly info: StartupInfo,
+		private readonly systemContextItems: SystemContextItem[],
+	) {}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const bodyWidth = startupBodyWidth(Math.max(1, width));
+		return indentStartupLines(renderClaudeWelcome(this.theme, this.info, this.systemContextItems, bodyWidth));
+	}
+}
+
 export function installStartupUiPatch(InteractiveModeComponent: any): void {
 	const proto = InteractiveModeComponent?.prototype;
-	if (!proto || proto[PATCHED]) return;
+	if (!proto) return;
+	// Save the true original on first patch only (persists across reloads via the prototype)
+	if (!proto[TRUE_ORIGINAL]) {
+		proto[TRUE_ORIGINAL] = proto.showLoadedResources;
+	}
+	// Always save reference to the true original for the current patch
+	proto[ORIGINAL_SHOW_LOADED_RESOURCES] = proto[TRUE_ORIGINAL];
 	proto[PATCHED] = true;
-	proto[ORIGINAL_SHOW_LOADED_RESOURCES] ??= proto.showLoadedResources;
 
 	proto.showLoadedResources = function showDroidLoadedResources(options?: { force?: boolean; showDiagnosticsWhenQuiet?: boolean; extensions?: Array<{ path: string; sourceInfo?: unknown }> }) {
 		const original = this[ORIGINAL_SHOW_LOADED_RESOURCES];
@@ -410,6 +696,15 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 		const scopedModels = this.session.scopedModels ?? [];
 		const availableTools = getAvailableTools(this.session);
 		const cwd = typeof this.sessionManager?.getCwd === "function" ? this.sessionManager.getCwd() : process.cwd();
+
+		// Cache live session model for the Claude Code-style welcome
+		const cmdNames = collectSlashCommandNames(skills, templates);
+		startupInfo = {
+			model: formatModelLabel(this.session.model, scopedModels),
+			cwd: formatCwd(cwd),
+			tipCommands: pickSlashCommandTips(cmdNames, 3),
+		};
+
 		const agentDir = getAgentDir();
 		const systemPrompt = this.session.resourceLoader.getSystemPrompt?.();
 		const appendSystemPrompts = this.session.resourceLoader.getAppendSystemPrompt?.() ?? [];
@@ -460,33 +755,11 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 			});
 		});
 
-		const rows: ResourceRow[] = [
-			{ label: "system", items: systemContextItems.filter((item) => item.kind === "system").map((item) => item.path) },
-			{ label: "append", items: systemContextItems.filter((item) => item.kind === "append").map((item) => item.path) },
-			{ label: "context", items: systemContextItems.filter((item) => item.kind === "context").map((item) => item.path) },
-			{ label: "models", items: scopedModels.map((scoped: any) => `${scoped.model.provider}/${scoped.model.id}`) },
-			{ label: "tools", items: availableTools.map((tool) => tool.name) },
-			{ label: "skills", items: skills.map((skill: any) => skill.name) },
-			{ label: "prompts", items: templates.map((template: any) => `/${template.name}`) },
-			{ label: "extensions", items: this.getCompactExtensionLabels(extensions) },
-			{ label: "themes", items: themes.map((loadedTheme: any) => loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath, loadedTheme.sourceInfo)) },
-		].filter((row) => row.items.length > 0);
-
-		if (rows.length > 0) {
-			this.chatContainer.addChild(new Spacer(1));
-			const theme = activeTheme ?? FALLBACK_THEME;
-			const expanded = typeof this.getStartupExpansionState === "function"
-				? this.getStartupExpansionState()
-				: Boolean(this.options?.verbose);
-			this.chatContainer.addChild(new ExpandableText(
-				() => renderResourceTable(theme, rows, systemContextItems, availableTools, false),
-				() => renderResourceTable(theme, rows, systemContextItems, availableTools, true),
-				expanded,
-				0,
-				0,
-			));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		// Welcome flush to the top; strip leftover header Spacers again (defensive).
+		if (this.ui) stripHeaderSpacers(this.ui);
+		const theme = activeTheme ?? FALLBACK_THEME;
+		this.chatContainer.addChild(new WelcomeBanner(theme, startupInfo, systemContextItems));
+		this.chatContainer.addChild(new Spacer(1));
 
 		const getQuietStartup = this.settingsManager.getQuietStartup.bind(this.settingsManager);
 		this.settingsManager.getQuietStartup = () => true;

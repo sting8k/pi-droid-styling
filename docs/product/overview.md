@@ -6,7 +6,7 @@
 
 The extension provides:
 
-- Compact startup header and loaded resources display.
+- Claude Code-style rounded welcome banner (Pi theme/content) plus loaded resources display.
 - Boxed editor with selectable `userZoneStyle` presets for project, model, context, git, footer status, and input presentation.
 - Assistant and user message prefixes with cleaner spacing.
 - Compact tool call tags with badges, elapsed time, dimmed output support, and specialized renderers for common tools.

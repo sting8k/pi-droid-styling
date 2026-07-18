@@ -20,7 +20,7 @@ pi install -l git:github.com/sting8k/pi-droid-styling
 
 ## Features
 
-- Compact startup header and loaded resources table.
+- Claude Code-style rounded welcome banner (Pi theme/content) plus loaded resources table.
 - Boxed editor with selectable `userZoneStyle` presets and adjusted TUI padding.
 - Cleaner assistant/user message spacing and prefixes.
 - Compact tool tags with badges, elapsed time, and dimmed output support.
