@@ -7,9 +7,9 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
 
-const PATCHED = Symbol("pi-droid-styling.startup-ui.patched");
-const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol("pi-droid-styling.startup-ui.original-show-loaded-resources");
-const TRUE_ORIGINAL = Symbol("pi-droid-styling.startup-ui.true-original");
+const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
+const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
+const TRUE_ORIGINAL = Symbol.for("pi-droid-styling.startup-ui.true-original");
 const CONSOLE_LOG_PATCHED = Symbol.for("pi-droid-styling.startup-ui.console-log-patched");
 const SYSTEM_CONTEXT_PANEL_MIN_WIDTH = 64;
 const TOOLS_PANEL_MIN_WIDTH = 64;
@@ -32,32 +32,7 @@ const PI_CLAUDE_LOGO = [
 type StartupInfo = {
 	model: string;
 	cwd: string;
-	tipCommands: string[];
 };
-
-const BUILTIN_SLASH_COMMANDS = [
-	"settings", "model", "scoped-models", "export", "import", "share",
-	"copy", "name", "session", "changelog", "hotkeys", "fork",
-	"clone", "tree", "trust", "login", "logout", "new",
-	"compact", "resume", "reload", "quit", "theme",
-] as const;
-
-function collectSlashCommandNames(skills: { name: string }[], templates: { name: string }[]): string[] {
-	const names = new Set<string>(BUILTIN_SLASH_COMMANDS);
-	for (const skill of skills) if (skill.name) names.add(skill.name);
-	for (const template of templates) if (template.name) names.add(template.name);
-	return [...names].sort();
-}
-
-function pickSlashCommandTips(available: string[], count = 3, fixed: string[] = ["use-default-tui"]): string[] {
-	const exclude = new Set([...fixed, "use-claude-code-tui"]);
-	const pool = available.filter((n) => !exclude.has(n));
-	for (let i = pool.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
-		[pool[i], pool[j]] = [pool[j], pool[i]];
-	}
-	return [...fixed, ...pool.slice(0, count)].map((n) => (n.startsWith("/") ? n : `/${n}`));
-}
 
 function formatModelLabel(
 	model: { provider?: string; id?: string } | null | undefined,
@@ -77,7 +52,6 @@ function formatCwd(cwd: string): string {
 let startupInfo: StartupInfo = {
 	model: "Loading…",
 	cwd: "~",
-	tipCommands: ["/use-default-tui", "/compact", "/copy", "/hotkeys"],
 };
 
 let activeTheme: ThemeLike | undefined;
@@ -607,7 +581,7 @@ function renderClaudeWelcome(
 	rightCluster.push(tipDivider);
 	rightCluster.push(tipLine(paint(bold("What's new"))));
 	rightCluster.push(tipLine(bullet(muted("Rounded welcome frame with theme accent borders"))));
-	rightCluster.push(tipLine(bullet(muted("Tips pull from your live slash-command pool"))));
+	rightCluster.push(tipLine(bullet(muted("Session model and cwd sit under the Pi logo"))));
 	rightCluster.push(tipLine(bullet(muted("Startup context files surface at a glance"))));
 	rightCluster.push(tipLine(`  ${paint("/changelog")} for more`));
 
@@ -683,8 +657,6 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 			return original.call(this, options);
 		}
 
-		const skills = this.session.resourceLoader.getSkills().skills;
-		const templates = this.session.promptTemplates ?? [];
 		const themes = this.session.resourceLoader.getThemes().themes.filter((loadedTheme: any) => loadedTheme.sourcePath);
 		const extensions = options?.force && options?.extensions
 			? options.extensions
@@ -697,12 +669,10 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 		const availableTools = getAvailableTools(this.session);
 		const cwd = typeof this.sessionManager?.getCwd === "function" ? this.sessionManager.getCwd() : process.cwd();
 
-		// Cache live session model for the Claude Code-style welcome
-		const cmdNames = collectSlashCommandNames(skills, templates);
+		// Cache live session model/cwd for the Claude Code-style welcome
 		startupInfo = {
 			model: formatModelLabel(this.session.model, scopedModels),
 			cwd: formatCwd(cwd),
-			tipCommands: pickSlashCommandTips(cmdNames, 3),
 		};
 
 		const agentDir = getAgentDir();
