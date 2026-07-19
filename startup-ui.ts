@@ -237,10 +237,6 @@ function indentStartupLines(lines: string[]): string[] {
 	return lines.map((line) => `${MESSAGE_TEXT_INDENT}${line}`);
 }
 
-function startupBodyWidth(width: number): number {
-	return Math.max(1, width - safeVisibleWidth(MESSAGE_TEXT_INDENT));
-}
-
 function normalizeToolNames(names: unknown): string[] {
 	return Array.isArray(names) ? names.filter((name) => typeof name === "string" && name.length > 0) : [];
 }
@@ -732,8 +728,8 @@ class WelcomeBanner {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const bodyWidth = startupBodyWidth(Math.max(1, width));
-		return indentStartupLines(renderClaudeWelcome(this.theme, this.info, this.systemContextItems, bodyWidth));
+		// Match statusline/cli-dock full content width — do not inset with MESSAGE_TEXT_INDENT.
+		return renderClaudeWelcome(this.theme, this.info, this.systemContextItems, Math.max(1, width));
 	}
 }
 
