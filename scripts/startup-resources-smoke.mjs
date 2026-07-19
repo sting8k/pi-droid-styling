@@ -79,6 +79,7 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 		settingsManager = { getQuietStartup: () => false };
 		sessionManager = { getCwd: () => workDir };
 		session = {
+			state: { messages: [] },
 			promptTemplates: [],
 			scopedModels: [],
 			model: { provider: "opencode-go", id: "deepseek-v4-flash-free" },
@@ -117,6 +118,13 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 	const instance = new FakeInteractive();
 	instance.showLoadedResources({ force: true });
 	const lines = instance.chatContainer.children.flatMap((child) => typeof child.render === "function" ? child.render(96) : []);
+
+	// Resumed sessions must not inject the welcome banner.
+	instance.session.state = { messages: [{ role: "user", content: "hi" }] };
+	instance.chatContainer.children = [];
+	instance.showLoadedResources({ force: true });
+	assert(instance.chatContainer.children.length === 0, "welcome banner should not appear on resumed sessions");
+
 	return { calls, lines: lines.map((line) => line.trimEnd()) };
 }
 

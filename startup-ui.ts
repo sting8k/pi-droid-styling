@@ -751,6 +751,12 @@ export function installStartupUiPatch(InteractiveModeComponent: any): void {
 			return original.call(this, options);
 		}
 
+		// Same gate as Pi's getChangelogForDisplay — welcome is new-session only.
+		const messageCount = this.session?.state?.messages?.length ?? 0;
+		if (messageCount > 0) {
+			return original.call(this, options);
+		}
+
 		const themes = this.session.resourceLoader.getThemes().themes.filter((loadedTheme: any) => loadedTheme.sourcePath);
 		const extensions = options?.force && options?.extensions
 			? options.extensions
