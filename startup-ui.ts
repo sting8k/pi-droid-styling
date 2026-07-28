@@ -6,6 +6,7 @@ import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-co
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
+import { fgHex, parseFgAnsiToRgb, rgbToHex } from "./theme/ansi.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
@@ -18,11 +19,16 @@ const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
-const PI_ASCII_LOGO = [
-	"┏━━━┓ ┏━┓",
-	"┃ _ ┃ ┃ ┃",
-	"┣━━━┛ ┃ ┃",
-	"┗━┛   ┗━┛",
+const PI_LOGO_LINES = [
+	"████████████╗",
+	"████████████║",
+	"████╔═══████║",
+	"████║   ████║",
+	"████████╬═══████╗",
+	"████████║   ████║ ",
+	"████╔═══╝   ████║",
+	"████║       ████║",
+	"╚═══╝       ╚═══╝",
 ] as const;
 
 let activeTheme: ThemeLike | undefined;
@@ -34,7 +40,90 @@ const FALLBACK_THEME: ThemeLike = {
 type ThemeLike = {
 	bold(text: string): string;
 	fg(color: string, text: string): string;
+	getFgAnsi?(color: string): string;
+	getColorMode?(): string;
 };
+
+type Rgb = { r: number; g: number; b: number };
+
+const FALLBACK_ACCENT_RGB: Rgb = { r: 80, g: 160, b: 255 };
+const LOGO_PALETTE_STEPS = 24;
+const LOGO_MAX_DARKEN = 0.18;
+const LOGO_MAX_LIGHTEN = 0.18;
+const LOGO_ROW_PHASE_STEP = 0.12;
+
+function clampChannel(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function interpolateRgb(start: Rgb, end: Rgb, factor: number): Rgb {
+	return {
+		r: clampChannel(start.r + (end.r - start.r) * factor),
+		g: clampChannel(start.g + (end.g - start.g) * factor),
+		b: clampChannel(start.b + (end.b - start.b) * factor),
+	};
+}
+
+function darkenRgb(rgb: Rgb, amount: number): Rgb {
+	return {
+		r: clampChannel(rgb.r * (1 - amount)),
+		g: clampChannel(rgb.g * (1 - amount)),
+		b: clampChannel(rgb.b * (1 - amount)),
+	};
+}
+
+function lightenRgb(rgb: Rgb, amount: number): Rgb {
+	return {
+		r: clampChannel(rgb.r + (255 - rgb.r) * amount),
+		g: clampChannel(rgb.g + (255 - rgb.g) * amount),
+		b: clampChannel(rgb.b + (255 - rgb.b) * amount),
+	};
+}
+
+function buildLogoPalette(accent: Rgb): Rgb[] {
+	return Array.from({ length: LOGO_PALETTE_STEPS }, (_, index) => {
+		const progress = index / LOGO_PALETTE_STEPS;
+		const wave = -Math.cos(progress * Math.PI * 2);
+		return wave < 0 ? darkenRgb(accent, LOGO_MAX_DARKEN * -wave) : lightenRgb(accent, LOGO_MAX_LIGHTEN * wave);
+	});
+}
+
+function sampleLogoGradient(palette: Rgb[], position: number): Rgb {
+	const wrapped = ((position % 1) + 1) % 1;
+	const scaled = wrapped * palette.length;
+	const baseIndex = Math.floor(scaled) % palette.length;
+	const nextIndex = (baseIndex + 1) % palette.length;
+	return interpolateRgb(palette[baseIndex]!, palette[nextIndex]!, scaled - Math.floor(scaled));
+}
+
+function renderLogoGradientLine(theme: ThemeLike, line: string, palette: Rgb[], phase: number): string {
+	const characters = [...line];
+	const span = Math.max(characters.length - 1, 1);
+	return characters
+		.map((character, index) => {
+			if (character === " ") return character;
+			const color = sampleLogoGradient(palette, index / span + phase);
+			return fgHex(theme, rgbToHex(color), character);
+		})
+		.join("");
+}
+
+let logoGradientCacheKey: string | undefined;
+let logoGradientCacheLines: string[] | undefined;
+
+function styledLogoLines(theme: ThemeLike): string[] {
+	const accentAnsi = theme.getFgAnsi?.("accent") ?? "";
+	const mode = theme.getColorMode?.() ?? "truecolor";
+	const cacheKey = `${mode}|${accentAnsi}`;
+	if (cacheKey === logoGradientCacheKey && logoGradientCacheLines) return logoGradientCacheLines;
+	const accent = parseFgAnsiToRgb(accentAnsi) ?? FALLBACK_ACCENT_RGB;
+	const palette = buildLogoPalette(accent);
+	logoGradientCacheLines = PI_LOGO_LINES.map((line, rowIndex) =>
+		renderLogoGradientLine(theme, line, palette, rowIndex * LOGO_ROW_PHASE_STEP),
+	);
+	logoGradientCacheKey = cacheKey;
+	return logoGradientCacheLines;
+}
 
 type ResourceRow = {
 	label: string;
@@ -323,7 +412,8 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 }
 
 function compactHeader(theme: ThemeLike, width: number): string {
-	const logoWidth = Math.max(...PI_ASCII_LOGO.map((line) => safeVisibleWidth(line)));
+	const logoLines = styledLogoLines(theme);
+	const logoWidth = Math.max(...PI_LOGO_LINES.map((line) => safeVisibleWidth(line)));
 	const gap = "   ";
 	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
 	const hints = [
@@ -332,23 +422,28 @@ function compactHeader(theme: ThemeLike, width: number): string {
 		theme.bold(keyHint("app.tools.expand", "more")),
 	].join(theme.fg("muted", " · "));
 	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
-	const details = [title, hints, status, ""];
+	const details = [title, hints, status];
 	const safeWidth = Math.max(1, width);
 	const detailWidth = safeWidth - logoWidth - safeVisibleWidth(gap);
 
 	if (detailWidth >= 12) {
-		return PI_ASCII_LOGO
-			.map((line, index) => {
-				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(line)));
-				const detail = details[index] ? safeTruncateToWidth(details[index]!, detailWidth, "…") : "";
-				return `${theme.fg("accent", line)}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
+		const detailStartRow = Math.max(0, Math.floor((PI_LOGO_LINES.length - details.length) / 2));
+		return logoLines
+			.map((styledLine, index) => {
+				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(PI_LOGO_LINES[index]!)));
+				const detailIndex = index - detailStartRow;
+				const detail =
+					detailIndex >= 0 && detailIndex < details.length
+						? safeTruncateToWidth(details[detailIndex]!, detailWidth, "…")
+						: "";
+				return `${styledLine}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
 			})
 			.join("\n");
 	}
 
 	if (safeWidth >= logoWidth) {
 		return [
-			...PI_ASCII_LOGO.map((line) => theme.fg("accent", line)),
+			...logoLines,
 			safeTruncateToWidth(title, safeWidth, "…"),
 			safeTruncateToWidth(hints, safeWidth, "…"),
 			safeTruncateToWidth(status, safeWidth, "…"),

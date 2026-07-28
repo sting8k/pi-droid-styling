@@ -5,6 +5,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 const repoRoot = process.cwd();
 const workDir = join(repoRoot, ".pi", "startup-resources-smoke");
 const buildDir = join(workDir, "build");
@@ -58,18 +61,21 @@ function compileChangedSurface() {
 
 function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader }) {
 	const calls = [];
+	let header;
 	const theme = {
 		bold: (text) => text,
 		fg: (color, text) => {
 			calls.push([color, text]);
 			return text;
 		},
+		getFgAnsi: () => "\x1b[38;2;97;175;239m",
+		getColorMode: () => "truecolor",
 	};
 	process.env.HOME = join(workDir, "home");
 	mkdirSync(process.env.HOME, { recursive: true });
 	setCompactStartupHeader({
 		setHeader(factory) {
-			factory(null, theme);
+			header = factory(null, theme);
 		},
 	}, workDir);
 
@@ -115,7 +121,7 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 	const instance = new FakeInteractive();
 	instance.showLoadedResources({ force: true });
 	const lines = instance.chatContainer.children.flatMap((child) => typeof child.render === "function" ? child.render(96) : []);
-	return { calls, lines: lines.map((line) => line.trimEnd()) };
+	return { calls, header, lines: lines.map((line) => line.trimEnd()) };
 }
 
 function assertStartupResources({ calls, lines }) {
@@ -150,7 +156,36 @@ function assertStartupResources({ calls, lines }) {
 	console.log("startup resources smoke ok");
 }
 
+function assertStartupHeader({ header }) {
+	assert(header, "startup header component was not installed");
+	const wideLines = header.render(96);
+	const wideOutput = wideLines.join("\n");
+	assert(wideLines.length === 9, "wide startup header did not render the full logo height");
+	assert(wideOutput.includes("█"), "wide startup header is missing the logo");
+	assert(wideOutput.includes("ready"), "wide startup header is missing status details");
+
+	const gradientColors = new Set(
+		[...wideOutput.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g)].map((match) => match.slice(1).join(";")),
+	);
+	assert(gradientColors.size > 1, "startup logo did not render a color gradient");
+
+	for (const width of [12, 24, 40, 96]) {
+		const lines = header.render(width);
+		for (const line of lines) {
+			assert(visibleWidth(line) <= width, `startup header exceeds width ${width}: ${visibleWidth(line)}`);
+		}
+	}
+
+	const narrowOutput = header.render(12).join("\n");
+	assert(!narrowOutput.includes("█"), "narrow startup header should hide the logo");
+	assert(narrowOutput.includes("ready"), "narrow startup header is missing status");
+	console.log("startup header smoke ok");
+}
+
 prepareWorkDir();
 compileChangedSurface();
+initTheme("dark");
 const startupUi = await import(pathToFileURL(join(buildDir, "startup-ui.js")).href);
-assertStartupResources(renderStartupResources(startupUi));
+const renderedStartup = renderStartupResources(startupUi);
+assertStartupHeader(renderedStartup);
+assertStartupResources(renderedStartup);

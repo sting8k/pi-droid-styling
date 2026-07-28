@@ -40,8 +40,49 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	return { r, g, b };
 }
 
+export function rgbToHex(rgb: { r: number; g: number; b: number }): string {
+	const channel = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0");
+	return `#${channel(rgb.r)}${channel(rgb.g)}${channel(rgb.b)}`;
+}
+
 const CUBE_VALUES = [0, 95, 135, 175, 215, 255];
 const GRAY_VALUES = Array.from({ length: 24 }, (_, i) => 8 + i * 10);
+
+function ansi256ToRgb(index: number): { r: number; g: number; b: number } {
+	if (index >= 232) {
+		const gray = 8 + (index - 232) * 10;
+		return { r: gray, g: gray, b: gray };
+	}
+	const cubeIndex = Math.max(0, index - 16);
+	const redIndex = Math.floor(cubeIndex / 36);
+	const greenIndex = Math.floor((cubeIndex % 36) / 6);
+	const blueIndex = cubeIndex % 6;
+	return { r: CUBE_VALUES[redIndex]!, g: CUBE_VALUES[greenIndex]!, b: CUBE_VALUES[blueIndex]! };
+}
+
+const ANSI_16_RGB: Array<[number, number, number]> = [
+	[0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
+	[0, 0, 128], [128, 0, 128], [0, 128, 128], [192, 192, 192],
+	[128, 128, 128], [255, 0, 0], [0, 255, 0], [255, 255, 0],
+	[0, 0, 255], [255, 0, 255], [0, 255, 255], [255, 255, 255],
+];
+
+export function parseFgAnsiToRgb(ansi: string): { r: number; g: number; b: number } | undefined {
+	const truecolor = /38;2;(\d+);(\d+);(\d+)/.exec(ansi);
+	if (truecolor) {
+		return { r: Number(truecolor[1]), g: Number(truecolor[2]), b: Number(truecolor[3]) };
+	}
+	const indexed = /38;5;(\d+)/.exec(ansi);
+	if (indexed) {
+		const index = Number(indexed[1]);
+		if (index < 16) {
+			const [r, g, b] = ANSI_16_RGB[index] ?? [255, 255, 255];
+			return { r, g, b };
+		}
+		return ansi256ToRgb(index);
+	}
+	return undefined;
+}
 
 function colorDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
 	const dr = r1 - r2;
