@@ -94,6 +94,10 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 - `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
 - Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
 
+## Credits
+
+The gradient startup header was inspired by [EnderLiquid/pi-startup-header](https://github.com/EnderLiquid/pi-startup-header).
+
 ## License
 
 MIT
