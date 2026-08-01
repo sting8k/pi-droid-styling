@@ -7,6 +7,7 @@ import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
+import { fgHex, parseFgAnsiToRgb, rgbToHex } from "./theme/ansi.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
@@ -21,13 +22,10 @@ const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
 const PI_CLAUDE_LOGO = [
-	"            ",
-	"            ",
-	"█████████   ",
-	"███   ███   ",
+	"█████████",
+	"███   ███",
 	"██████   ███",
 	"███      ███",
-	"            ",
 ] as const;
 
 type StartupInfo = {
@@ -156,7 +154,90 @@ const FALLBACK_THEME: ThemeLike = {
 type ThemeLike = {
 	bold(text: string): string;
 	fg(color: string, text: string): string;
+	getFgAnsi?(color: string): string;
+	getColorMode?(): string;
 };
+
+type Rgb = { r: number; g: number; b: number };
+
+const FALLBACK_ACCENT_RGB: Rgb = { r: 80, g: 160, b: 255 };
+const LOGO_PALETTE_STEPS = 24;
+const LOGO_MAX_DARKEN = 0.18;
+const LOGO_MAX_LIGHTEN = 0.18;
+const LOGO_ROW_PHASE_STEP = 0.12;
+
+function clampChannel(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function interpolateRgb(start: Rgb, end: Rgb, factor: number): Rgb {
+	return {
+		r: clampChannel(start.r + (end.r - start.r) * factor),
+		g: clampChannel(start.g + (end.g - start.g) * factor),
+		b: clampChannel(start.b + (end.b - start.b) * factor),
+	};
+}
+
+function darkenRgb(rgb: Rgb, amount: number): Rgb {
+	return {
+		r: clampChannel(rgb.r * (1 - amount)),
+		g: clampChannel(rgb.g * (1 - amount)),
+		b: clampChannel(rgb.b * (1 - amount)),
+	};
+}
+
+function lightenRgb(rgb: Rgb, amount: number): Rgb {
+	return {
+		r: clampChannel(rgb.r + (255 - rgb.r) * amount),
+		g: clampChannel(rgb.g + (255 - rgb.g) * amount),
+		b: clampChannel(rgb.b + (255 - rgb.b) * amount),
+	};
+}
+
+function buildLogoPalette(accent: Rgb): Rgb[] {
+	return Array.from({ length: LOGO_PALETTE_STEPS }, (_, index) => {
+		const progress = index / LOGO_PALETTE_STEPS;
+		const wave = -Math.cos(progress * Math.PI * 2);
+		return wave < 0 ? darkenRgb(accent, LOGO_MAX_DARKEN * -wave) : lightenRgb(accent, LOGO_MAX_LIGHTEN * wave);
+	});
+}
+
+function sampleLogoGradient(palette: Rgb[], position: number): Rgb {
+	const wrapped = ((position % 1) + 1) % 1;
+	const scaled = wrapped * palette.length;
+	const baseIndex = Math.floor(scaled) % palette.length;
+	const nextIndex = (baseIndex + 1) % palette.length;
+	return interpolateRgb(palette[baseIndex]!, palette[nextIndex]!, scaled - Math.floor(scaled));
+}
+
+function renderLogoGradientLine(theme: ThemeLike, line: string, palette: Rgb[], phase: number): string {
+	const characters = [...line];
+	const span = Math.max(characters.length - 1, 1);
+	return characters
+		.map((character, index) => {
+			if (character === " ") return character;
+			const color = sampleLogoGradient(palette, index / span + phase);
+			return fgHex(theme, rgbToHex(color), character);
+		})
+		.join("");
+}
+
+let logoGradientCacheKey: string | undefined;
+let logoGradientCacheLines: string[] | undefined;
+
+function styledLogoLines(theme: ThemeLike): string[] {
+	const accentAnsi = theme.getFgAnsi?.("accent") ?? "";
+	const mode = theme.getColorMode?.() ?? "truecolor";
+	const cacheKey = `${mode}|${accentAnsi}`;
+	if (cacheKey === logoGradientCacheKey && logoGradientCacheLines) return logoGradientCacheLines;
+	const accent = parseFgAnsiToRgb(accentAnsi) ?? FALLBACK_ACCENT_RGB;
+	const palette = buildLogoPalette(accent);
+	logoGradientCacheLines = PI_CLAUDE_LOGO.map((line, rowIndex) =>
+		renderLogoGradientLine(theme, line, palette, rowIndex * LOGO_ROW_PHASE_STEP),
+	);
+	logoGradientCacheKey = cacheKey;
+	return logoGradientCacheLines;
+}
 
 type ResourceRow = {
 	label: string;
@@ -510,21 +591,9 @@ function twoColumn(
 	return `${padRight(left, leftWidth)} ${paint("│")} ${padRight(right, rightWidth, "…")}`;
 }
 
-/** Crop logo to ink bounds so trailing spaces don't pull the mark left of center. */
-function piLogoLines(paint: (s: string) => string): string[] {
-	const rows = PI_CLAUDE_LOGO.filter((line) => line.trim().length > 0);
-	let minX = Number.POSITIVE_INFINITY;
-	let maxX = -1;
-	for (const row of rows) {
-		for (let x = 0; x < row.length; x++) {
-			if (row[x] !== " ") {
-				minX = Math.min(minX, x);
-				maxX = Math.max(maxX, x);
-			}
-		}
-	}
-	if (maxX < minX) return [];
-	return rows.map((row) => paint(row.slice(minX, maxX + 1)));
+/** Render the compact PR logo with a theme-derived gradient. */
+function piLogoLines(theme: ThemeLike): string[] {
+	return styledLogoLines(theme);
 }
 
 /** Prefer keeping the model id (after `/`) when the full provider/id label is too wide. */
@@ -679,7 +748,7 @@ function renderClaudeWelcome(
 	}
 	rightCluster.push(tipLine(`  ${paint("/changelog")} for more`));
 
-	const logo = piLogoLines(paint);
+	const logo = piLogoLines(theme);
 	const metaWidth = useRight ? leftWidth : innerWidth;
 	const [modelLine, cwdLine] = fitWelcomeMeta(info.model, info.cwd, metaWidth);
 	const meta = [muted(modelLine), dim(cwdLine)];

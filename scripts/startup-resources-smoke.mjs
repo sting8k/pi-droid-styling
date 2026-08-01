@@ -5,6 +5,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 const repoRoot = process.cwd();
 const workDir = join(repoRoot, ".pi", "startup-resources-smoke");
 const buildDir = join(workDir, "build");
@@ -27,7 +30,11 @@ declare module "os" {
 	export const homedir: () => string;
 }
 declare module "path" {
+	export const dirname: (path: string) => string;
 	export const join: (...parts: string[]) => string;
+}
+declare module "url" {
+	export const fileURLToPath: (url: string) => string;
 }
 declare const process: any;
 `, "utf8");
@@ -58,18 +65,21 @@ function compileChangedSurface() {
 
 function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader }) {
 	const calls = [];
+	let header;
 	const theme = {
 		bold: (text) => text,
 		fg: (color, text) => {
 			calls.push([color, text]);
 			return text;
 		},
+		getFgAnsi: () => "\x1b[38;2;97;175;239m",
+		getColorMode: () => "truecolor",
 	};
 	process.env.HOME = join(workDir, "home");
 	mkdirSync(process.env.HOME, { recursive: true });
 	setCompactStartupHeader({
 		setHeader(factory) {
-			factory(null, theme);
+			header = factory(null, theme);
 		},
 	}, workDir);
 
@@ -117,6 +127,7 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 	installStartupUiPatch(FakeInteractive);
 	const instance = new FakeInteractive();
 	instance.showLoadedResources({ force: true });
+	const banner = instance.chatContainer.children.find((child) => typeof child.render === "function");
 	const lines = instance.chatContainer.children.flatMap((child) => typeof child.render === "function" ? child.render(96) : []);
 
 	// Resumed sessions must not inject the welcome banner.
@@ -125,10 +136,10 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 	instance.showLoadedResources({ force: true });
 	assert(instance.chatContainer.children.length === 0, "welcome banner should not appear on resumed sessions");
 
-	return { calls, lines: lines.map((line) => line.trimEnd()) };
+	return { banner, calls, header, lines: lines.map((line) => line.trimEnd()) };
 }
 
-function assertStartupResources({ calls, lines }) {
+function assertStartupResources({ banner, calls, header, lines }) {
 	const output = lines.join("\n");
 	console.log(output);
 
@@ -174,10 +185,24 @@ function assertStartupResources({ calls, lines }) {
 	assert(calls.some(([color, text]) => color === "accent" && text.includes("/commands")), "missing accent color call for /commands");
 	// Border / section rules use accent
 	assert(calls.some(([color, text]) => color === "accent" && text.includes("─")), "missing accent color call for welcome borders");
+
+	assert(header, "startup header component was not installed");
+	assert(header.render(96).length === 0, "built-in startup header should stay hidden");
+	assert(banner, "welcome banner component was not installed");
+	const gradientColors = new Set(
+		[...output.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g)].map((match) => match.slice(1).join(";")),
+	);
+	assert(gradientColors.size > 1, "welcome logo did not render a color gradient");
+	for (const width of [12, 24, 40, 96]) {
+		for (const line of banner.render(width)) {
+			assert(visibleWidth(line) <= width, `welcome banner exceeds width ${width}: ${visibleWidth(line)}`);
+		}
+	}
 	console.log("startup resources smoke ok");
 }
 
 prepareWorkDir();
 compileChangedSurface();
+initTheme("dark");
 const startupUi = await import(pathToFileURL(join(buildDir, "startup-ui.js")).href);
 assertStartupResources(renderStartupResources(startupUi));
