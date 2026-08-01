@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Changed
-- Startup welcome now uses a Claude Code-style rounded border banner (theme accent) with Pi content: centered Welcome/gradient logo/model+cwd, Tips / Context / What's new columns, muted version label, and flush top spacing (header spacers stripped).
+- Startup welcome now uses a Claude Code-style rounded border banner (theme accent) with Pi content: centered Welcome/full gradient Pi logo/model+cwd, Tips / Context / What's new columns, muted version label, and flush top spacing (header spacers stripped). The multi-line logo is centered as one block so its connected glyph rows stay aligned.
 - What's new bullets are read from the installed Pi `CHANGELOG.md` for the current `VERSION` (up to 2 from New Features / Added), with a short fallback and `/changelog` link — no theme hardcoding that goes stale on Pi upgrades.
 - Welcome banner uses the same full content width as the cli-dock statusline (no extra `MESSAGE_TEXT_INDENT` inset).
 - Welcome banner is new-session only (skipped when `session.state.messages.length > 0`), matching Pi's changelog gate for resumed sessions.

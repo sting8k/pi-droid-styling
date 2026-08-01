@@ -21,11 +21,16 @@ const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
-const PI_CLAUDE_LOGO = [
-	"█████████",
-	"███   ███",
-	"██████   ███",
-	"███      ███",
+const PI_LOGO_LINES = [
+	"████████████╗",
+	"████████████║",
+	"████╔═══████║",
+	"████║   ████║",
+	"████████╬═══████╗",
+	"████████║   ████║ ",
+	"████╔═══╝   ████║",
+	"████║       ████║",
+	"╚═══╝       ╚═══╝",
 ] as const;
 
 type StartupInfo = {
@@ -232,7 +237,7 @@ function styledLogoLines(theme: ThemeLike): string[] {
 	if (cacheKey === logoGradientCacheKey && logoGradientCacheLines) return logoGradientCacheLines;
 	const accent = parseFgAnsiToRgb(accentAnsi) ?? FALLBACK_ACCENT_RGB;
 	const palette = buildLogoPalette(accent);
-	logoGradientCacheLines = PI_CLAUDE_LOGO.map((line, rowIndex) =>
+	logoGradientCacheLines = PI_LOGO_LINES.map((line, rowIndex) =>
 		renderLogoGradientLine(theme, line, palette, rowIndex * LOGO_ROW_PHASE_STEP),
 	);
 	logoGradientCacheKey = cacheKey;
@@ -559,6 +564,18 @@ function centerText(text: string, width: number): string {
 	return `${" ".repeat(leftPad)}${text}${" ".repeat(rightPad)}`;
 }
 
+/** Center a multi-line glyph as one block so shorter rows keep the same left edge. */
+function centerTextBlock(lines: string[], width: number): string[] {
+	if (width <= 0 || lines.length === 0) return [];
+	const blockWidth = Math.min(width, Math.max(...lines.map((line) => safeVisibleWidth(line))));
+	const leftPad = Math.floor((width - blockWidth) / 2);
+	return lines.map((line) => {
+		const clipped = safeTruncateToWidth(line, blockWidth, "");
+		const rightPad = Math.max(0, width - leftPad - safeVisibleWidth(clipped));
+		return `${" ".repeat(leftPad)}${clipped}${" ".repeat(rightPad)}`;
+	});
+}
+
 function welcomeColumnWidths(innerWidth: number): { leftWidth: number; rightWidth: number; useRight: boolean } {
 	if (innerWidth <= 0) return { leftWidth: 0, rightWidth: 0, useRight: false };
 	if (innerWidth < WELCOME_MIN_LEFT_WIDTH + WELCOME_COLUMN_GAP + WELCOME_MIN_RIGHT_WIDTH) {
@@ -640,7 +657,7 @@ function balanceLeftColumn(
 	return [
 		centerText(greeting, leftWidth),
 		"",
-		...logo.map((line) => centerText(line, leftWidth)),
+		...centerTextBlock(logo, leftWidth),
 		"",
 		...meta.map((line) => centerText(line, leftWidth)),
 	];
@@ -769,7 +786,7 @@ function renderClaudeWelcome(
 		bodyLines = [
 			centerText(bold("Welcome back!"), innerWidth),
 			"",
-			...logo.map((line) => centerText(line, innerWidth)),
+			...centerTextBlock(logo, innerWidth),
 			"",
 			...rightCluster,
 			"",

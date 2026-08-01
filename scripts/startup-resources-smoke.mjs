@@ -193,6 +193,27 @@ function assertStartupResources({ banner, calls, header, lines }) {
 		[...output.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g)].map((match) => match.slice(1).join(";")),
 	);
 	assert(gradientColors.size > 1, "welcome logo did not render a color gradient");
+
+	// The Pi glyph is one block: every row must retain the same left edge.
+	const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+	const expectedLogoLines = [
+		"████████████╗",
+		"████████████║",
+		"████╔═══████║",
+		"████║   ████║",
+		"████████╬═══████╗",
+		"████████║   ████║",
+		"████╔═══╝   ████║",
+		"████║       ████║",
+		"╚═══╝       ╚═══╝",
+	];
+	const logoStarts = expectedLogoLines.map((logoLine) => {
+		const renderedLine = plainLines.find((line) => line.includes(logoLine));
+		assert(renderedLine, `missing Pi logo row: ${logoLine}`);
+		return renderedLine.indexOf(logoLine);
+	});
+	assert(new Set(logoStarts).size === 1, "Pi logo rows do not share one left edge");
+
 	for (const width of [12, 24, 40, 96]) {
 		for (const line of banner.render(width)) {
 			assert(visibleWidth(line) <= width, `welcome banner exceeds width ${width}: ${visibleWidth(line)}`);
