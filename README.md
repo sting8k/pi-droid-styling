@@ -96,7 +96,7 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 
 ## Credits
 
-The gradient startup header was inspired by [EnderLiquid/pi-startup-header](https://github.com/EnderLiquid/pi-startup-header).
+The gradient startup logo was inspired by [EnderLiquid/pi-startup-header](https://github.com/EnderLiquid/pi-startup-header).
 
 ## License
 
