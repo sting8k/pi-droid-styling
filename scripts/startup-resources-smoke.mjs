@@ -198,6 +198,7 @@ function assertStartupResources({ banner, calls, header, lines }) {
 			assert(visibleWidth(line) <= width, `welcome banner exceeds width ${width}: ${visibleWidth(line)}`);
 		}
 	}
+	assert(!banner.render(12).join("\n").includes("█"), "very narrow welcome should hide the logo");
 	console.log("startup resources smoke ok");
 }
 
