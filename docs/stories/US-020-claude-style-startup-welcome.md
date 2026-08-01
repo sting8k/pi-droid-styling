@@ -50,4 +50,4 @@ Added this story because the conflict resolution combines an upstream visual upd
 - PR: https://github.com/sting8k/pi-droid-styling/pull/17
 - `node.exe scripts/startup-resources-smoke.mjs` passed, including gradient, resumed-session, and 12/24/40/96-column checks.
 - All existing focused smoke scripts passed.
-- `srcwalk review --staged` and the relative `.js` import-resolution check passed.
+- `srcwalk review upstream/main..HEAD` and the relative `.js` import-resolution check passed.
