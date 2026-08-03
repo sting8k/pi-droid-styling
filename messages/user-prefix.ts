@@ -1,11 +1,16 @@
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { getPresentationStyle } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
+
+function usesReasonixPresentation(): boolean {
+	return getPresentationStyle() === "reasonix";
+}
 
 function usesLegacyQuotePrefix(): boolean {
 	return getThemeExtra(activeTheme, "quoteStyle") === "true" && getThemeExtra(activeTheme, "userPrefix") === "│";
@@ -27,7 +32,7 @@ function buildPrefixSegment(): string {
 	const configuredChar = getThemeExtra(activeTheme, "userPrefix");
 	const char = usesLegacyQuotePrefix() ? "❯" : configuredChar;
 	const prefix = colorUserPrefix(char);
-	if (typeof activeTheme?.bg === "function") {
+	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
 	return `${prefix}  `;
@@ -40,6 +45,10 @@ function buildDividerLine(width: number): string {
 	const line = char.repeat(width);
 	return activeTheme ? fgHex(activeTheme, color, line) : line;
 }
+function stripBackgroundAnsi(text: string): string {
+	return text.replace(/\x1b\[(?:4[0-9]|10[0-7])(?:;[0-9;]*)?m/g, "");
+}
+
 function stripEmphasisAnsi(text: string): string {
 	return text.replace(/\x1b\[(?:(?:1|3|22|23);)*(?:1|3|22|23)m/g, "");
 }
@@ -47,7 +56,7 @@ function stripEmphasisAnsi(text: string): string {
 function buildContinuationSegment(): string {
 	const char = getThemeExtra(activeTheme, "quoteChar") || "┆";
 	const prefix = colorUserPrefix(char);
-	if (typeof activeTheme?.bg === "function") {
+	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
 	return `${prefix}  `;
@@ -103,14 +112,18 @@ export function installUserMessagePrefix(theme: any): void {
 
 		const prefixSegment = buildPrefixSegment();
 		const line = output[targetIndex] ?? "";
-		const remainder = stripEmphasisAnsi(dropLeadingColumns(line, 1));
+		const presentationLine = usesReasonixPresentation() ? stripBackgroundAnsi(line) : line;
+		const remainder = stripEmphasisAnsi(dropLeadingColumns(presentationLine, 1));
 		output[targetIndex] = `${prefixSegment}${remainder}`;
 		alignContinuationLines(output, targetIndex);
 
 		const result = output.map((renderedLine) => {
-			const plainLine = stripEmphasisAnsi(renderedLine);
+			const presentationLine = usesReasonixPresentation() ? stripBackgroundAnsi(renderedLine) : renderedLine;
+			const plainLine = stripEmphasisAnsi(presentationLine);
 			return safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
 		});
+
+		if (usesReasonixPresentation()) return [...result, ""];
 
 		// Add turn divider before user message
 		const divider = buildDividerLine(width);

@@ -1,5 +1,6 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { getPresentationStyle } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
@@ -11,6 +12,10 @@ function buildPrefixSegment(): string {
 	const prefix = getThemeExtra(activeTheme, "assistantPrefix");
 	const color = getThemeExtra(activeTheme, "assistantPrefixColor");
 	return activeTheme ? fgHex(activeTheme, color, prefix) : prefix;
+}
+
+function usesReasonixPresentation(): boolean {
+	return getPresentationStyle() === "reasonix";
 }
 
 function buildDividerLine(width: number): string {
@@ -41,6 +46,14 @@ function isVisibleThinkingBlock(contentBlock: any): boolean {
 		typeof contentBlock.thinking === "string" &&
 		contentBlock.thinking.trim().length > 0
 	);
+}
+
+function compactReasonixLines(lines: string[]): string[] {
+	let first = 0;
+	while (first < lines.length && stripAnsi(lines[first] ?? "").trim() === "") first++;
+	let last = lines.length - 1;
+	while (last >= first && stripAnsi(lines[last] ?? "").trim() === "") last--;
+	return first <= last ? [...lines.slice(first, last + 1), ""] : [];
 }
 
 function hasVisibleAssistantContent(contentBlocks: any[]): boolean {
@@ -225,6 +238,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			const result = lines.map((renderedLine) =>
 				safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 			);
+			if (usesReasonixPresentation()) return compactReasonixLines(result);
 			const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
 			return showDivider ? [divider, ...result, ""] : [...result, ""];
 		}
@@ -253,6 +267,8 @@ export function installAssistantMessagePrefix(theme: any): void {
 		const result = output.map((renderedLine) =>
 			safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 		);
+
+		if (usesReasonixPresentation()) return compactReasonixLines(result);
 
 		// Add turn divider before assistant message
 		const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";

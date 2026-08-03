@@ -199,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = modules.loadConfig();
+		modules.setPresentationStyle(config.presentationStyle);
 		currentVisibleChatTail = config.visibleChatTail;
 		await ensureToolCallTagsRegistered();
 		if (!isCurrentSessionRun()) return;

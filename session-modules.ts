@@ -2,6 +2,7 @@ export { BoxEditor } from "./editor/box-editor.js";
 export { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 export { createGitBranchFetcher } from "./core/git-status.js";
 export { loadConfig } from "./config.js";
+export { setPresentationStyle } from "./presentation/state.js";
 export { resolveUserZoneStyle } from "./user-zone/designs.js";
 export { installAssistantMessagePrefix } from "./messages/assistant-prefix.js";
 export { installMarkdownCodeBlockRenderer } from "./messages/markdown-codeblock-renderer.js";
