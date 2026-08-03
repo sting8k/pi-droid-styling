@@ -462,8 +462,8 @@ function renderReasonixToolRow(
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
 			const footer = compactFooter ? ` · ${compactFooter}` : "";
-			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : compactFooter ? "✓" : "›";
-			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : compactFooter ? "success" : "muted";
+			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : "✓";
+			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const raw = `${theme.fg(markerColor, marker)} ${title} ${detail}${pending}${footer}`;
 			return [safeTruncateToWidth(raw, Math.max(1, width), "…")];
 		},
@@ -483,15 +483,15 @@ function renderReasonixToolBody(
 		},
 		render(width: number): string[] {
 			if (cache?.width === width) return cache.lines;
-			const bodyWidth = getToolBodyWidth(width, 2);
+			const bodyWidth = getToolBodyWidth(width, 5);
 			const bodyLines = typeof body === "function" ? body(bodyWidth) : body.render(bodyWidth);
 			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
-			const indent = "  ";
+			const firstPrefix = `  ${theme.fg("borderMuted", "└─ ")}`;
+			const continuationPrefix = "     ";
 			const rendered = [
-				...(options.isError ? [`${indent}${theme.fg("error", "✗ Error")}`] : []),
-				...limited.map((line) => `${indent}${safeTruncateToWidth(line, bodyWidth, "…")}`),
-				...(options.footerLines ?? []).map((line) => `${indent}${safeTruncateToWidth(line, bodyWidth, "…")}`),
+				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${safeTruncateToWidth(line, bodyWidth, "…")}`),
+				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${safeTruncateToWidth(line, bodyWidth, "…")}`),
 			];
 			cache = { width, lines: rendered };
 			return rendered;

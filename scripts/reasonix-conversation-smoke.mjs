@@ -70,6 +70,7 @@ declare const process: any;
 		join(repoRoot, "messages", "assistant-prefix.ts"),
 		join(repoRoot, "tool-tags", "common.ts"),
 		join(repoRoot, "tool-tags", "quick-edit.ts"),
+		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
 	], { cwd: repoRoot, encoding: "utf8" });
 	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
 }
@@ -150,6 +151,7 @@ assert(droidAssistant.some((line) => line.includes("─".repeat(40))), "droid as
 
 const { renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
+const { installCompactToolSpacing, normalizeReasonixToolLines, setToolSpacingTheme } = await importBuilt("tool-tags/compact-tool-spacing.js");
 
 setPresentationStyle("reasonix");
 const toolState = {};
@@ -157,7 +159,7 @@ renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated
 const compactTool = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState });
 const compactToolLines = compactTool.render(80).map(stripAnsi);
 assert(compactToolLines.length === 1, "reasonix collapsed tool should render one summary row");
-assert(compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix summary should retain tool name and subject");
+assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed summary should retain semantic success status, tool name, and subject");
 assert(!compactToolLines[0]?.includes("┌"), "reasonix collapsed tool should not render an outer box");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
@@ -165,8 +167,35 @@ const expandedToolLines = expandedTool.render(80).map(stripAnsi);
 assert(expandedToolLines.some((line) => line.includes("full detail line one")), "reasonix expanded tool should retain full body");
 assert(expandedToolLines.some((line) => line.includes("full detail line two")), "reasonix expanded tool should retain all body lines");
 assert(!expandedToolLines.some((line) => line.includes("┌") || line.includes("│")), "reasonix expanded tool should use indentation without a box or rail");
-assert(expandedToolLines.every((line) => line.startsWith("  ")), "reasonix expanded tool body should be indented");
+assert(expandedToolLines[0]?.startsWith("  └─ "), "reasonix expanded tool should connect the first output line with a corner");
+assert(expandedToolLines.slice(1).every((line) => line.startsWith("     ")), "reasonix expanded continuation lines should align below the corner");
 assert(expandedTool.render(24).every((line) => stripAnsi(line).length <= 24), "reasonix expanded body should fit narrow terminals");
+
+setToolSpacingTheme(activeTheme);
+const bashLikeLines = [
+	activeTheme.fg("text", "✓ Bash npm test"),
+	"  └─ preview one",
+	"     preview two",
+	`     ${activeTheme.fg("text", "◷")} ${activeTheme.fg("dim", "1.20s · 4 words")}`,
+];
+const collapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 80, false).map(stripAnsi);
+assert(collapsedBashLike.length === 1, "reasonix collapsed tool should discard every preview body line");
+assert(collapsedBashLike[0]?.includes("Bash npm test") && collapsedBashLike[0]?.includes("1.20s"), "reasonix collapsed summary should retain call subject and footer metrics");
+assert(!collapsedBashLike[0]?.includes("preview"), "reasonix collapsed summary should not leak the N-line preview");
+const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, false).map(stripAnsi);
+assert((narrowCollapsedBashLike[0]?.length ?? 0) <= 24 && narrowCollapsedBashLike[0]?.includes("1.20s"), "reasonix narrow collapsed summary should retain duration without overflow");
+const expandedBashLike = normalizeReasonixToolLines(["", "─".repeat(80), ...bashLikeLines, ""], 80, true).map(stripAnsi);
+assert(expandedBashLike.length === 3, "reasonix expanded tool should retain summary and output while moving footer metrics into summary");
+assert(expandedBashLike[0]?.includes("1.20s"), "reasonix expanded summary should retain footer metrics");
+assert(expandedBashLike[1]?.startsWith("  └─ ") && expandedBashLike[2]?.startsWith("     "), "reasonix expanded output should keep its corner connector and aligned continuation");
+
+class FakeSpacingToolExecution {
+	constructor(expanded) { this.expanded = expanded; }
+	render() { return ["", "─".repeat(80), ...bashLikeLines, ""]; }
+}
+installCompactToolSpacing(FakeSpacingToolExecution);
+assert(new FakeSpacingToolExecution(false).render(80).length === 1, "reasonix ToolExecution patch should enforce one collapsed row");
+assert(new FakeSpacingToolExecution(true).render(80).length === 3, "reasonix ToolExecution patch should preserve expanded summary and output");
 
 class FakeToolExecutionComponent {
 	constructor() { this.toolName = "quick_edit"; }
