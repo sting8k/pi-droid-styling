@@ -45,6 +45,38 @@ try {
 	assert(resumedLines[0] === "┌box", "runtime B should preserve the tool title");
 	assert(resumedLines.length === 2 && resumedLines.at(-1) === "", "runtime B should take ownership and collapse restored Droid tool framing");
 
+	const restoredTool = {
+		toolName: "read",
+		toolDefinition: { renderCall: () => "stale" },
+		refreshCount: 0,
+		updateDisplay() { this.refreshCount++; },
+	};
+	const currentDefinition = { renderCall: () => "current" };
+	const hiddenRestoredTool = {
+		toolName: "bash",
+		toolDefinition: { renderCall: () => "stale" },
+		refreshCount: 0,
+		updateDisplay() { this.refreshCount++; },
+	};
+	const virtualizedState = Symbol.for("pi-droid-styling.virtualized-chat.state");
+	class FakeInteractiveMode {
+		session = { getToolDefinition: (name) => name === "read" || name === "bash" ? currentDefinition : undefined };
+		chatContainer = {
+			children: [restoredTool],
+			[virtualizedState]: { hiddenChildren: [hiddenRestoredTool] },
+		};
+		ui = { requestRender() {} };
+		renderCurrentSessionState() {}
+	}
+	modulesB.installResumeToolRefresh(FakeInteractiveMode);
+	const mode = new FakeInteractiveMode();
+	mode.renderCurrentSessionState();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert(restoredTool.toolDefinition === currentDefinition, "resume refresh should rebind the current tool definition");
+	assert(restoredTool.refreshCount === 1, "resume refresh should rebuild each restored tool renderer once");
+	assert(hiddenRestoredTool.toolDefinition === currentDefinition, "resume refresh should rebind virtualized hidden tools");
+	assert(hiddenRestoredTool.refreshCount === 1, "resume refresh should rebuild virtualized hidden tools once");
+
 	console.log("session resume styling smoke: ok");
 } finally {
 	proto.render = originalRender;

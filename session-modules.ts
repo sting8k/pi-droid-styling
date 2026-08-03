@@ -23,6 +23,7 @@ export { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js
 export { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 export { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 export { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
+export { installResumeToolRefresh } from "./tool-tags/resume-tool-refresh.js";
 export { createWorkingLoaderController, workingStateForAssistantMessage } from "./tool-tags/loader-accent.js";
 export { installTuiPadding } from "./tui-padding.js";
 export { getFooterStatusLine, getFooterTokenUsageLine, installFooterStatsPatch } from "./footer-patch.js";

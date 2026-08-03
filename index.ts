@@ -176,6 +176,7 @@ export default function (pi: ExtensionAPI) {
 		modules.installCompactToolSpacing();
 		modules.installDefaultBadge();
 		modules.installQuickEditRenderer(ToolExecutionComponent);
+		modules.installResumeToolRefresh(InteractiveMode);
 		modules.installMarkdownCodeBlockRenderer();
 		modules.installFooterStatsPatch();
 		modules.installCoreMessageBlockStyling({
