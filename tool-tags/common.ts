@@ -512,15 +512,16 @@ function renderReasonixToolBody(
 		},
 		render(width: number): string[] {
 			if (cache?.width === width) return cache.lines;
-			const bodyWidth = getToolBodyWidth(width, 5);
+			const firstPrefix = `  ${theme.fg("borderMuted", "└─ ")}`;
+			const contentIndent = safeVisibleWidth(firstPrefix);
+			const continuationPrefix = " ".repeat(contentIndent);
+			const bodyWidth = getToolBodyWidth(width, contentIndent);
 			const bodyLines = typeof body === "function" ? body(bodyWidth) : body.render(bodyWidth);
 			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
-			const firstPrefix = `  ${theme.fg("borderMuted", "└─ ")}`;
-			const continuationPrefix = "     ";
 			const rendered = [
-				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${safeTruncateToWidth(line, bodyWidth, "…")}`),
-				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${safeTruncateToWidth(line, bodyWidth, "…")}`),
+				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
+				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
 			];
 			cache = { width, lines: rendered };
 			return rendered;

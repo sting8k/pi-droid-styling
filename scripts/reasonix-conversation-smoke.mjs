@@ -230,6 +230,26 @@ assert(expandedToolLines[0]?.startsWith("  └─ "), "reasonix expanded tool sh
 assert(expandedToolLines.slice(1).every((line) => line.startsWith("     ")), "reasonix expanded continuation lines should align below the corner");
 assert(expandedTool.render(24).every((line) => stripAnsi(line).length <= 24), "reasonix expanded body should fit narrow terminals");
 
+const expandedBodyWidths = [];
+const paddedExpandedTool = renderBoxedToolResult(dimEllipsisTheme, (bodyWidth) => {
+	expandedBodyWidths.push(bodyWidth);
+	return [
+		`${dimEllipsisTheme.fg("text", "short")}${" ".repeat(bodyWidth)}\x1b[0m`,
+		"x".repeat(bodyWidth + 10),
+	];
+}, { footerLines: [`${dimEllipsisTheme.fg("dim", "metrics")}${" ".repeat(200)}\x1b[0m`] });
+for (const width of [24, 80, 160]) {
+	const rawLines = paddedExpandedTool.render(width);
+	const plainLines = rawLines.map(stripAnsi);
+	const bodyWidth = Math.max(1, width - 6);
+	assert(expandedBodyWidths.at(-1) === bodyWidth, `reasonix expanded renderer should receive ${bodyWidth} content columns at width ${width}`);
+	assert(plainLines.every((line) => line.length <= width - 1), `reasonix expanded rows should preserve one right-margin column at width ${width}`);
+	assert(plainLines[0] === "  └─ short", "reasonix expanded first output should start in column 6 without false padding ellipsis");
+	assert(plainLines[1]?.startsWith("     x") && plainLines[1]?.indexOf("x") === 5, "reasonix expanded continuation should align with first-row content in column 6");
+	assert(plainLines[2] === "     metrics", "reasonix expanded footer should align with body content without false padding ellipsis");
+	assert(rawLines[1]?.includes("\x1b[2m …\x1b[22m"), "reasonix genuinely truncated expanded output should use the dim spaced ellipsis");
+}
+
 setToolSpacingTheme(activeTheme);
 const bashLikeLines = [
 	activeTheme.fg("text", "✓ Bash npm test"),
@@ -262,6 +282,20 @@ assert(expandedBashLike.length === 5 && expandedBashLike.at(-1) === "", "reasoni
 assert(!expandedBashLike[0]?.includes("1.20s"), "reasonix expanded header should not inline footer metrics");
 assert(expandedBashLike[1]?.startsWith("  └─ ") && expandedBashLike[2]?.startsWith("     "), "reasonix expanded output should keep its corner connector and aligned continuation");
 assert(expandedBashLike[3]?.includes("1.20s"), "reasonix expanded footer metrics should remain below output");
+setToolSpacingTheme(dimEllipsisTheme);
+const paddedExpandedGenericRaw = normalizeReasonixToolLines([
+	`${dimEllipsisTheme.fg("text", "✓ Bash npm test")}${" ".repeat(80)}\x1b[0m`,
+	`  └─ ${dimEllipsisTheme.fg("text", "short output")}${" ".repeat(80)}\x1b[0m`,
+	`     ${"x".repeat(100)}`,
+	`     ${dimEllipsisTheme.fg("dim", "metrics")}${" ".repeat(80)}\x1b[0m`,
+], 80, true);
+const paddedExpandedGeneric = paddedExpandedGenericRaw.map(stripAnsi);
+assert(paddedExpandedGeneric[0] === "✓ Bash npm test", "reasonix generic expanded header should ignore upstream trailing render padding");
+assert(paddedExpandedGeneric[1] === "  └─ short output", "reasonix generic expanded first output should ignore upstream trailing render padding");
+assert(paddedExpandedGeneric[2]?.startsWith("     x") && (paddedExpandedGeneric[2]?.length ?? 0) <= 80, "reasonix generic expanded continuation should retain column-6 alignment without overflow");
+assert(paddedExpandedGeneric[3] === "     metrics", "reasonix generic expanded footer should ignore upstream trailing render padding");
+assert(paddedExpandedGenericRaw[2]?.includes("\x1b[2m …\x1b[22m"), "reasonix generic expanded overflow should use the dim spaced ellipsis");
+setToolSpacingTheme(activeTheme);
 
 class FakeSpacingToolExecution {
 	constructor(expanded) { this.expanded = expanded; }

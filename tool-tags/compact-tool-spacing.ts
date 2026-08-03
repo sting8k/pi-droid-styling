@@ -8,7 +8,7 @@ import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 7;
+const PATCH_VERSION = 8;
 
 let cachedTheme: any = null;
 
@@ -61,7 +61,12 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 
 	const rowWidth = expanded ? Math.max(1, width) : getReasonixCollapsedRowWidth(width);
 	content[0] = truncateReasonixLine(toSingleRenderLine(content[0] ?? ""), rowWidth);
-	if (expanded) return [...content, ""];
+	if (expanded) {
+		for (let index = 1; index < content.length; index++) {
+			content[index] = truncateReasonixLine(content[index] ?? "", rowWidth);
+		}
+		return [...content, ""];
+	}
 
 	let footerIndex = -1;
 	for (let index = content.length - 1; index > 0; index--) {
