@@ -456,11 +456,21 @@ function truncateReasonixLine(theme: any, text: string, width: number): string {
 	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis(theme));
 }
 
+function renderReasonixInlineFooter(theme: any, left: string, right: string, width: number): string {
+	const footer = toSingleRenderLine(right);
+	const footerWidth = safeVisibleWidth(footer);
+	if (footerWidth + 2 >= width) return truncateReasonixLine(theme, `${left} ${footer}`, width);
+
+	const leftWidth = Math.max(1, width - footerWidth - 1);
+	const truncatedLeft = truncateReasonixLine(theme, left, leftWidth);
+	return `${padVisibleRight(truncatedLeft, leftWidth)} ${footer}`;
+}
+
 function renderReasonixToolRow(
 	theme: any,
 	toolName: string,
 	detail: string,
-	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean } = {},
 ): Component {
 	return {
 		invalidate() {},
@@ -477,8 +487,10 @@ function renderReasonixToolRow(
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
-			const header = truncateReasonixLine(theme, headerText, rowWidth);
-			if (!compactFooter) return [header];
+			const header = options.inlineFooter && compactFooter
+				? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
+				: truncateReasonixLine(theme, headerText, rowWidth);
+			if (!compactFooter || options.inlineFooter) return [header];
 			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
 			const footer = `  ${theme.fg("borderMuted", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
@@ -576,7 +588,7 @@ export function renderCompactBoxedToolCall(
 	detailLine: string,
 	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
-	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLine, options);
+	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLine, { ...options, inlineFooter: true });
 	return {
 		invalidate() {},
 		render(width: number): string[] {

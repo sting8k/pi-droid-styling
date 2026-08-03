@@ -170,7 +170,7 @@ const droidAssistant = new AssistantMessageComponent(assistantMessage).render(40
 assert(droidAssistant.some((line) => line.includes("─".repeat(40))), "droid assistant should retain its divider");
 assert(droidAssistant.some((line) => line.includes("•  answer")), "droid assistant should retain its legacy inline bullet marker");
 
-const { renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
+const { renderBoxedToolCall, renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
 const { installCompactToolSpacing, normalizeReasonixToolLines, setToolSpacingTheme } = await importBuilt("tool-tags/compact-tool-spacing.js");
 
@@ -179,10 +179,14 @@ const toolState = {};
 renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated file" }] }, { state: toolState });
 const compactTool = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState });
 const compactToolLines = compactTool.render(80).map(stripAnsi);
-assert(compactToolLines.length === 2, "reasonix collapsed tool component should render header plus metrics row");
-assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed header should retain semantic success status, tool name, and subject");
+assert(compactToolLines.length === 1, "reasonix compact tools should keep Droid's single-row collapsed contract");
+assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts") && compactToolLines[0]?.includes("◷"), "reasonix compact row should retain status, tool name, subject, and metrics");
 assert(compactToolLines[0]?.indexOf("Read") === 2, "reasonix tool names should share the user/assistant content column");
-assert(compactToolLines[1]?.startsWith("  └─ ") && compactToolLines[1]?.includes("◷"), "reasonix collapsed metrics should occupy the first output position");
+assert(!compactToolLines[0]?.includes("└─"), "reasonix compact tools should not create a nested metrics row");
+const nonCompactState = {};
+renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "command output" }] }, { state: nonCompactState });
+const nonCompactToolLines = renderBoxedToolCall(activeTheme, "Bash", ["echo hello"], { state: nonCompactState }).render(80).map(stripAnsi);
+assert(nonCompactToolLines.length === 2 && nonCompactToolLines[1]?.startsWith("  └─ "), "reasonix non-compact tools should retain the separate nested metrics row");
 assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collapsed tool should not render an outer box");
 
 const longMultilineSubject = Array.from({ length: 40 }, (_, index) => `part-${index}`).join("\n");
@@ -193,6 +197,10 @@ assert(responsiveSubjectNarrow.length === 1 && !responsiveSubjectNarrow[0]?.incl
 assert((responsiveSubjectMedium[0]?.length ?? 0) === 48, "reasonix collapsed tool subject should use a 60% soft cap at medium widths");
 assert((responsiveSubjectWide[0]?.length ?? 0) === 72, "reasonix collapsed tool subject should stop at the 72-column hard cap on wide terminals");
 const dimEllipsisTheme = { ...activeTheme, fg: (color, text) => color === "dim" ? `\x1b[2m${text}\x1b[22m` : activeTheme.fg(color, text) };
+const longCompactPathRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Read", `Path: src/${"nested/".repeat(20)}config.ts`, { state: toolState }).render(80);
+const longCompactPath = longCompactPathRaw.map(stripAnsi);
+assert(longCompactPath.length === 1 && longCompactPath[0]?.includes("◷") && (longCompactPath[0]?.length ?? 0) === 48, "reasonix compact row should truncate its subject before dropping right-side metrics");
+assert(longCompactPathRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix compact subject truncation should retain the dim spaced ellipsis");
 const dimEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", longMultilineSubject).render(80);
 assert(dimEllipsisRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed with one leading space");
 const noEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test").render(80);
@@ -203,15 +211,15 @@ assert(!pathUnderSoftCapRaw[0]?.includes("…"), "reasonix collapsed path under 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(80).map(stripAnsi);
-assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 48, "reasonix collapsed error should share the responsive 60% soft cap");
+assert(responsiveErrorLines.length === 1 && !responsiveErrorLines[0]?.includes("\n") && (responsiveErrorLines[0]?.length ?? 0) <= 48, "reasonix compact error should stay on one row within the responsive 60% soft cap");
 const statusUnderSoftCapState = {};
 setCompactBoxedFooter(statusUnderSoftCapState, `${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "4.61s · ⏹ 180s · ✎ ~957 words")}`);
 const statusUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test", { state: statusUnderSoftCapState }).render(160);
-assert(!statusUnderSoftCapRaw[1]?.includes("…"), "reasonix collapsed status under the 72-column cap should not show ellipsis");
+assert(!statusUnderSoftCapRaw[0]?.includes("…"), "reasonix compact status under the 72-column cap should not show ellipsis");
 const dimErrorState = {};
 setCompactBoxedFooter(dimErrorState, dimEllipsisTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failing command", { state: dimErrorState }).render(80);
-assert(dimErrorRaw[1]?.includes("\x1b[2m …\x1b[22m"), "reasonix collapsed error ellipsis should be dimmed with one leading space");
+assert(dimErrorRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix compact error ellipsis should be dimmed with one leading space");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
