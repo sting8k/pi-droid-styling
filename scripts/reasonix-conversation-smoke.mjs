@@ -124,6 +124,7 @@ const activeTheme = {
 	},
 	bg: (_color, text) => `\x1b[48;5;8m${text}\x1b[49m`,
 	bold: (text) => `\x1b[1m${text}\x1b[22m`,
+	italic: (text) => `\x1b[3m${text}\x1b[23m`,
 	getBgAnsi: () => "\x1b[48;2;32;35;42m",
 	getFgAnsi: () => "\x1b[38;2;180;180;180m",
 	getColorMode: () => "256",
@@ -146,10 +147,12 @@ assert(assistantLines[0]?.startsWith("• answer") && assistantLines[0]?.indexOf
 assert(assistantLines[1]?.indexOf("more") === 2, "reasonix assistant continuation should align with its answer body");
 const thinkingAssistantMessage = { role: "assistant", content: [{ type: "thinking", thinking: "considering" }, { type: "text", text: "response" }] };
 const thinkingFgStart = fgInputs.length;
-const thinkingAssistantLines = new AssistantMessageComponent(thinkingAssistantMessage).render(40).map(stripAnsi);
+const thinkingAssistantRaw = new AssistantMessageComponent(thinkingAssistantMessage).render(40);
+const thinkingAssistantLines = thinkingAssistantRaw.map(stripAnsi);
 const thinkingLine = thinkingAssistantLines.find((line) => line.includes("considering"));
 assert(thinkingLine?.startsWith("• considering") && thinkingLine.indexOf("considering") === 2, "reasonix thinking should move to the first row beside the themed marker");
-assert(fgInputs.slice(thinkingFgStart).some(({ color, text }) => color === "dim" && stripAnsi(text).includes("considering")), "reasonix assistant thinking should use the semantic dim color");
+assert(fgInputs.slice(thinkingFgStart).some(({ color, text }) => color === "thinkingText" && stripAnsi(text).includes("considering")), "reasonix assistant thinking should use the theme-native thinkingText color");
+assert(thinkingAssistantRaw.some((line) => line.includes("considering") && line.includes("\x1b[3m") && line.includes("\x1b[23m")), "reasonix assistant thinking should use theme italic styling");
 assert(thinkingAssistantLines.find((line) => line.includes("response"))?.indexOf("response") === 2, "reasonix assistant response after thinking should keep the shared body gutter");
 const streamingAssistant = new AssistantMessageComponent({ role: "assistant", content: [{ type: "thinking", thinking: "streaming thought" }] });
 const thinkingOnlyLines = streamingAssistant.render(40).map(stripAnsi);

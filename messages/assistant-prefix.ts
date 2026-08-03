@@ -73,7 +73,8 @@ function styleThinkingLine(text: string): string {
 	if (!usesReasonixPresentation()) return stripItalicAnsi(text);
 	const plain = stripAnsi(text);
 	if (plain.trim().length === 0 || typeof activeTheme?.fg !== "function") return plain;
-	return activeTheme.fg("dim", plain);
+	const colored = activeTheme.fg("thinkingText", plain);
+	return typeof activeTheme.italic === "function" ? activeTheme.italic(colored) : colored;
 }
 
 function getAssistantBodyWidth(width: number): number {
