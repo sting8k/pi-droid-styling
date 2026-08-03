@@ -183,16 +183,31 @@ setPresentationStyle("reasonix");
 const reasonixBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
 assert(reasonixBashCall[0]?.startsWith("✓ Bash npm test") && !reasonixBashCall[0]?.includes("$"), "reasonix Bash tool call should place the command directly after the tool name");
 
-const pendingToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi);
-assert(pendingToolCall[0]?.startsWith("•") && !pendingToolCall[0]?.includes("●") && pendingToolCall[0]?.includes("Waiting for output"), "reasonix pending tool call should use the light bullet marker");
-const partialToolState = {};
-setCompactBoxedFooter(partialToolState, "partial output", { isPartial: true });
-const partialToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { state: partialToolState }).render(80).map(stripAnsi);
-assert(partialToolCall[0]?.startsWith("•") && !partialToolCall[0]?.includes("●"), "reasonix partial tool call should use the light bullet marker");
-const successToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"]).render(80).map(stripAnsi);
-assert(successToolCall[0]?.startsWith("✓"), "reasonix success tool call should keep the heavy check marker");
-const errorToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi);
-assert(errorToolCall[0]?.startsWith("✗") && !errorToolCall[0]?.includes("•"), "reasonix error tool call should keep the heavy error marker");
+const realDateNow = Date.now;
+const reasonixSpinnerFrames = ["◐", "◓", "◑", "◒"];
+try {
+	for (const [index, frame] of reasonixSpinnerFrames.entries()) {
+		Date.now = () => index * 160;
+		const frameLine = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi)[0];
+		assert(frameLine?.startsWith(frame) && !frameLine?.includes("●") && !frameLine?.includes("•"), `reasonix pending tool call should animate clockwise through ${frame} at ${index * 160}ms`);
+	}
+	Date.now = () => 0;
+	const pendingWithSuffix = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi)[0];
+	assert(pendingWithSuffix?.includes("Waiting for output"), "reasonix pending tool call should keep the waiting-for-output suffix");
+	Date.now = () => 160;
+	const partialToolState = {};
+	setCompactBoxedFooter(partialToolState, "partial output", { isPartial: true });
+	const partialToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { state: partialToolState }).render(80).map(stripAnsi);
+	assert(partialToolCall[0]?.startsWith("◓") && !partialToolCall[0]?.includes("●") && !partialToolCall[0]?.includes("•"), "reasonix partial tool call should animate through the same spinner");
+	const successToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"]).render(80).map(stripAnsi);
+	assert(successToolCall[0]?.startsWith("✓") && !reasonixSpinnerFrames.some((frame) => successToolCall[0]?.startsWith(frame)), "reasonix success tool call should stay a static check");
+	const errorToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi);
+	assert(errorToolCall[0]?.startsWith("✗") && !reasonixSpinnerFrames.some((frame) => errorToolCall[0]?.startsWith(frame)), "reasonix error tool call should stay a static error");
+	const overlapToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true, isPending: true }).render(80).map(stripAnsi);
+	assert(overlapToolCall[0]?.startsWith("✗"), "reasonix error marker should win over the pending spinner");
+} finally {
+	Date.now = realDateNow;
+}
 setPresentationStyle("droid");
 const droidBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
 assert(droidBashCall.some((line) => line.includes("$ npm test")), "droid Bash tool call should retain its shell prompt");

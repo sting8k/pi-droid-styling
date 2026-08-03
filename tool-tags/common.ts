@@ -466,6 +466,16 @@ function renderReasonixInlineFooter(theme: any, left: string, right: string, wid
 	return `${padVisibleRight(truncatedLeft, leftWidth)} ${footer}`;
 }
 
+// Pending/partial tool-call marker animates clockwise through half-circle frames on
+// render. Derived from Date.now so the uncached render row picks the live frame on
+// every host redraw; no timers or per-component animation state are needed.
+const REASONIX_PENDING_FRAMES = ["◐", "◓", "◑", "◒"];
+const REASONIX_PENDING_FRAME_INTERVAL_MS = 160;
+
+function reasonixPendingMarker(): string {
+	return REASONIX_PENDING_FRAMES[Math.floor(Date.now() / REASONIX_PENDING_FRAME_INTERVAL_MS) % REASONIX_PENDING_FRAMES.length];
+}
+
 const REASONIX_MAX_TOOL_CALL_ROWS = 3;
 
 function renderReasonixWrappedToolRows(
@@ -513,7 +523,7 @@ function renderReasonixToolRow(
 			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
-			const marker = isError ? "✗" : options.isPending || isPartial ? "•" : "✓";
+			const marker = isError ? "✗" : options.isPending || isPartial ? reasonixPendingMarker() : "✓";
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const markerTitle = `${theme.fg(markerColor, marker)} ${title}`;
