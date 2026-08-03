@@ -27,6 +27,9 @@ editor/
 messages/
   Assistant/user message prefix patches and boxed Pi core special message block styling
 
+presentation/
+  Presentation preset registry, process-global active presentation state, and Reasonix layout constants
+
 tool-tags/
   Tool call renderers, badges, elapsed metrics, and tool-output formatting
 
@@ -62,13 +65,17 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 
 ```text
 index.ts
-  -> core, editor, fixed-zone, messages, performance, theme, tool-tags, root UI modules
+  -> core, editor, fixed-zone, messages, performance, presentation, theme, tool-tags, root UI modules
 
 editor/messages/tool-tags/root UI modules
   -> theme helpers when they need color or ANSI behavior
+  -> presentation state/designs when choosing conversation layout presets
 
 core
   -> Node/Pi primitives only; avoid depending on UI render components
+
+presentation/
+  -> pure preset constants/state only; avoid depending on Pi UI component classes
 ```
 
 Avoid adding dependencies from `core/` back into UI components. If a core helper needs host behavior, pass it in as a provider instead of importing UI classes.

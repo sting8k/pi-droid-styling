@@ -1,17 +1,95 @@
 #!/usr/bin/env node
 
-import { createJiti } from "../node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti-static.mjs";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+
+const repoRoot = process.cwd();
+const workDir = join(repoRoot, ".pi", "session-resume-styling-smoke");
+const sourceBuildDir = join(workDir, "compiled");
+const runtimeADir = join(workDir, "runtime-a");
+const runtimeBDir = join(workDir, "runtime-b");
+const stubPath = join(workDir, "node-stubs.d.ts");
+const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
 
 function assert(condition, message) {
 	if (!condition) throw new Error(message);
 }
 
-const repoRoot = process.cwd();
-const alias = {
-	"@earendil-works/pi-coding-agent": new URL("../node_modules/@earendil-works/pi-coding-agent/dist/index.js", import.meta.url).pathname,
-	"@earendil-works/pi-tui": new URL("../node_modules/@earendil-works/pi-tui/dist/index.js", import.meta.url).pathname,
-};
+function writeNodeStubs() {
+	writeFileSync(stubPath, `declare module "fs" {
+	export const appendFileSync: any;
+	export const existsSync: any;
+	export const readFileSync: any;
+	export const readdirSync: any;
+}
+declare module "node:fs" {
+	export const appendFileSync: any;
+	export const existsSync: any;
+	export const readFileSync: any;
+	export const readdirSync: any;
+}
+declare module "node:buffer" {
+	export const Buffer: any;
+}
+declare module "node:os" {
+	export const homedir: () => string;
+}
+declare module "node:path" {
+	export const dirname: (...parts: string[]) => string;
+	export const join: (...parts: string[]) => string;
+	export const resolve: (...parts: string[]) => string;
+}
+declare module "node:url" {
+	export const fileURLToPath: (url: string | URL) => string;
+}
+declare module "node:perf_hooks" {
+	export const monitorEventLoopDelay: any;
+	export const performance: any;
+}
+declare const process: any;
+`, "utf8");
+}
+
+function prepareBuild() {
+	rmSync(workDir, { recursive: true, force: true });
+	mkdirSync(sourceBuildDir, { recursive: true });
+	writeNodeStubs();
+
+	const result = spawnSync(process.execPath, [
+		tsc,
+		"--target", "ES2022",
+		"--module", "NodeNext",
+		"--moduleResolution", "NodeNext",
+		"--outDir", sourceBuildDir,
+		"--rootDir", repoRoot,
+		"--skipLibCheck",
+		"--noImplicitAny", "false",
+		stubPath,
+		join(repoRoot, "presentation", "designs.ts"),
+		join(repoRoot, "presentation", "reasonix-layout.ts"),
+		join(repoRoot, "presentation", "state.ts"),
+		join(repoRoot, "performance", "profiler.ts"),
+		join(repoRoot, "render-budget.ts"),
+		join(repoRoot, "theme", "ansi.ts"),
+		join(repoRoot, "theme", "theme-extras.ts"),
+		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
+		join(repoRoot, "tool-tags", "resume-tool-refresh.ts"),
+	], { cwd: repoRoot, encoding: "utf8" });
+	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
+
+	for (const runtimeDir of [runtimeADir, runtimeBDir]) {
+		cpSync(sourceBuildDir, runtimeDir, { recursive: true });
+		writeFileSync(join(runtimeDir, "package.json"), '{"type":"module"}\n', "utf8");
+	}
+}
+
+async function importRuntime(runtimeDir, relativePath) {
+	return import(pathToFileURL(join(runtimeDir, relativePath)).href);
+}
+
 const theme = {
 	fg: (_color, text) => text,
 	bg: (_color, text) => text,
@@ -23,24 +101,25 @@ const globalPatchFlag = "__compactToolSpacingPatched__";
 const originalGlobalPatchFlag = globalThis[globalPatchFlag];
 
 try {
+	prepareBuild();
 	proto.render = function baseResumeToolRender() {
 		return ["┌box", "│ body", "└box"];
 	};
 	delete globalThis[globalPatchFlag];
 
-	const runtimeA = createJiti(import.meta.url, { moduleCache: false, alias });
-	const modulesA = await runtimeA.import(`${repoRoot}/session-modules.ts`);
-	modulesA.setPresentationStyle("droid");
-	modulesA.setToolSpacingTheme(theme);
-	modulesA.installCompactToolSpacing(ToolExecutionComponent);
+	const runtimeAState = await importRuntime(runtimeADir, "presentation/state.js");
+	const runtimeACompact = await importRuntime(runtimeADir, "tool-tags/compact-tool-spacing.js");
+	runtimeAState.setPresentationStyle("droid");
+	runtimeACompact.setToolSpacingTheme(theme);
+	runtimeACompact.installCompactToolSpacing(ToolExecutionComponent);
 	const droidLines = proto.render.call({ expanded: false }, 40);
 	assert(droidLines.length === 3 && droidLines[0] === "┌box", "runtime A should retain the boxed Droid tool");
 
-	const runtimeB = createJiti(import.meta.url, { moduleCache: false, alias });
-	const modulesB = await runtimeB.import(`${repoRoot}/session-modules.ts`);
-	modulesB.setPresentationStyle("reasonix");
-	modulesB.setToolSpacingTheme(theme);
-	modulesB.installCompactToolSpacing(ToolExecutionComponent);
+	const runtimeBState = await importRuntime(runtimeBDir, "presentation/state.js");
+	const runtimeBCompact = await importRuntime(runtimeBDir, "tool-tags/compact-tool-spacing.js");
+	runtimeBState.setPresentationStyle("reasonix");
+	runtimeBCompact.setToolSpacingTheme(theme);
+	runtimeBCompact.installCompactToolSpacing(ToolExecutionComponent);
 	const resumedLines = proto.render.call({ expanded: false }, 40);
 	assert(resumedLines[0] === "┌box", "runtime B should preserve the tool title");
 	assert(resumedLines.length === 2 && resumedLines.at(-1) === "", "runtime B should take ownership and collapse restored Droid tool framing");
@@ -68,7 +147,8 @@ try {
 		ui = { requestRender() {} };
 		renderCurrentSessionState() {}
 	}
-	modulesB.installResumeToolRefresh(FakeInteractiveMode);
+	const runtimeBRefresh = await importRuntime(runtimeBDir, "tool-tags/resume-tool-refresh.js");
+	runtimeBRefresh.installResumeToolRefresh(FakeInteractiveMode);
 	const mode = new FakeInteractiveMode();
 	mode.renderCurrentSessionState();
 	await new Promise((resolve) => setTimeout(resolve, 0));
