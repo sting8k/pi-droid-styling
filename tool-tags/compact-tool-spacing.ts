@@ -8,7 +8,15 @@ import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 9;
+const RUNTIME_STATE_KEY = Symbol.for("pi-droid-styling.compact-tool-spacing.runtime-state");
+const PATCH_VERSION = 10;
+
+type ToolSpacingRuntimeState = {
+	usesReasonix(): boolean;
+	normalizeReasonix(lines: string[], width: number, expanded: boolean): string[];
+	showDivider(): boolean;
+	buildDivider(width: number): string;
+};
 
 let cachedTheme: any = null;
 
@@ -104,6 +112,16 @@ function normalizeBoxedLines(lines: string[]): string[] | undefined {
 export function installCompactToolSpacing(ToolExecutionComponentClass: any = ToolExecutionComponent): void {
 	const proto = ToolExecutionComponentClass?.prototype as any;
 	if (!proto) return;
+
+	// Pi reloads extension modules on session replacement while retaining the host
+	// ToolExecutionComponent prototype. Refresh this delegate on every install so
+	// the persistent wrapper reads the new session's presentation and theme state.
+	proto[RUNTIME_STATE_KEY] = {
+		usesReasonix: () => getPresentationStyle() === "reasonix",
+		normalizeReasonix: normalizeReasonixToolLines,
+		showDivider: () => getThemeExtra(cachedTheme, "showDivider") !== "false",
+		buildDivider: buildDividerLine,
+	} satisfies ToolSpacingRuntimeState;
 	if (proto.render?.[PATCH_VERSION_KEY] === PATCH_VERSION) return;
 
 	const globalState = globalThis as Record<string, unknown>;
@@ -116,13 +134,15 @@ export function installCompactToolSpacing(ToolExecutionComponentClass: any = Too
 	// Cache divider per width to keep stable string references across frames
 	let cachedDivider = "";
 	let cachedDividerWidth = -1;
+	let cachedDividerRuntime: ToolSpacingRuntimeState | undefined;
 
 	const patchedToolRender = function patchedToolRender(this: any, width: number): string[] {
 		const lines = baseRender.call(this, width);
 		if (lines.length === 0 || width <= 0) return lines;
+		const runtime = proto[RUNTIME_STATE_KEY] as ToolSpacingRuntimeState;
 
-		if (getPresentationStyle() === "reasonix") {
-			return normalizeReasonixToolLines(lines, width, Boolean(this.expanded));
+		if (runtime.usesReasonix()) {
+			return runtime.normalizeReasonix(lines, width, Boolean(this.expanded));
 		}
 
 		const boxedLines = normalizeBoxedLines(lines);
@@ -132,11 +152,11 @@ export function installCompactToolSpacing(ToolExecutionComponentClass: any = Too
 		// spacing output instead of stacking a second divider/trailing blank.
 		if (legacyPatched) return lines;
 
-		const showDivider = getThemeExtra(cachedTheme, "showDivider") !== "false";
-		if (!showDivider) return [...lines, ""];
-		if (cachedDividerWidth !== width) {
-			cachedDivider = buildDividerLine(width);
+		if (!runtime.showDivider()) return [...lines, ""];
+		if (cachedDividerWidth !== width || cachedDividerRuntime !== runtime) {
+			cachedDivider = runtime.buildDivider(width);
 			cachedDividerWidth = width;
+			cachedDividerRuntime = runtime;
 		}
 		return [cachedDivider, ...lines, ""];
 	};
