@@ -1,5 +1,7 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { REASONIX_MARKER_GAP } from "../presentation/reasonix-layout.js";
+import { getPresentationStyle } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
@@ -13,6 +15,10 @@ function buildPrefixSegment(): string {
 	return activeTheme ? fgHex(activeTheme, color, prefix) : prefix;
 }
 
+function usesReasonixPresentation(): boolean {
+	return getPresentationStyle() === "reasonix";
+}
+
 function buildDividerLine(width: number): string {
 	if (width <= 0) return "";
 	const char = getThemeExtra(activeTheme, "dividerChar");
@@ -23,6 +29,10 @@ function buildDividerLine(width: number): string {
 
 function composePrefixedLine(line: string): string {
 	const prefix = buildPrefixSegment();
+	if (usesReasonixPresentation()) {
+		if (!line) return `${prefix}${REASONIX_MARKER_GAP}`;
+		return startsWithVisibleSpace(line) ? `${prefix}${line}` : `${prefix}${REASONIX_MARKER_GAP}${line}`;
+	}
 	if (!line) return `${prefix}  `;
 	return startsWithVisibleSpace(line) ? `${prefix} ${line}` : `${prefix}  ${line}`;
 }
@@ -43,12 +53,27 @@ function isVisibleThinkingBlock(contentBlock: any): boolean {
 	);
 }
 
+function compactReasonixLines(lines: string[]): string[] {
+	let first = 0;
+	while (first < lines.length && stripAnsi(lines[first] ?? "").trim() === "") first++;
+	let last = lines.length - 1;
+	while (last >= first && stripAnsi(lines[last] ?? "").trim() === "") last--;
+	return first <= last ? [...lines.slice(first, last + 1), ""] : [];
+}
+
 function hasVisibleAssistantContent(contentBlocks: any[]): boolean {
 	return contentBlocks.some((contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock));
 }
 
 function stripItalicAnsi(text: string): string {
 	return text.replace(/\x1b\[3m/g, "").replace(/\x1b\[23m/g, "");
+}
+
+function styleThinkingLine(text: string): string {
+	if (!usesReasonixPresentation()) return stripItalicAnsi(text);
+	const plain = stripAnsi(text);
+	if (plain.trim().length === 0 || typeof activeTheme?.fg !== "function") return plain;
+	return activeTheme.fg("dim", plain);
 }
 
 function getAssistantBodyWidth(width: number): number {
@@ -70,7 +95,7 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix")
 	const baseRender = child.render.bind(child);
 	child.render = (width: number): string[] => {
 		const bodyWidth = mode === "plain" ? width : getAssistantBodyWidth(width);
-		const lines = baseRender(bodyWidth).map(stripItalicAnsi);
+		const lines = baseRender(bodyWidth).map(styleThinkingLine);
 		if (mode === "prefix") return prefixFirstNonEmptyLine(lines, width);
 		if (mode === "gutter") return addAssistantGutter(lines);
 		return lines;
@@ -225,6 +250,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			const result = lines.map((renderedLine) =>
 				safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 			);
+			if (usesReasonixPresentation()) return compactReasonixLines(result);
 			const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
 			return showDivider ? [divider, ...result, ""] : [...result, ""];
 		}
@@ -253,6 +279,8 @@ export function installAssistantMessagePrefix(theme: any): void {
 		const result = output.map((renderedLine) =>
 			safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 		);
+
+		if (usesReasonixPresentation()) return compactReasonixLines(result);
 
 		// Add turn divider before assistant message
 		const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";

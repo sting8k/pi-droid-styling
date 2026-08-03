@@ -1,6 +1,6 @@
 {
   "name": "pi-droid-styling",
-  "version": "2.6.8",
+  "version": "2.6.9",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",
@@ -25,7 +25,9 @@
     "test:theme-extras": "node scripts/theme-extras-smoke.mjs",
     "test:user-zone-style": "node scripts/user-zone-style-smoke.mjs",
     "test:core-message-blocks": "node scripts/core-message-blocks-smoke.mjs",
-    "test:tasks-widget-compact": "node scripts/tasks-widget-compact-smoke.mjs"
+    "test:tasks-widget-compact": "node scripts/tasks-widget-compact-smoke.mjs",
+    "test:reasonix-conversation": "node scripts/reasonix-conversation-smoke.mjs",
+    "test:session-resume-styling": "node scripts/session-resume-styling-smoke.mjs"
   },
   "pi": {
     "extensions": [

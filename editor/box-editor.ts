@@ -795,9 +795,11 @@ export class BoxEditor extends CustomEditor {
 		const editorStyle = this.userZoneStyle.editor;
 		const contentInnerWidth = this.panelContentWidth(width);
 		const text = this.getText();
-		const promptColor = editorStyle.layout === "cli-dock"
-			? editorStyle.promptColor
-			: this.themeExtraColor("bashPromptColor", editorStyle.promptColor);
+		const promptColor = editorStyle.prompt === "❯"
+			? this.themeExtraColor("userPrefixColor", editorStyle.promptColor)
+			: editorStyle.layout === "cli-dock"
+				? editorStyle.promptColor
+				: this.themeExtraColor("bashPromptColor", editorStyle.promptColor);
 		const promptText = this.styleFg(promptColor, editorStyle.prompt);
 		const prompt = editorStyle.promptBold ? this.bold(promptText) : promptText;
 		const promptPrefix = `${editorStyle.layout === "cli-dock" ? " " : ""}${prompt}${" ".repeat(Math.max(0, editorStyle.promptGap))}`;

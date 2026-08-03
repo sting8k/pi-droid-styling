@@ -3,7 +3,9 @@ import type { Component } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
-import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { getPresentationStyle } from "../presentation/state.js";
+import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
+import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
 import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
 import { getThemeExtra, getThemePageBackground, getThemeVarBackground } from "../theme/theme-extras.js";
@@ -439,12 +441,109 @@ function renderBoxedOutputLines(theme: any, outputLines: string[], width: number
 		: "… rendered output truncated";
 	return [...head, boxLine(theme, theme.fg("muted", skippedText), width), ...tail];
 }
+function isReasonixPresentation(): boolean {
+	return getPresentationStyle() === "reasonix";
+}
+
+function reasonixEllipsis(theme: any): string {
+	return typeof theme?.fg === "function" ? theme.fg("dim", " …") : " …";
+}
+
+function truncateReasonixLine(theme: any, text: string, width: number): string {
+	const content = trimTrailingRenderPadding(text);
+	const rowWidth = Math.max(1, Math.floor(width));
+	if (safeVisibleWidth(content) <= rowWidth) return content;
+	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis(theme));
+}
+
+function renderReasonixInlineFooter(theme: any, left: string, right: string, width: number): string {
+	const footer = toSingleRenderLine(right);
+	const footerWidth = safeVisibleWidth(footer);
+	if (footerWidth + 2 >= width) return truncateReasonixLine(theme, `${left} ${footer}`, width);
+
+	const leftWidth = Math.max(1, width - footerWidth - 1);
+	const truncatedLeft = truncateReasonixLine(theme, left, leftWidth);
+	return `${padVisibleRight(truncatedLeft, leftWidth)} ${footer}`;
+}
+
+function renderReasonixToolRow(
+	theme: any,
+	toolName: string,
+	detail: string,
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean } = {},
+): Component {
+	return {
+		invalidate() {},
+		render(width: number): string[] {
+			const compactFooter = typeof options.state?.[COMPACT_FOOTER_KEY] === "string"
+				? options.state[COMPACT_FOOTER_KEY]
+				: "";
+			const isError = Boolean(options.isError || options.state?.[COMPACT_FOOTER_ERROR_KEY]);
+			const isPartial = Boolean(options.isPartial || options.state?.[COMPACT_FOOTER_PARTIAL_KEY]);
+			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
+			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
+			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
+			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : "✓";
+			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
+			const rowWidth = getReasonixCollapsedRowWidth(width);
+			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
+			const header = options.inlineFooter && compactFooter
+				? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
+				: truncateReasonixLine(theme, headerText, rowWidth);
+			if (!compactFooter || options.inlineFooter) return [header];
+			const footerWidth = getToolBodyWidth(rowWidth, 5);
+			const footerText = toSingleRenderLine(compactFooter);
+			const footer = `  ${theme.fg("dim", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
+			return [header, footer];
+		},
+	};
+}
+
+function renderReasonixToolBody(
+	theme: any,
+	body: BoxedResultBody,
+	options: { footerLines?: string[]; emptyText?: string; isError?: boolean; renderLineBudget?: number } = {},
+): Component {
+	let cache: RenderLinesCache | null = null;
+	return {
+		invalidate() {
+			cache = null;
+			if (typeof body !== "function") body.invalidate();
+		},
+		render(width: number): string[] {
+			if (cache?.width === width) return cache.lines;
+			const firstPrefix = `  ${theme.fg("dim", "└─ ")}`;
+			const contentIndent = safeVisibleWidth(firstPrefix);
+			const continuationPrefix = " ".repeat(contentIndent);
+			const bodyWidth = getToolBodyWidth(width, contentIndent);
+			const bodyLines = typeof body === "function" ? body(bodyWidth) : body.render(bodyWidth);
+			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
+			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
+			const rendered = [
+				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
+				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
+			];
+			cache = { width, lines: rendered };
+			return rendered;
+		},
+	};
+}
+
+export function setCompactBoxedFooter(state: any, footer: string, options: { isError?: boolean; isPartial?: boolean } = {}): void {
+	if (!state || typeof state !== "object") return;
+	state[COMPACT_FOOTER_KEY] = footer;
+	state[COMPACT_FOOTER_ERROR_KEY] = Boolean(options.isError);
+	state[COMPACT_FOOTER_PARTIAL_KEY] = Boolean(options.isPartial);
+}
+
+
 export function renderBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLines: string[],
-	options: { widthKey?: string; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
+	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLines.join(" "), options);
 	let cache: RenderLinesCache | null = null;
 	return {
 		invalidate() { cache = null; },
@@ -490,6 +589,7 @@ export function renderCompactBoxedToolCall(
 	detailLine: string,
 	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
+	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLine, { ...options, inlineFooter: true });
 	return {
 		invalidate() {},
 		render(width: number): string[] {
@@ -527,6 +627,7 @@ export function renderBoxedToolResult(
 	body: BoxedResultBody,
 	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
 ): Component {
+	if (isReasonixPresentation()) return renderReasonixToolBody(theme, body, options);
 	let cache: RenderLinesCache | null = null;
 	return {
 		invalidate() {
@@ -587,9 +688,7 @@ export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | und
 
 export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, options: { state?: any; isError?: boolean; isPartial?: boolean } = {}): Component {
 	if (options.state && typeof options.state === "object") {
-		options.state[COMPACT_FOOTER_KEY] = formatBoxedFooterParts(theme, result, [], true);
-		options.state[COMPACT_FOOTER_ERROR_KEY] = Boolean(options.isError);
-		options.state[COMPACT_FOOTER_PARTIAL_KEY] = Boolean(options.isPartial);
+		setCompactBoxedFooter(options.state, formatBoxedFooterParts(theme, result, [], true), options);
 		return { invalidate() {}, render: () => [] };
 	}
 

@@ -2,6 +2,7 @@ import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
+import { getPresentationStyle } from "../presentation/state.js";
 import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
@@ -9,7 +10,7 @@ import {
 	countDiffStats,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
+import { clearCompactBoxedFooter, formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, setCompactBoxedFooter } from "./common.js";
 
 const RESULT_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.result.patched");
 const CALL_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.call.patched");
@@ -119,6 +120,7 @@ function renderQuickEditCall(args: any, theme: any, config: QuickEditToolConfig,
 	const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 	const detail = relPath || "(unknown)";
 	return renderBoxedToolCall(theme, config.toolLabel, [`${theme.fg("dim", "Path: ")}${detail}`], {
+		state: context.state,
 		isError: Boolean(context.isError),
 		isPartial: Boolean(context.isPartial),
 		isPending: Boolean(context.isPartial && !context.hasResult),
@@ -145,12 +147,24 @@ function renderQuickEditResult(
 	config: QuickEditToolConfig,
 	context: QuickEditRenderContext = {},
 ) {
+	const expanded = isExpanded(options);
+	if (expanded) clearCompactBoxedFooter(context.state);
+	const reasonixCollapsed = getPresentationStyle() === "reasonix" && !expanded && Boolean(context.state);
 	if (options.isPartial) {
+		if (reasonixCollapsed) {
+			setCompactBoxedFooter(context.state, theme.fg("muted", `Applying ${config.applyingLabel}...`), { isPartial: true });
+			return { invalidate() {}, render: () => [] };
+		}
 		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", `Applying ${config.applyingLabel}...`)}`], { isPartial: true });
 	}
 
 	const output = getTextOutput(result);
 	if (context.isError || result?.isError) {
+		if (reasonixCollapsed) {
+			const errorText = stripAnsi(output).trim() || "Error";
+			setCompactBoxedFooter(context.state, `${theme.fg("error", errorText)} ${theme.fg("dim", "·")} ${formatQuickEditFooter(theme, context, output)}`, { isError: true });
+			return { invalidate() {}, render: () => [] };
+		}
 		return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
 			footerLines: [formatQuickEditFooter(theme, context, output)],
 			isError: true,
@@ -160,13 +174,16 @@ function renderQuickEditResult(
 	const diff = extractQuickEditDiff(output);
 	if (!diff) {
 		const fallback = stripAnsi(output).trim() || config.fallbackLabel;
+		if (reasonixCollapsed) {
+			setCompactBoxedFooter(context.state, `${theme.fg("muted", fallback)} ${theme.fg("dim", "·")} ${formatQuickEditFooter(theme, context, output)}`);
+			return { invalidate() {}, render: () => [] };
+		}
 		return renderBoxedToolResult(theme, () => [`${theme.fg("dim", "↳")} ${theme.fg("muted", fallback)}`], {
 			footerLines: [formatQuickEditFooter(theme, context, output)],
 		});
 	}
 
 	const rows = buildSplitRows(diff);
-	const expanded = isExpanded(options);
 	const argPath = String(context?.args?.path ?? "");
 	const language = argPath ? getLanguageFromPath(argPath) : undefined;
 	const shouldHighlight =
@@ -182,6 +199,11 @@ function renderQuickEditResult(
 		` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
 		` ${theme.fg("muted", "split")}` +
 		(meter ? ` ${meter}` : "");
+
+	if (reasonixCollapsed) {
+		setCompactBoxedFooter(context.state, `${summary} ${theme.fg("dim", "·")} ${formatQuickEditFooter(theme, context, output)}`);
+		return { invalidate() {}, render: () => [] };
+	}
 
 	const maxRows = expanded ? 160 : 36;
 	const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
+import { DEFAULT_PRESENTATION_STYLE, isPresentationStyleName, normalizePresentationStyleName, type PresentationStyleName } from "./presentation/designs.js";
 import { DEFAULT_USER_ZONE_STYLE, FALLBACK_USER_ZONE_STYLE, isUserZoneStyleName, normalizeUserZoneStyleName, type UserZoneStyleName } from "./user-zone/designs.js";
 
 export type CustomWorkingMessageConfig = Record<"working" | "thinking" | "answering" | "running", string>;
@@ -29,6 +30,7 @@ export interface DroidStylingConfig {
 	maxExpandedLines: number;
 	dimToolOutput: boolean;
 	customWorkingMessage: CustomWorkingMessageConfig;
+	presentationStyle: PresentationStyleName;
 	userZoneStyle: UserZoneStyleName;
 	inputBox: InputBoxConfig;
 	tasksWidgetStyle: TasksWidgetStyle;
@@ -53,6 +55,7 @@ const DEFAULTS: DroidStylingConfig = {
 	maxExpandedLines: 50,
 	dimToolOutput: false,
 	customWorkingMessage: DEFAULT_CUSTOM_WORKING_MESSAGE,
+	presentationStyle: DEFAULT_PRESENTATION_STYLE,
 	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
 	inputBox: DEFAULT_INPUT_BOX,
 	tasksWidgetStyle: "compact",
@@ -143,6 +146,18 @@ function backfillCustomWorkingMessage(config: Record<string, unknown>): boolean 
 	return changed;
 }
 
+function backfillPresentationStyle(config: Record<string, unknown>): boolean {
+	const value = config.presentationStyle;
+	if (value === undefined) {
+		config.presentationStyle = DEFAULT_PRESENTATION_STYLE;
+		return true;
+	}
+	if (isPresentationStyleName(value)) return false;
+	if (typeof value === "string" && value.trim().length > 0) return false;
+	config.presentationStyle = DEFAULT_PRESENTATION_STYLE;
+	return true;
+}
+
 function backfillUserZoneStyle(config: Record<string, unknown>): boolean {
 	const value = config.userZoneStyle;
 	if (value === undefined) {
@@ -185,6 +200,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		maxExpandedLines: maxExpandedLinesOrDefault(config.maxExpandedLines),
 		dimToolOutput: booleanOrDefault(config.dimToolOutput, DEFAULTS.dimToolOutput),
 		customWorkingMessage: customWorkingMessageOrDefault(config.customWorkingMessage),
+		presentationStyle: normalizePresentationStyleName(config.presentationStyle),
 		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
 		inputBox: inputBoxOrDefault(config.inputBox),
 		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
@@ -219,6 +235,7 @@ function backfillMissingDefaults(raw: unknown): void {
 		changed = true;
 	}
 	if (backfillCustomWorkingMessage(config)) changed = true;
+	if (backfillPresentationStyle(config)) changed = true;
 	if (backfillUserZoneStyle(config)) changed = true;
 	if (backfillInputBox(config)) changed = true;
 	if (backfillTasksWidgetStyle(config)) changed = true;
