@@ -252,7 +252,8 @@ const wrappedParamCallRaw = renderBoxedToolCall(dimEllipsisTheme, "Tool", format
 const wrappedParamCall = wrappedParamCallRaw.map(stripAnsi);
 assert(wrappedParamCall.length === 3, "reasonix should wrap one long tool-call param across physical rows");
 assert(wrappedParamCall.every((line) => line.length <= 64), "reasonix wrapped param rows should stay within 80% of terminal width");
-assert(wrappedParamCall.slice(1).every((line) => line.startsWith("     ") && !line.includes("└─")), "reasonix wrapped param rows should use 5-space continuation indentation aligned below the output connector");
+assert(wrappedParamCall.slice(1).every((line) => line[2] === "│" && !line.includes("└─")), "reasonix wrapped param rows should hang from a vertical connector without repeating the output corner");
+assert(wrappedParamCall.slice(1).every((line) => line.indexOf("x") === 7), "reasonix wrapped param continuation payload should align at the dynamic detail column");
 
 const longParamCallRaw = renderBoxedToolCall(dimEllipsisTheme, "Tool", formatToolParamLines({
 	path: `src/${"nested/".repeat(20)}config.ts`,
@@ -264,8 +265,28 @@ const longParamCallRaw = renderBoxedToolCall(dimEllipsisTheme, "Tool", formatToo
 const longParamCall = longParamCallRaw.map(stripAnsi);
 assert(longParamCall.length === 3, "reasonix tool-call params should render at most three rows");
 assert(longParamCall.every((line) => line.length <= 64), "reasonix tool-call params should cap each row at 80% of terminal width");
-assert(longParamCall.slice(1).every((line) => line.startsWith("     ") && !line.includes("└─")), "reasonix multiline tool-call params should align continuation content under the output connector");
+assert(longParamCall.slice(1).every((line) => line[2] === "│" && !line.includes("└─")), "reasonix multiline tool-call params should hang from a vertical connector");
+assert(longParamCall[0]?.indexOf("Path:") === 7, "reasonix multiline param detail should begin at visible column 7");
 assert(longParamCallRaw.some((line) => line.includes("\x1b[2m …\x1b[22m")), "reasonix truncated tool-call params should use the dim spaced ellipsis");
+
+const bashLongCallRaw = renderBoxedToolCall(activeTheme, "Bash", ["srcwalk show config.ts --section 25-70 2>/dev/null; echo " + "x".repeat(300)]).render(80);
+const bashLongCall = bashLongCallRaw.map(stripAnsi);
+assert(bashLongCall.length === 3, "reasonix long bash call should wrap across three rows");
+assert(bashLongCall.every((line) => line.length <= 64), "reasonix long bash rows should each stay within the 80% cap");
+assert(bashLongCall[0]?.startsWith("✓ Bash ") && bashLongCall[0]?.indexOf("srcwalk") === 7, "reasonix bash detail should begin at visible column 7 after the marker");
+assert(bashLongCall.slice(1).every((line) => line[2] === "│"), "reasonix bash continuation rows should put the vertical connector at visible index 2");
+assert(bashLongCall.slice(1).every((line) => line.indexOf("x") === 7), "reasonix bash continuation payload should align at visible column 7");
+
+const targetEditLongCall = renderBoxedToolCall(activeTheme, "Target Edit", ["Path: scripts/reasonix-conversation-smoke.mjs " + "x".repeat(300)]).render(80).map(stripAnsi);
+assert(targetEditLongCall[0]?.indexOf("Path:") === 14, "reasonix target-edit detail should begin at its dynamic column 14");
+assert(targetEditLongCall.slice(1).every((line) => line[2] === "│"), "reasonix target-edit continuation rows should keep the vertical connector at index 2");
+assert(targetEditLongCall.slice(1).every((line) => line.indexOf("x") === 14), "reasonix target-edit continuation payload should align at the dynamic detail column");
+assert(targetEditLongCall.every((line) => line.length <= 64), "reasonix target-edit rows should stay within the 80% cap");
+
+const connectorFgStart = fgInputs.length;
+renderBoxedToolCall(activeTheme, "Bash", ["srcwalk show config.ts --section 25-70 2>/dev/null; echo " + "x".repeat(300)]).render(80);
+const connectorFg = fgInputs.slice(connectorFgStart);
+assert(connectorFg.some(({ color, text }) => color === "dim" && text === "│") && !connectorFg.some(({ color, text }) => color === "borderMuted" && text === "│"), "reasonix vertical connector should use the dim semantic color, not borderMuted");
 
 const wrappedParamWithOutput = [
 	...wrappedParamCallRaw,
@@ -277,6 +298,7 @@ assert(collapsedWrappedParam.length === 5 && collapsedWrappedParam.at(-1) === ""
 assert(collapsedWrappedParam.slice(0, 3).join("\n") === wrappedParamCall.join("\n"), "reasonix collapsed tool should preserve all three wrapped call rows at the 80% width cap");
 assert(collapsedWrappedParam.slice(0, 3).every((line) => !line.includes("└─")), "reasonix collapsed param rows should not repeat the output connector");
 assert(collapsedWrappedParam[3]?.startsWith("  └─ ") && collapsedWrappedParam.filter((line) => line.includes("└─")).length === 1, "reasonix collapsed tool should render exactly one connector for output status");
+assert(collapsedWrappedParam.slice(1, 3).every((line) => line[2] === "│"), "reasonix collapsed tool should preserve the vertical connector rows before the status corner");
 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });

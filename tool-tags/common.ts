@@ -490,20 +490,43 @@ function renderReasonixWrappedToolRows(
 		.map((row) => toSingleRenderLine(row).trim())
 		.filter((row) => stripAnsi(row).length > 0)
 		.join(" ");
-	const text = `${markerTitle}${detail ? ` ${detail}` : ""}${pending}`;
-	const continuationIndent = "     ";
-	const contentWidth = Math.max(1, rowWidth - safeVisibleWidth(continuationIndent));
-	const wrapped = safeWrapTextWithAnsi(text, contentWidth).map(trimTrailingRenderPadding);
-	const rows = wrapped.slice(0, Math.max(1, maxRows));
-
-	if (wrapped.length > rows.length) {
-		const lastIndex = rows.length - 1;
-		const ellipsis = reasonixEllipsis(theme);
-		const lastWidth = Math.max(1, contentWidth - safeVisibleWidth(ellipsis));
-		rows[lastIndex] = `${safeTruncateToWidth(rows[lastIndex] ?? "", lastWidth, "")}${ellipsis}`;
+	const detailStart = safeVisibleWidth(markerTitle) + 1;
+	if (detailStart >= rowWidth) {
+		// Degenerate: the tool title alone consumes the row. Wrap the whole line so
+		// no physical row exceeds the 80% cap, keeping the legacy plain indent.
+		const contentWidth = Math.max(1, rowWidth - safeVisibleWidth("     "));
+		const text = `${markerTitle}${detail ? ` ${detail}` : ""}${pending}`;
+		const wrapped = safeWrapTextWithAnsi(text, contentWidth).map(trimTrailingRenderPadding);
+		const rows = wrapped.slice(0, Math.max(1, maxRows));
+		if (wrapped.length > rows.length) {
+			const lastIndex = rows.length - 1;
+			const ellipsis = reasonixEllipsis(theme);
+			const lastWidth = Math.max(1, contentWidth - safeVisibleWidth(ellipsis));
+			rows[lastIndex] = `${safeTruncateToWidth(rows[lastIndex] ?? "", lastWidth, "")}${ellipsis}`;
+		}
+		return rows.map((line, index) => index === 0 ? line : `     ${line}`);
 	}
 
-	return rows.map((line, index) => index === 0 ? line : `${continuationIndent}${line}`);
+	// Wrap only the detail/pending payload at the detail column so row 1 can use
+	// the full row width; continuation rows hang from a dim vertical connector.
+	const payload = `${detail ? `${detail}` : ""}${pending}`;
+	const payloadPrefix = detail ? " " : "";
+	const payloadWidth = Math.max(1, rowWidth - detailStart);
+	const connector = `  ${theme.fg("dim", "│")}${' '.repeat(Math.max(0, detailStart - 3))}`;
+	const wrappedPayload = safeWrapTextWithAnsi(payload, payloadWidth).map(trimTrailingRenderPadding);
+	const wrapped = wrappedPayload.length > 0 ? wrappedPayload : [""];
+	const rowCount = Math.min(wrapped.length, Math.max(1, maxRows));
+	const rows: string[] = [];
+	for (let index = 0; index < rowCount; index++) {
+		let content = wrapped[index] ?? "";
+		if (wrapped.length > rowCount && index === rowCount - 1) {
+			const ellipsis = reasonixEllipsis(theme);
+			const contentWidth = Math.max(1, payloadWidth - safeVisibleWidth(ellipsis));
+			content = `${safeTruncateToWidth(content, contentWidth, "")}${ellipsis}`;
+		}
+		rows.push(index === 0 ? `${markerTitle}${payloadPrefix}${content}` : `${connector}${content}`);
+	}
+	return rows;
 }
 
 function renderReasonixToolRow(
