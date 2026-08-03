@@ -69,6 +69,7 @@ declare const process: any;
 		join(repoRoot, "messages", "user-prefix.ts"),
 		join(repoRoot, "messages", "assistant-prefix.ts"),
 		join(repoRoot, "tool-tags", "common.ts"),
+		join(repoRoot, "tool-tags", "bash.ts"),
 		join(repoRoot, "tool-tags", "quick-edit.ts"),
 		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
 	], { cwd: repoRoot, encoding: "utf8" });
@@ -170,10 +171,31 @@ const droidAssistant = new AssistantMessageComponent(assistantMessage).render(40
 assert(droidAssistant.some((line) => line.includes("─".repeat(40))), "droid assistant should retain its divider");
 assert(droidAssistant.some((line) => line.includes("•  answer")), "droid assistant should retain its legacy inline bullet marker");
 
-const { renderBoxedToolCall, renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
+const { formatToolParamLines, renderBoxedToolCall, renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
 const { installCompactToolSpacing, normalizeReasonixToolLines, setToolSpacingTheme } = await importBuilt("tool-tags/compact-tool-spacing.js");
+const { registerBashTool } = await importBuilt("tool-tags/bash.js");
 
+let bashToolDefinition;
+registerBashTool({ registerTool(definition) { bashToolDefinition = definition; } });
+
+setPresentationStyle("reasonix");
+const reasonixBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+assert(reasonixBashCall[0]?.startsWith("✓ Bash npm test") && !reasonixBashCall[0]?.includes("$"), "reasonix Bash tool call should place the command directly after the tool name");
+
+const pendingToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi);
+assert(pendingToolCall[0]?.startsWith("•") && !pendingToolCall[0]?.includes("●") && pendingToolCall[0]?.includes("Waiting for output"), "reasonix pending tool call should use the light bullet marker");
+const partialToolState = {};
+setCompactBoxedFooter(partialToolState, "partial output", { isPartial: true });
+const partialToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { state: partialToolState }).render(80).map(stripAnsi);
+assert(partialToolCall[0]?.startsWith("•") && !partialToolCall[0]?.includes("●"), "reasonix partial tool call should use the light bullet marker");
+const successToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"]).render(80).map(stripAnsi);
+assert(successToolCall[0]?.startsWith("✓"), "reasonix success tool call should keep the heavy check marker");
+const errorToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi);
+assert(errorToolCall[0]?.startsWith("✗") && !errorToolCall[0]?.includes("•"), "reasonix error tool call should keep the heavy error marker");
+setPresentationStyle("droid");
+const droidBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+assert(droidBashCall.some((line) => line.includes("$ npm test")), "droid Bash tool call should retain its shell prompt");
 setPresentationStyle("reasonix");
 const toolState = {};
 renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated file" }] }, { state: toolState });
@@ -197,28 +219,58 @@ const responsiveSubjectNarrow = renderCompactBoxedToolCall(activeTheme, "Bash", 
 const responsiveSubjectMedium = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(80).map(stripAnsi);
 const responsiveSubjectWide = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(160).map(stripAnsi);
 assert(responsiveSubjectNarrow.length === 1 && !responsiveSubjectNarrow[0]?.includes("\n") && (responsiveSubjectNarrow[0]?.length ?? 0) <= 24, "reasonix collapsed tool subject should stay on one physical row at narrow widths");
-assert((responsiveSubjectMedium[0]?.length ?? 0) === 48, "reasonix collapsed tool subject should use a 60% soft cap at medium widths");
-assert((responsiveSubjectWide[0]?.length ?? 0) === 72, "reasonix collapsed tool subject should stop at the 72-column hard cap on wide terminals");
+assert((responsiveSubjectMedium[0]?.length ?? 0) === 64, "reasonix collapsed tool subject should use the shared 80% cap at medium widths");
+assert((responsiveSubjectWide[0]?.length ?? 0) === 128, "reasonix collapsed tool subject should use the shared 80% cap on wide terminals");
 const dimEllipsisTheme = { ...activeTheme, fg: (color, text) => color === "dim" ? `\x1b[2m${text}\x1b[22m` : activeTheme.fg(color, text) };
 const longCompactPathRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Read", `Path: src/${"nested/".repeat(20)}config.ts`, { state: toolState }).render(80);
 const longCompactPath = longCompactPathRaw.map(stripAnsi);
-assert(longCompactPath.length === 1 && longCompactPath[0]?.includes("◷") && (longCompactPath[0]?.length ?? 0) === 48, "reasonix compact row should truncate its subject before dropping right-side metrics");
+assert(longCompactPath.length === 1 && longCompactPath[0]?.includes("◷") && (longCompactPath[0]?.length ?? 0) === 64, "reasonix compact row should use the shared 80% cap before dropping right-side metrics");
 assert(longCompactPathRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix compact subject truncation should retain the dim spaced ellipsis");
 const dimEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", longMultilineSubject).render(80);
 assert(dimEllipsisRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed with one leading space");
 const noEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test").render(80);
 assert(!noEllipsisRaw[0]?.includes("…"), "reasonix collapsed subject should not show ellipsis when it fits the soft cap");
 const pathUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Target Edit", "Path: scripts/reasonix-conversation-smoke.mjs").render(160);
-assert(!pathUnderSoftCapRaw[0]?.includes("…"), "reasonix collapsed path under the 72-column cap should not show ellipsis");
+assert(!pathUnderSoftCapRaw[0]?.includes("…"), "reasonix collapsed path under the 80% cap should not show ellipsis");
+
+const wrappedParamCallRaw = renderBoxedToolCall(dimEllipsisTheme, "Tool", formatToolParamLines({ params: "x".repeat(400) }, dimEllipsisTheme)).render(80);
+const wrappedParamCall = wrappedParamCallRaw.map(stripAnsi);
+assert(wrappedParamCall.length === 3, "reasonix should wrap one long tool-call param across physical rows");
+assert(wrappedParamCall.every((line) => line.length <= 64), "reasonix wrapped param rows should stay within 80% of terminal width");
+assert(wrappedParamCall.slice(1).every((line) => line.startsWith("     ") && !line.includes("└─")), "reasonix wrapped param rows should use 5-space continuation indentation aligned below the output connector");
+
+const longParamCallRaw = renderBoxedToolCall(dimEllipsisTheme, "Tool", formatToolParamLines({
+	path: `src/${"nested/".repeat(20)}config.ts`,
+	command: `node -e ${"console.log(1);".repeat(20)}`,
+	content: "x".repeat(400),
+	reason: "needs a long explanation ".repeat(20),
+	extra: "more",
+}, dimEllipsisTheme)).render(80);
+const longParamCall = longParamCallRaw.map(stripAnsi);
+assert(longParamCall.length === 3, "reasonix tool-call params should render at most three rows");
+assert(longParamCall.every((line) => line.length <= 64), "reasonix tool-call params should cap each row at 80% of terminal width");
+assert(longParamCall.slice(1).every((line) => line.startsWith("     ") && !line.includes("└─")), "reasonix multiline tool-call params should align continuation content under the output connector");
+assert(longParamCallRaw.some((line) => line.includes("\x1b[2m …\x1b[22m")), "reasonix truncated tool-call params should use the dim spaced ellipsis");
+
+const wrappedParamWithOutput = [
+	...wrappedParamCallRaw,
+	`  ${dimEllipsisTheme.fg("dim", "└─ ")}preview`,
+	`     ${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "1.20s · 4 words")}`,
+];
+const collapsedWrappedParam = normalizeReasonixToolLines(wrappedParamWithOutput, 80, false).map(stripAnsi);
+assert(collapsedWrappedParam.length === 5 && collapsedWrappedParam.at(-1) === "", "reasonix collapsed tool should keep three call rows, one status row, and one spacer");
+assert(collapsedWrappedParam.slice(0, 3).join("\n") === wrappedParamCall.join("\n"), "reasonix collapsed tool should preserve all three wrapped call rows at the 80% width cap");
+assert(collapsedWrappedParam.slice(0, 3).every((line) => !line.includes("└─")), "reasonix collapsed param rows should not repeat the output connector");
+assert(collapsedWrappedParam[3]?.startsWith("  └─ ") && collapsedWrappedParam.filter((line) => line.includes("└─")).length === 1, "reasonix collapsed tool should render exactly one connector for output status");
 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(80).map(stripAnsi);
-assert(responsiveErrorLines.length === 1 && !responsiveErrorLines[0]?.includes("\n") && (responsiveErrorLines[0]?.length ?? 0) <= 48, "reasonix compact error should stay on one row within the responsive 60% soft cap");
+assert(responsiveErrorLines.length === 1 && !responsiveErrorLines[0]?.includes("\n") && (responsiveErrorLines[0]?.length ?? 0) <= 64, "reasonix compact error should stay on one row within the shared 80% cap");
 const statusUnderSoftCapState = {};
 setCompactBoxedFooter(statusUnderSoftCapState, `${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "4.61s · ⏹ 180s · ✎ ~957 words")}`);
 const statusUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test", { state: statusUnderSoftCapState }).render(160);
-assert(!statusUnderSoftCapRaw[0]?.includes("…"), "reasonix compact status under the 72-column cap should not show ellipsis");
+assert(!statusUnderSoftCapRaw[0]?.includes("…"), "reasonix compact status under the 80% cap should not show ellipsis");
 const dimErrorState = {};
 setCompactBoxedFooter(dimErrorState, dimEllipsisTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failing command", { state: dimErrorState }).render(80);
@@ -270,8 +322,13 @@ assert(collapsedBashLike[1]?.startsWith("  └─ ") && collapsedBashLike[1]?.in
 assert(!collapsedBashLike.some((line) => line.includes("preview")), "reasonix collapsed tool should discard every preview body line");
 const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, false).map(stripAnsi);
 assert((narrowCollapsedBashLike[1]?.length ?? 0) <= 24 && narrowCollapsedBashLike[1]?.includes("1.20s"), "reasonix narrow collapsed metrics should retain duration without overflow");
+const underToolCallCapHeader = `✓ Bash ${"x".repeat(50)}`;
+const pendingUnderToolCallCap = normalizeReasonixToolLines([activeTheme.fg("text", underToolCallCapHeader)], 80, false).map(stripAnsi);
+assert(pendingUnderToolCallCap[0] === underToolCallCapHeader && !pendingUnderToolCallCap[0]?.includes("…"), "reasonix pending call should use the same 80% cap before output exists");
+const underToolCallCap = normalizeReasonixToolLines([activeTheme.fg("text", underToolCallCapHeader), `  └─ ${activeTheme.fg("text", "◷")} ${activeTheme.fg("dim", "1.20s")}`], 80, false).map(stripAnsi);
+assert(underToolCallCap[0] === underToolCallCapHeader && !underToolCallCap[0]?.includes("…"), "reasonix collapsed non-compact call below the 80% cap should remain complete on one row");
 const softCappedBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false).map(stripAnsi);
-assert((softCappedBashLike[0]?.length ?? 0) === 48 && (softCappedBashLike[1]?.length ?? 0) <= 48, "reasonix generic collapsed tools should share the 60% soft cap");
+assert((softCappedBashLike[0]?.length ?? 0) === 64 && (softCappedBashLike[1]?.length ?? 0) <= 64, "reasonix collapsed header and status should share the 80% cap");
 setToolSpacingTheme(dimEllipsisTheme);
 const dimGenericBashLike = normalizeReasonixToolLines([dimEllipsisTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false);
 assert(dimGenericBashLike[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix generic collapsed ellipsis should be dimmed with one leading space");

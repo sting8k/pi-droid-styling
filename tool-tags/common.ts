@@ -466,11 +466,41 @@ function renderReasonixInlineFooter(theme: any, left: string, right: string, wid
 	return `${padVisibleRight(truncatedLeft, leftWidth)} ${footer}`;
 }
 
+const REASONIX_MAX_TOOL_CALL_ROWS = 3;
+
+function renderReasonixWrappedToolRows(
+	theme: any,
+	markerTitle: string,
+	detailRows: string[],
+	pending: string,
+	rowWidth: number,
+	maxRows: number,
+): string[] {
+	const detail = detailRows
+		.map((row) => toSingleRenderLine(row).trim())
+		.filter((row) => stripAnsi(row).length > 0)
+		.join(" ");
+	const text = `${markerTitle}${detail ? ` ${detail}` : ""}${pending}`;
+	const continuationIndent = "     ";
+	const contentWidth = Math.max(1, rowWidth - safeVisibleWidth(continuationIndent));
+	const wrapped = safeWrapTextWithAnsi(text, contentWidth).map(trimTrailingRenderPadding);
+	const rows = wrapped.slice(0, Math.max(1, maxRows));
+
+	if (wrapped.length > rows.length) {
+		const lastIndex = rows.length - 1;
+		const ellipsis = reasonixEllipsis(theme);
+		const lastWidth = Math.max(1, contentWidth - safeVisibleWidth(ellipsis));
+		rows[lastIndex] = `${safeTruncateToWidth(rows[lastIndex] ?? "", lastWidth, "")}${ellipsis}`;
+	}
+
+	return rows.map((line, index) => index === 0 ? line : `${continuationIndent}${line}`);
+}
+
 function renderReasonixToolRow(
 	theme: any,
 	toolName: string,
 	detail: string,
-	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean; detailRows?: string[]; maxRows?: number } = {},
 ): Component {
 	return {
 		invalidate() {},
@@ -483,19 +513,27 @@ function renderReasonixToolRow(
 			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
-			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : "✓";
+			const marker = isError ? "✗" : options.isPending || isPartial ? "•" : "✓";
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
-			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
-			const header = options.inlineFooter && compactFooter
-				? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
-				: truncateReasonixLine(theme, headerText, rowWidth);
-			if (!compactFooter || options.inlineFooter) return [header];
+			const markerTitle = `${theme.fg(markerColor, marker)} ${title}`;
+			const detailRows = options.detailRows ?? [detail];
+			let rows: string[];
+			if ((options.maxRows ?? 1) > 1) {
+				rows = renderReasonixWrappedToolRows(theme, markerTitle, detailRows, pending, rowWidth, options.maxRows ?? 1);
+			} else {
+				const headerText = toSingleRenderLine(`${markerTitle}${detail ? ` ${detail}` : ""}${pending}`);
+				const header = options.inlineFooter && compactFooter
+					? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
+					: truncateReasonixLine(theme, headerText, rowWidth);
+				rows = [header];
+			}
+			if (!compactFooter || options.inlineFooter) return rows;
 			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
 			const footer = `  ${theme.fg("dim", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
-			return [header, footer];
-		},
+			return [...rows, footer];
+		}
 	};
 }
 
@@ -543,7 +581,11 @@ export function renderBoxedToolCall(
 	detailLines: string[],
 	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
-	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLines.join(" "), options);
+	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLines[0] ?? "", {
+		...options,
+		detailRows: detailLines,
+		maxRows: REASONIX_MAX_TOOL_CALL_ROWS,
+	});
 	let cache: RenderLinesCache | null = null;
 	return {
 		invalidate() { cache = null; },

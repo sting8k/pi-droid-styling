@@ -5,6 +5,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
+import { getPresentationStyle } from "../presentation/state.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
 import { wrapExecuteWithTiming } from "./elapsed.js";
 
@@ -142,8 +143,9 @@ function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknow
 	const maxCommandLines = 5;
 	const shownCount = Math.min(commandLines.length, maxCommandLines + 1);
 	const detailLines: string[] = [];
+	const usesReasonix = getPresentationStyle() === "reasonix";
 	for (let i = 0; i < shownCount; i++) {
-		const prefix = i === 0 ? theme.fg("dim", "$ ") : theme.fg("dim", "> ");
+		const prefix = i === 0 ? (usesReasonix ? "" : theme.fg("dim", "$ ")) : theme.fg("dim", "> ");
 		detailLines.push(`${prefix}${highlightBashLine(commandLines[i] ?? "", theme)}`);
 	}
 	if (commandLines.length > maxCommandLines + 1) {

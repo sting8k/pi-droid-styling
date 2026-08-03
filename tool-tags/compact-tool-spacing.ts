@@ -77,8 +77,8 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	if (content.length === 0) return [];
 
 	const rowWidth = expanded ? Math.max(1, width) : getReasonixCollapsedRowWidth(width);
-	content[0] = truncateReasonixLine(toSingleRenderLine(content[0] ?? ""), rowWidth);
 	if (expanded) {
+		content[0] = truncateReasonixLine(toSingleRenderLine(content[0] ?? ""), rowWidth);
 		for (let index = 1; index < content.length; index++) {
 			content[index] = truncateReasonixLine(colorReasonixConnector(content[index] ?? ""), rowWidth);
 		}
@@ -92,8 +92,12 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 		footerIndex = index;
 		break;
 	}
-	if (footerIndex < 0) return [content[0] ?? "", ""];
-	return [content[0] ?? "", formatReasonixMetricsLine(content[footerIndex] ?? "", rowWidth), ""];
+
+	const outputIndex = content.findIndex((line, index) => index > 0 && stripAnsi(line).trimStart().startsWith("└─ "));
+	const headerEnd = outputIndex >= 0 ? outputIndex : footerIndex >= 0 ? footerIndex : content.length;
+	const headerRows = content.slice(0, Math.max(1, headerEnd)).map((line) => truncateReasonixLine(toSingleRenderLine(line), rowWidth));
+	if (footerIndex < 0) return [...headerRows, ""];
+	return [...headerRows, formatReasonixMetricsLine(content[footerIndex] ?? "", rowWidth), ""];
 }
 
 function normalizeBoxedLines(lines: string[]): string[] | undefined {
