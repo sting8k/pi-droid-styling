@@ -493,7 +493,7 @@ function renderReasonixToolRow(
 			if (!compactFooter || options.inlineFooter) return [header];
 			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
-			const footer = `  ${theme.fg("borderMuted", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
+			const footer = `  ${theme.fg("dim", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
 			return [header, footer];
 		},
 	};
@@ -512,7 +512,7 @@ function renderReasonixToolBody(
 		},
 		render(width: number): string[] {
 			if (cache?.width === width) return cache.lines;
-			const firstPrefix = `  ${theme.fg("borderMuted", "└─ ")}`;
+			const firstPrefix = `  ${theme.fg("dim", "└─ ")}`;
 			const contentIndent = safeVisibleWidth(firstPrefix);
 			const continuationPrefix = " ".repeat(contentIndent);
 			const bodyWidth = getToolBodyWidth(width, contentIndent);

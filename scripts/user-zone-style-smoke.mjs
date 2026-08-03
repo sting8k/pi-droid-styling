@@ -185,6 +185,10 @@ function makeTheme() {
 async function runBoxEditorSmoke() {
 	const { BoxEditor } = await importBuilt("editor/box-editor.js");
 	const { resolveUserZoneStyle } = await importBuilt("user-zone/designs.js");
+	const { setFullTheme } = await import(pathToFileURL(join(buildDir, "theme/theme-extras.js")).href);
+	const promptThemePath = join(workDir, "prompt-color-theme.json");
+	writeFileSync(promptThemePath, JSON.stringify({ extras: { bashPromptColor: "thinkingText", userPrefixColor: "accent" } }), "utf8");
+	setFullTheme({ sourcePath: promptThemePath }, true);
 	const tui = { terminal: { rows: 32, columns: 100 }, requestRender() {} };
 	const keybindings = { matches: () => false };
 	const usage = () => ({ tokens: 12000, percent: 25, contextWindow: 48000 });
@@ -225,6 +229,7 @@ async function runBoxEditorSmoke() {
 	};
 
 	const droid = renderStyle("droid");
+	const rawDroid = renderStyle("droid", true);
 	const gemini = renderStyle("gemini");
 	const rawGemini = renderStyle("gemini", true);
 	const cliDock = renderStyle("cli-dock", false, 88, cliDockFooter);
@@ -259,6 +264,10 @@ async function runBoxEditorSmoke() {
 	assert(emptyCliDock[1]?.includes("Type a prompt or / for commands"), "cli-dock empty input should render the placeholder text");
 	assert(gemini[0]?.replace(/─/g, "").trim() === "", "gemini divider should always be visible");
 	assert(rawGemini[0]?.includes("\x1b[34m") && rawGemini[0]?.includes("\x1b[1m"), "gemini divider should use bold tool-box border color");
+	const rawGeminiPromptLine = rawGemini.find((line) => stripAnsi(line).includes("❯"));
+	assert(rawGeminiPromptLine?.includes("\x1b[32m❯") && !rawGeminiPromptLine?.includes("\x1b[36m❯"), "gemini input prompt should use user-prefix accent instead of bash prompt color");
+	const rawDroidPromptLine = rawDroid.find((line) => stripAnsi(line).includes("❯"));
+	assert(rawDroidPromptLine?.includes("\x1b[32m❯") && !rawDroidPromptLine?.includes("\x1b[36m❯"), "droid input prompt should use user-prefix accent instead of bash prompt color");
 	assert(gemini[1]?.includes("main"), "gemini status row should put branch on the right");
 	assert(gemini[1]?.includes("openai gpt-test · high"), "gemini status row should render compact provider model thinking level with subtle spacing");
 	assert(!gemini[1]?.includes("[OPENAI]") && !gemini[1]?.includes("think:"), "gemini status row should avoid badge chrome and thinking label noise");

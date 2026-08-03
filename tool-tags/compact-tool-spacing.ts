@@ -3,12 +3,12 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { getPresentationStyle } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
-import { fgHex, stripAnsi } from "../theme/ansi.js";
+import { dropLeadingColumns, fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 8;
+const PATCH_VERSION = 9;
 
 let cachedTheme: any = null;
 
@@ -48,10 +48,19 @@ function truncateReasonixLine(text: string, width: number): string {
 	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis());
 }
 
+function colorReasonixConnector(line: string): string {
+	const visible = stripAnsi(line);
+	const connectorIndex = visible.indexOf("└─ ");
+	if (connectorIndex < 0 || visible.slice(0, connectorIndex).trim().length > 0) return line;
+	const remainder = dropLeadingColumns(line, connectorIndex + 3);
+	const connector = cachedTheme?.fg?.("dim", "└─ ") ?? "└─ ";
+	return `${" ".repeat(connectorIndex)}${connector}${remainder}`;
+}
+
 function formatReasonixMetricsLine(footerLine: string, width: number): string {
 	const footer = toSingleRenderLine(footerLine).trimStart();
-	const prefix = stripAnsi(footer).startsWith("└─ ") ? "  " : `  ${cachedTheme?.fg?.("borderMuted", "└─ ") ?? "└─ "}`;
-	return truncateReasonixLine(`${prefix}${footer}`, width);
+	const line = stripAnsi(footer).startsWith("└─ ") ? `  ${footer}` : `  └─ ${footer}`;
+	return truncateReasonixLine(colorReasonixConnector(line), width);
 }
 
 export function normalizeReasonixToolLines(lines: string[], width: number, expanded: boolean): string[] {
@@ -63,7 +72,7 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	content[0] = truncateReasonixLine(toSingleRenderLine(content[0] ?? ""), rowWidth);
 	if (expanded) {
 		for (let index = 1; index < content.length; index++) {
-			content[index] = truncateReasonixLine(content[index] ?? "", rowWidth);
+			content[index] = truncateReasonixLine(colorReasonixConnector(content[index] ?? ""), rowWidth);
 		}
 		return [...content, ""];
 	}

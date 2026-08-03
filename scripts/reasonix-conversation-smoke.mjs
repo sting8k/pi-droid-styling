@@ -185,8 +185,11 @@ assert(compactToolLines[0]?.indexOf("Read") === 2, "reasonix tool names should s
 assert(!compactToolLines[0]?.includes("└─"), "reasonix compact tools should not create a nested metrics row");
 const nonCompactState = {};
 renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "command output" }] }, { state: nonCompactState });
+const collapsedConnectorFgStart = fgInputs.length;
 const nonCompactToolLines = renderBoxedToolCall(activeTheme, "Bash", ["echo hello"], { state: nonCompactState }).render(80).map(stripAnsi);
 assert(nonCompactToolLines.length === 2 && nonCompactToolLines[1]?.startsWith("  └─ "), "reasonix non-compact tools should retain the separate nested metrics row");
+const collapsedConnectorFg = fgInputs.slice(collapsedConnectorFgStart);
+assert(collapsedConnectorFg.some(({ color, text }) => color === "dim" && text === "└─ ") && !collapsedConnectorFg.some(({ color, text }) => color === "borderMuted" && text === "└─ "), "reasonix collapsed connector should match the dim status line color");
 assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collapsed tool should not render an outer box");
 
 const longMultilineSubject = Array.from({ length: 40 }, (_, index) => `part-${index}`).join("\n");
@@ -222,11 +225,14 @@ const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failin
 assert(dimErrorRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix compact error ellipsis should be dimmed with one leading space");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
+const expandedConnectorFgStart = fgInputs.length;
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
 assert(expandedToolLines.some((line) => line.includes("full detail line one")), "reasonix expanded tool should retain full body");
 assert(expandedToolLines.some((line) => line.includes("full detail line two")), "reasonix expanded tool should retain all body lines");
 assert(!expandedToolLines.some((line) => line.includes("┌") || line.includes("│")), "reasonix expanded tool should use indentation without a box or rail");
 assert(expandedToolLines[0]?.startsWith("  └─ "), "reasonix expanded tool should connect the first output line with a corner");
+const expandedConnectorFg = fgInputs.slice(expandedConnectorFgStart);
+assert(expandedConnectorFg.some(({ color, text }) => color === "dim" && text === "└─ ") && !expandedConnectorFg.some(({ color, text }) => color === "borderMuted" && text === "└─ "), "reasonix expanded connector should match the dim status line color");
 assert(expandedToolLines.slice(1).every((line) => line.startsWith("     ")), "reasonix expanded continuation lines should align below the corner");
 assert(expandedTool.render(24).every((line) => stripAnsi(line).length <= 24), "reasonix expanded body should fit narrow terminals");
 
@@ -271,16 +277,23 @@ const dimGenericBashLike = normalizeReasonixToolLines([dimEllipsisTheme.fg("text
 assert(dimGenericBashLike[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix generic collapsed ellipsis should be dimmed with one leading space");
 const paddedTargetHeader = `${dimEllipsisTheme.fg("text", "✓ Target Edit Path: scripts/reasonix-conversation-smoke.mjs")}${" ".repeat(80)}\x1b[0m`;
 const paddedTargetStatus = `  └─ ${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "4.61s · ⏹ 180s · ✎ ~957 words")}${" ".repeat(80)}\x1b[0m`;
+setToolSpacingTheme(activeTheme);
+const genericConnectorFgStart = fgInputs.length;
 const normalizedPaddedTarget = normalizeReasonixToolLines([paddedTargetHeader, paddedTargetStatus], 160, false).map(stripAnsi);
 assert(normalizedPaddedTarget[0] === "✓ Target Edit Path: scripts/reasonix-conversation-smoke.mjs", "reasonix should remove upstream trailing header padding before truncation");
 assert(normalizedPaddedTarget[1] === "  └─ ◷ 4.61s · ⏹ 180s · ✎ ~957 words", "reasonix should remove upstream trailing status padding before truncation");
+const genericConnectorFg = fgInputs.slice(genericConnectorFgStart);
+assert(genericConnectorFg.some(({ color, text }) => color === "dim" && text === "└─ ") && !genericConnectorFg.some(({ color, text }) => color === "borderMuted" && text === "└─ "), "reasonix generic connector should be recolored to match the dim status line");
 setToolSpacingTheme(activeTheme);
 const expandedFullWidthBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, true).map(stripAnsi);
 assert((expandedFullWidthBashLike[0]?.length ?? 0) === 80, "reasonix expanded tools should keep the full available terminal width");
+const genericExpandedConnectorFgStart = fgInputs.length;
 const expandedBashLike = normalizeReasonixToolLines(["", "─".repeat(80), ...bashLikeLines, ""], 80, true).map(stripAnsi);
 assert(expandedBashLike.length === 5 && expandedBashLike.at(-1) === "", "reasonix expanded tool should preserve summary, output, footer, and one spacer");
 assert(!expandedBashLike[0]?.includes("1.20s"), "reasonix expanded header should not inline footer metrics");
 assert(expandedBashLike[1]?.startsWith("  └─ ") && expandedBashLike[2]?.startsWith("     "), "reasonix expanded output should keep its corner connector and aligned continuation");
+const genericExpandedConnectorFg = fgInputs.slice(genericExpandedConnectorFgStart);
+assert(genericExpandedConnectorFg.some(({ color, text }) => color === "dim" && text === "└─ ") && !genericExpandedConnectorFg.some(({ color, text }) => color === "borderMuted" && text === "└─ "), "reasonix generic expanded connector should match the dim status line color");
 assert(expandedBashLike[3]?.includes("1.20s"), "reasonix expanded footer metrics should remain below output");
 setToolSpacingTheme(dimEllipsisTheme);
 const paddedExpandedGenericRaw = normalizeReasonixToolLines([
