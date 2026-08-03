@@ -174,7 +174,7 @@ assert((responsiveSubjectMedium[0]?.length ?? 0) === 48, "reasonix collapsed too
 assert((responsiveSubjectWide[0]?.length ?? 0) === 72, "reasonix collapsed tool subject should stop at the 72-column hard cap on wide terminals");
 const dimEllipsisTheme = { ...activeTheme, fg: (color, text) => color === "dim" ? `\x1b[2m${text}\x1b[22m` : activeTheme.fg(color, text) };
 const dimEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", longMultilineSubject).render(80);
-assert(dimEllipsisRaw[0]?.includes("\x1b[2m…\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed");
+assert(dimEllipsisRaw[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed with one leading space");
 const noEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test").render(80);
 assert(!noEllipsisRaw[0]?.includes("…"), "reasonix collapsed subject should not show ellipsis when it fits the soft cap");
 const pathUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Target Edit", "Path: scripts/reasonix-conversation-smoke.mjs").render(160);
@@ -191,7 +191,7 @@ assert(!statusUnderSoftCapRaw[1]?.includes("…"), "reasonix collapsed status un
 const dimErrorState = {};
 setCompactBoxedFooter(dimErrorState, dimEllipsisTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failing command", { state: dimErrorState }).render(80);
-assert(dimErrorRaw[1]?.includes("\x1b[2m…\x1b[22m"), "reasonix collapsed error ellipsis should be dimmed");
+assert(dimErrorRaw[1]?.includes("\x1b[2m …\x1b[22m"), "reasonix collapsed error ellipsis should be dimmed with one leading space");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
@@ -220,7 +220,12 @@ const softCappedBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `�
 assert((softCappedBashLike[0]?.length ?? 0) === 48 && (softCappedBashLike[1]?.length ?? 0) <= 48, "reasonix generic collapsed tools should share the 60% soft cap");
 setToolSpacingTheme(dimEllipsisTheme);
 const dimGenericBashLike = normalizeReasonixToolLines([dimEllipsisTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false);
-assert(dimGenericBashLike[0]?.includes("\x1b[2m…\x1b[22m"), "reasonix generic collapsed ellipsis should be dimmed");
+assert(dimGenericBashLike[0]?.includes("\x1b[2m …\x1b[22m"), "reasonix generic collapsed ellipsis should be dimmed with one leading space");
+const paddedTargetHeader = `${dimEllipsisTheme.fg("text", "✓ Target Edit Path: scripts/reasonix-conversation-smoke.mjs")}${" ".repeat(80)}\x1b[0m`;
+const paddedTargetStatus = `  └─ ${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "4.61s · ⏹ 180s · ✎ ~957 words")}${" ".repeat(80)}\x1b[0m`;
+const normalizedPaddedTarget = normalizeReasonixToolLines([paddedTargetHeader, paddedTargetStatus], 160, false).map(stripAnsi);
+assert(normalizedPaddedTarget[0] === "✓ Target Edit Path: scripts/reasonix-conversation-smoke.mjs", "reasonix should remove upstream trailing header padding before truncation");
+assert(normalizedPaddedTarget[1] === "  └─ ◷ 4.61s · ⏹ 180s · ✎ ~957 words", "reasonix should remove upstream trailing status padding before truncation");
 setToolSpacingTheme(activeTheme);
 const expandedFullWidthBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, true).map(stripAnsi);
 assert((expandedFullWidthBashLike[0]?.length ?? 0) === 80, "reasonix expanded tools should keep the full available terminal width");

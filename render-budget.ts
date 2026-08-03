@@ -287,6 +287,12 @@ export function safeVisibleWidth(text: string): number {
 	return tuiVisibleWidth(text);
 }
 
+const TRAILING_RENDER_PADDING_PATTERN = /[ \t]+((?:\x1b\[[0-9;?]*[ -/]*[@-~])*)$/;
+
+export function trimTrailingRenderPadding(text: string): string {
+	return text.replace(TRAILING_RENDER_PADDING_PATTERN, "$1");
+}
+
 export function toSingleRenderLine(text: string): string {
 	return text.replace(/[\t\n\v\f\r]+/g, " ");
 }

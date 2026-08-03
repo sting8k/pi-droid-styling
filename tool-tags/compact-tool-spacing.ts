@@ -2,13 +2,13 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationStyle } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
-import { safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine } from "../render-budget.js";
+import { safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 6;
+const PATCH_VERSION = 7;
 
 let cachedTheme: any = null;
 
@@ -38,13 +38,14 @@ function isFullWidthDivider(line: string, width: number): boolean {
 }
 
 function reasonixEllipsis(): string {
-	return cachedTheme?.fg?.("dim", "…") ?? "…";
+	return cachedTheme?.fg?.("dim", " …") ?? " …";
 }
 
 function truncateReasonixLine(text: string, width: number): string {
+	const content = trimTrailingRenderPadding(text);
 	const rowWidth = Math.max(1, Math.floor(width));
-	if (safeVisibleWidth(text) <= rowWidth) return text;
-	return safeTruncateToWidth(text, rowWidth, reasonixEllipsis());
+	if (safeVisibleWidth(content) <= rowWidth) return content;
+	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis());
 }
 
 function formatReasonixMetricsLine(footerLine: string, width: number): string {

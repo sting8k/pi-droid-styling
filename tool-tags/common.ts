@@ -5,7 +5,7 @@ import { relative, resolve } from "node:path";
 
 import { getPresentationStyle } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
-import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine } from "../render-budget.js";
+import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
 import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
 import { getThemeExtra, getThemePageBackground, getThemeVarBackground } from "../theme/theme-extras.js";
@@ -446,13 +446,14 @@ function isReasonixPresentation(): boolean {
 }
 
 function reasonixEllipsis(theme: any): string {
-	return typeof theme?.fg === "function" ? theme.fg("dim", "…") : "…";
+	return typeof theme?.fg === "function" ? theme.fg("dim", " …") : " …";
 }
 
 function truncateReasonixLine(theme: any, text: string, width: number): string {
+	const content = trimTrailingRenderPadding(text);
 	const rowWidth = Math.max(1, Math.floor(width));
-	if (safeVisibleWidth(text) <= rowWidth) return text;
-	return safeTruncateToWidth(text, rowWidth, reasonixEllipsis(theme));
+	if (safeVisibleWidth(content) <= rowWidth) return content;
+	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis(theme));
 }
 
 function renderReasonixToolRow(
