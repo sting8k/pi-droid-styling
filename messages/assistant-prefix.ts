@@ -1,5 +1,6 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { REASONIX_MARKER_GAP } from "../presentation/reasonix-layout.js";
 import { getPresentationStyle } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
@@ -28,6 +29,10 @@ function buildDividerLine(width: number): string {
 
 function composePrefixedLine(line: string): string {
 	const prefix = buildPrefixSegment();
+	if (usesReasonixPresentation()) {
+		if (!line) return `${prefix}${REASONIX_MARKER_GAP}`;
+		return startsWithVisibleSpace(line) ? `${prefix}${line}` : `${prefix}${REASONIX_MARKER_GAP}${line}`;
+	}
 	if (!line) return `${prefix}  `;
 	return startsWithVisibleSpace(line) ? `${prefix} ${line}` : `${prefix}  ${line}`;
 }

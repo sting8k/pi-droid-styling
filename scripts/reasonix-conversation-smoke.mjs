@@ -131,14 +131,20 @@ setPresentationStyle("reasonix");
 installUserMessagePrefix(activeTheme);
 installAssistantMessagePrefix(activeTheme);
 const userLines = new UserMessageComponent("hello\nworld").render(40).map(stripAnsi);
-assert(userLines[0]?.includes("❯  hello"), "reasonix user should start directly with a compact prompt marker");
+assert(userLines[0]?.startsWith("❯ hello") && userLines[0]?.indexOf("hello") === 2, "reasonix user content should start one space after its marker");
+assert(userLines[1]?.indexOf("world") === 2, "reasonix user continuation content should align with the first-line content column");
 assert(!userLines.some((line) => line.includes("─".repeat(40))), "reasonix user should not render a full-width divider");
 assert(!new UserMessageComponent("hello").render(40).some((line) => line.includes("\x1b[48;")), "reasonix user should not render a background card");
 assert(userLines.at(-1) === "", "reasonix user block should keep one trailing spacer row");
 
 const assistantMessage = { role: "assistant", content: [{ type: "text", text: "answer\nmore" }] };
 const assistantLines = new AssistantMessageComponent(assistantMessage).render(40).map(stripAnsi);
-assert(assistantLines[0]?.includes("•  answer"), "reasonix assistant should start directly with a compact role marker");
+assert(assistantLines[0]?.startsWith("• answer") && assistantLines[0]?.indexOf("answer") === 2, "reasonix assistant content should start one space after its marker");
+assert(assistantLines[1]?.indexOf("more") === 2, "reasonix assistant continuation content should align with the first-line content column");
+const thinkingAssistantMessage = { role: "assistant", content: [{ type: "thinking", thinking: "considering" }, { type: "text", text: "response" }] };
+const thinkingAssistantLines = new AssistantMessageComponent(thinkingAssistantMessage).render(40).map(stripAnsi);
+assert(thinkingAssistantLines.find((line) => line.includes("considering"))?.indexOf("considering") === 2, "reasonix assistant thinking should share the marker content column");
+assert(thinkingAssistantLines.find((line) => line.includes("response"))?.indexOf("response") === 2, "reasonix assistant response after thinking should keep the same content column");
 assert(!assistantLines.some((line) => line.includes("─".repeat(40))), "reasonix assistant should not render a full-width divider");
 assert(fgCalls.includes("accent"), "reasonix prefix should use the active theme accent token");
 assert(assistantLines.at(-1) === "", "reasonix assistant block should keep one trailing spacer row");
@@ -162,6 +168,7 @@ const compactTool = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.
 const compactToolLines = compactTool.render(80).map(stripAnsi);
 assert(compactToolLines.length === 2, "reasonix collapsed tool component should render header plus metrics row");
 assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed header should retain semantic success status, tool name, and subject");
+assert(compactToolLines[0]?.indexOf("Read") === 2, "reasonix tool names should share the user/assistant content column");
 assert(compactToolLines[1]?.startsWith("  └─ ") && compactToolLines[1]?.includes("◷"), "reasonix collapsed metrics should occupy the first output position");
 assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collapsed tool should not render an outer box");
 

@@ -1,5 +1,6 @@
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { REASONIX_MARKER_GAP } from "../presentation/reasonix-layout.js";
 import { getPresentationStyle } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
@@ -35,7 +36,7 @@ function buildPrefixSegment(): string {
 	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix}  `;
+	return `${prefix}${usesReasonixPresentation() ? REASONIX_MARKER_GAP : "  "}`;
 }
 
 function buildDividerLine(width: number): string {
@@ -59,7 +60,7 @@ function buildContinuationSegment(): string {
 	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix}  `;
+	return `${prefix}${usesReasonixPresentation() ? REASONIX_MARKER_GAP : "  "}`;
 }
 
 function alignContinuationLines(lines: string[], targetIndex: number): void {
