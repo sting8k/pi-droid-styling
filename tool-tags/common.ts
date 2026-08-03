@@ -487,11 +487,11 @@ function renderReasonixToolBody(
 			const bodyLines = typeof body === "function" ? body(bodyWidth) : body.render(bodyWidth);
 			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
-			const rail = theme.fg("borderMuted", "│ ");
+			const indent = "  ";
 			const rendered = [
-				...(options.isError ? [`${theme.fg("error", "✗ Error")} `] : []),
-				...limited.map((line) => `${rail}${safeTruncateToWidth(line, bodyWidth, "…")}`),
-				...(options.footerLines ?? []).map((line) => `${rail}${safeTruncateToWidth(line, bodyWidth, "…")}`),
+				...(options.isError ? [`${indent}${theme.fg("error", "✗ Error")}`] : []),
+				...limited.map((line) => `${indent}${safeTruncateToWidth(line, bodyWidth, "…")}`),
+				...(options.footerLines ?? []).map((line) => `${indent}${safeTruncateToWidth(line, bodyWidth, "…")}`),
 			];
 			cache = { width, lines: rendered };
 			return rendered;

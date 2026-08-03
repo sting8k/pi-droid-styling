@@ -164,8 +164,9 @@ const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
 assert(expandedToolLines.some((line) => line.includes("full detail line one")), "reasonix expanded tool should retain full body");
 assert(expandedToolLines.some((line) => line.includes("full detail line two")), "reasonix expanded tool should retain all body lines");
-assert(!expandedToolLines.some((line) => line.includes("┌")), "reasonix expanded tool should use a rail instead of an outer box");
-assert(expandedTool.render(24).every((line) => stripAnsi(line).length <= 24), "reasonix expanded rail should fit narrow terminals");
+assert(!expandedToolLines.some((line) => line.includes("┌") || line.includes("│")), "reasonix expanded tool should use indentation without a box or rail");
+assert(expandedToolLines.every((line) => line.startsWith("  ")), "reasonix expanded tool body should be indented");
+assert(expandedTool.render(24).every((line) => stripAnsi(line).length <= 24), "reasonix expanded body should fit narrow terminals");
 
 class FakeToolExecutionComponent {
 	constructor() { this.toolName = "quick_edit"; }
@@ -206,7 +207,7 @@ const quickEditOutput = quickEditRenderer(
 const quickEditLines = quickEditOutput.render(80).map(stripAnsi);
 assert(quickEditLines.some((line) => line.includes("old")), "reasonix quick-edit expanded view should retain removals");
 assert(quickEditLines.some((line) => line.includes("new")), "reasonix quick-edit expanded view should retain additions");
-assert(!quickEditLines.some((line) => line.includes("┌")), "reasonix quick-edit should use the shared reasonix rail renderer");
+assert(quickEditLines.every((line) => line.startsWith("  ") && !line.startsWith("│ ")), "reasonix quick-edit should use indentation without an outer rail");
 
 setPresentationStyle("droid");
 const droidToolLines = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState }).render(80).map(stripAnsi);
