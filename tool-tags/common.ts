@@ -449,6 +449,12 @@ function reasonixEllipsis(theme: any): string {
 	return typeof theme?.fg === "function" ? theme.fg("dim", "…") : "…";
 }
 
+function truncateReasonixLine(theme: any, text: string, width: number): string {
+	const rowWidth = Math.max(1, Math.floor(width));
+	if (safeVisibleWidth(text) <= rowWidth) return text;
+	return safeTruncateToWidth(text, rowWidth, reasonixEllipsis(theme));
+}
+
 function renderReasonixToolRow(
 	theme: any,
 	toolName: string,
@@ -470,12 +476,11 @@ function renderReasonixToolRow(
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
-			const ellipsis = reasonixEllipsis(theme);
-			const header = safeTruncateToWidth(headerText, rowWidth, ellipsis);
+			const header = truncateReasonixLine(theme, headerText, rowWidth);
 			if (!compactFooter) return [header];
 			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
-			const footer = `  ${theme.fg("borderMuted", "└─ ")}${safeTruncateToWidth(footerText, footerWidth, ellipsis)}`;
+			const footer = `  ${theme.fg("borderMuted", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
 			return [header, footer];
 		},
 	};

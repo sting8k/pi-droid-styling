@@ -2,7 +2,7 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationStyle } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
-import { safeTruncateToWidth, toSingleRenderLine } from "../render-budget.js";
+import { safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
@@ -41,10 +41,16 @@ function reasonixEllipsis(): string {
 	return cachedTheme?.fg?.("dim", "…") ?? "…";
 }
 
+function truncateReasonixLine(text: string, width: number): string {
+	const rowWidth = Math.max(1, Math.floor(width));
+	if (safeVisibleWidth(text) <= rowWidth) return text;
+	return safeTruncateToWidth(text, rowWidth, reasonixEllipsis());
+}
+
 function formatReasonixMetricsLine(footerLine: string, width: number): string {
 	const footer = toSingleRenderLine(footerLine).trimStart();
 	const prefix = stripAnsi(footer).startsWith("└─ ") ? "  " : `  ${cachedTheme?.fg?.("borderMuted", "└─ ") ?? "└─ "}`;
-	return safeTruncateToWidth(`${prefix}${footer}`, Math.max(1, width), reasonixEllipsis());
+	return truncateReasonixLine(`${prefix}${footer}`, width);
 }
 
 export function normalizeReasonixToolLines(lines: string[], width: number, expanded: boolean): string[] {
@@ -53,7 +59,7 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	if (content.length === 0) return [];
 
 	const rowWidth = expanded ? Math.max(1, width) : getReasonixCollapsedRowWidth(width);
-	content[0] = safeTruncateToWidth(toSingleRenderLine(content[0] ?? ""), rowWidth, reasonixEllipsis());
+	content[0] = truncateReasonixLine(toSingleRenderLine(content[0] ?? ""), rowWidth);
 	if (expanded) return [...content, ""];
 
 	let footerIndex = -1;

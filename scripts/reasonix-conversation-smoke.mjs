@@ -177,11 +177,17 @@ const dimEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", long
 assert(dimEllipsisRaw[0]?.includes("\x1b[2m…\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed");
 const noEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test").render(80);
 assert(!noEllipsisRaw[0]?.includes("…"), "reasonix collapsed subject should not show ellipsis when it fits the soft cap");
+const pathUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Target Edit", "Path: scripts/reasonix-conversation-smoke.mjs").render(160);
+assert(!pathUnderSoftCapRaw[0]?.includes("…"), "reasonix collapsed path under the 72-column cap should not show ellipsis");
 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(80).map(stripAnsi);
 assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 48, "reasonix collapsed error should share the responsive 60% soft cap");
+const statusUnderSoftCapState = {};
+setCompactBoxedFooter(statusUnderSoftCapState, `${dimEllipsisTheme.fg("text", "◷")} ${dimEllipsisTheme.fg("dim", "4.61s · ⏹ 180s · ✎ ~957 words")}`);
+const statusUnderSoftCapRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test", { state: statusUnderSoftCapState }).render(160);
+assert(!statusUnderSoftCapRaw[1]?.includes("…"), "reasonix collapsed status under the 72-column cap should not show ellipsis");
 const dimErrorState = {};
 setCompactBoxedFooter(dimErrorState, dimEllipsisTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failing command", { state: dimErrorState }).render(80);
