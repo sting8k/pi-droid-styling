@@ -151,7 +151,7 @@ assert(droidUser.some((line) => line.includes("─".repeat(40))), "droid user sh
 const droidAssistant = new AssistantMessageComponent(assistantMessage).render(40).map(stripAnsi);
 assert(droidAssistant.some((line) => line.includes("─".repeat(40))), "droid assistant should retain its divider");
 
-const { renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult } = await importBuilt("tool-tags/common.js");
+const { renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
 const { installCompactToolSpacing, normalizeReasonixToolLines, setToolSpacingTheme } = await importBuilt("tool-tags/compact-tool-spacing.js");
 
@@ -164,6 +164,17 @@ assert(compactToolLines.length === 2, "reasonix collapsed tool component should 
 assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed header should retain semantic success status, tool name, and subject");
 assert(compactToolLines[1]?.startsWith("  └─ ") && compactToolLines[1]?.includes("◷"), "reasonix collapsed metrics should occupy the first output position");
 assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collapsed tool should not render an outer box");
+
+const longMultilineSubject = Array.from({ length: 40 }, (_, index) => `part-${index}`).join("\n");
+const responsiveSubjectNarrow = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(24).map(stripAnsi);
+const responsiveSubjectWide = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(40).map(stripAnsi);
+assert(responsiveSubjectNarrow.length === 1 && !responsiveSubjectNarrow[0]?.includes("\n") && (responsiveSubjectNarrow[0]?.length ?? 0) <= 24, "reasonix collapsed tool subject should stay on one physical row at narrow widths");
+assert((responsiveSubjectWide[0]?.length ?? 0) > (responsiveSubjectNarrow[0]?.length ?? 0) && (responsiveSubjectWide[0]?.length ?? 0) <= 40, "reasonix collapsed tool subject should use the available terminal width responsively");
+
+const longErrorState = {};
+setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
+const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(24).map(stripAnsi);
+assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 24, "reasonix collapsed error should stay on one responsive output row");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);

@@ -287,6 +287,10 @@ export function safeVisibleWidth(text: string): number {
 	return tuiVisibleWidth(text);
 }
 
+export function toSingleRenderLine(text: string): string {
+	return text.replace(/[\t\n\v\f\r]+/g, " ");
+}
+
 export function safeTruncateToWidth(text: string, maxWidth: number, ellipsis = "...", pad = false): string {
 	const width = Math.floor(maxWidth);
 	if (!Number.isFinite(width) || width <= 0) return "";
