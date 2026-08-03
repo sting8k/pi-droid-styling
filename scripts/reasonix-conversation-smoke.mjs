@@ -172,11 +172,20 @@ const responsiveSubjectWide = renderCompactBoxedToolCall(activeTheme, "Bash", lo
 assert(responsiveSubjectNarrow.length === 1 && !responsiveSubjectNarrow[0]?.includes("\n") && (responsiveSubjectNarrow[0]?.length ?? 0) <= 24, "reasonix collapsed tool subject should stay on one physical row at narrow widths");
 assert((responsiveSubjectMedium[0]?.length ?? 0) === 48, "reasonix collapsed tool subject should use a 60% soft cap at medium widths");
 assert((responsiveSubjectWide[0]?.length ?? 0) === 72, "reasonix collapsed tool subject should stop at the 72-column hard cap on wide terminals");
+const dimEllipsisTheme = { ...activeTheme, fg: (color, text) => color === "dim" ? `\x1b[2m${text}\x1b[22m` : activeTheme.fg(color, text) };
+const dimEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", longMultilineSubject).render(80);
+assert(dimEllipsisRaw[0]?.includes("\x1b[2m…\x1b[22m"), "reasonix collapsed subject ellipsis should be dimmed");
+const noEllipsisRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "npm test").render(80);
+assert(!noEllipsisRaw[0]?.includes("…"), "reasonix collapsed subject should not show ellipsis when it fits the soft cap");
 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
 const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(80).map(stripAnsi);
 assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 48, "reasonix collapsed error should share the responsive 60% soft cap");
+const dimErrorState = {};
+setCompactBoxedFooter(dimErrorState, dimEllipsisTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
+const dimErrorRaw = renderCompactBoxedToolCall(dimEllipsisTheme, "Bash", "failing command", { state: dimErrorState }).render(80);
+assert(dimErrorRaw[1]?.includes("\x1b[2m…\x1b[22m"), "reasonix collapsed error ellipsis should be dimmed");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
@@ -203,6 +212,10 @@ const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, fa
 assert((narrowCollapsedBashLike[1]?.length ?? 0) <= 24 && narrowCollapsedBashLike[1]?.includes("1.20s"), "reasonix narrow collapsed metrics should retain duration without overflow");
 const softCappedBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false).map(stripAnsi);
 assert((softCappedBashLike[0]?.length ?? 0) === 48 && (softCappedBashLike[1]?.length ?? 0) <= 48, "reasonix generic collapsed tools should share the 60% soft cap");
+setToolSpacingTheme(dimEllipsisTheme);
+const dimGenericBashLike = normalizeReasonixToolLines([dimEllipsisTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false);
+assert(dimGenericBashLike[0]?.includes("\x1b[2m…\x1b[22m"), "reasonix generic collapsed ellipsis should be dimmed");
+setToolSpacingTheme(activeTheme);
 const expandedFullWidthBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, true).map(stripAnsi);
 assert((expandedFullWidthBashLike[0]?.length ?? 0) === 80, "reasonix expanded tools should keep the full available terminal width");
 const expandedBashLike = normalizeReasonixToolLines(["", "─".repeat(80), ...bashLikeLines, ""], 80, true).map(stripAnsi);

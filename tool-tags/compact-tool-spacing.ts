@@ -37,10 +37,14 @@ function isFullWidthDivider(line: string, width: number): boolean {
 	return Boolean(dividerChar) && stripAnsi(line) === dividerChar.repeat(width);
 }
 
+function reasonixEllipsis(): string {
+	return cachedTheme?.fg?.("dim", "…") ?? "…";
+}
+
 function formatReasonixMetricsLine(footerLine: string, width: number): string {
 	const footer = toSingleRenderLine(footerLine).trimStart();
 	const prefix = stripAnsi(footer).startsWith("└─ ") ? "  " : `  ${cachedTheme?.fg?.("borderMuted", "└─ ") ?? "└─ "}`;
-	return safeTruncateToWidth(`${prefix}${footer}`, Math.max(1, width), "…");
+	return safeTruncateToWidth(`${prefix}${footer}`, Math.max(1, width), reasonixEllipsis());
 }
 
 export function normalizeReasonixToolLines(lines: string[], width: number, expanded: boolean): string[] {
@@ -49,7 +53,7 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	if (content.length === 0) return [];
 
 	const rowWidth = expanded ? Math.max(1, width) : getReasonixCollapsedRowWidth(width);
-	content[0] = safeTruncateToWidth(toSingleRenderLine(content[0] ?? ""), rowWidth, "…");
+	content[0] = safeTruncateToWidth(toSingleRenderLine(content[0] ?? ""), rowWidth, reasonixEllipsis());
 	if (expanded) return [...content, ""];
 
 	let footerIndex = -1;

@@ -445,6 +445,10 @@ function isReasonixPresentation(): boolean {
 	return getPresentationStyle() === "reasonix";
 }
 
+function reasonixEllipsis(theme: any): string {
+	return typeof theme?.fg === "function" ? theme.fg("dim", "…") : "…";
+}
+
 function renderReasonixToolRow(
 	theme: any,
 	toolName: string,
@@ -466,11 +470,12 @@ function renderReasonixToolRow(
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
-			const header = safeTruncateToWidth(headerText, rowWidth, "…");
+			const ellipsis = reasonixEllipsis(theme);
+			const header = safeTruncateToWidth(headerText, rowWidth, ellipsis);
 			if (!compactFooter) return [header];
 			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
-			const footer = `  ${theme.fg("borderMuted", "└─ ")}${safeTruncateToWidth(footerText, footerWidth, "…")}`;
+			const footer = `  ${theme.fg("borderMuted", "└─ ")}${safeTruncateToWidth(footerText, footerWidth, ellipsis)}`;
 			return [header, footer];
 		},
 	};
