@@ -1,13 +1,13 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationStyle } from "../presentation/state.js";
-import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { safeTruncateToWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 3;
+const PATCH_VERSION = 4;
 
 let cachedTheme: any = null;
 
@@ -36,12 +36,10 @@ function isFullWidthDivider(line: string, width: number): boolean {
 	return Boolean(dividerChar) && stripAnsi(line) === dividerChar.repeat(width);
 }
 
-function mergeReasonixSummaryFooter(summary: string, footer: string, width: number): string {
-	const separator = ` ${cachedTheme?.fg?.("dim", "·") ?? "·"} `;
-	const footerBudget = Math.min(safeVisibleWidth(footer), Math.max(10, Math.floor(width * 0.45)));
-	const renderedFooter = safeTruncateToWidth(footer, footerBudget, "…");
-	const summaryBudget = Math.max(1, width - safeVisibleWidth(separator) - safeVisibleWidth(renderedFooter));
-	return `${safeTruncateToWidth(summary, summaryBudget, "…")}${separator}${renderedFooter}`;
+function formatReasonixMetricsLine(footerLine: string, width: number): string {
+	const footer = footerLine.trimStart();
+	const prefix = stripAnsi(footer).startsWith("└─ ") ? "  " : `  ${cachedTheme?.fg?.("borderMuted", "└─ ") ?? "└─ "}`;
+	return safeTruncateToWidth(`${prefix}${footer}`, Math.max(1, width), "…");
 }
 
 export function normalizeReasonixToolLines(lines: string[], width: number, expanded: boolean): string[] {
@@ -49,20 +47,18 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	while (content.length > 0 && isFullWidthDivider(content[0] ?? "", width)) content.shift();
 	if (content.length === 0) return [];
 
+	content[0] = safeTruncateToWidth(content[0] ?? "", Math.max(1, width), "…");
+	if (expanded) return [...content, ""];
+
 	let footerIndex = -1;
 	for (let index = content.length - 1; index > 0; index--) {
-		if (!stripAnsi(content[index] ?? "").includes("◷")) continue;
+		const plain = stripAnsi(content[index] ?? "").trimStart();
+		if (!plain.includes("◷") && !(content.length === 2 && plain.startsWith("└─ "))) continue;
 		footerIndex = index;
 		break;
 	}
-	let summary = content[0] ?? "";
-	if (footerIndex > 0) {
-		const footer = (content[footerIndex] ?? "").trimStart();
-		if (!stripAnsi(summary).includes("◷")) summary = mergeReasonixSummaryFooter(summary, footer, width);
-		content.splice(footerIndex, 1);
-	}
-	content[0] = safeTruncateToWidth(summary, Math.max(1, width), "…");
-	return expanded ? content : [content[0] ?? ""];
+	if (footerIndex < 0) return [content[0] ?? "", ""];
+	return [content[0] ?? "", formatReasonixMetricsLine(content[footerIndex] ?? "", width), ""];
 }
 
 function normalizeBoxedLines(lines: string[]): string[] | undefined {
@@ -75,8 +71,8 @@ function normalizeBoxedLines(lines: string[]): string[] | undefined {
 
 /**
  * Normalizes ToolExecution spacing without stacking reload patches.
- * Reasonix removes outer spacers/dividers and folds collapsed output into the
- * summary row. Droid keeps the existing boxed/non-boxed spacing behavior.
+ * Reasonix removes outer dividers, keeps one spacer row, and folds collapsed
+ * output into a header plus metrics connector. Droid keeps existing spacing.
  */
 export function installCompactToolSpacing(ToolExecutionComponentClass: any = ToolExecutionComponent): void {
 	const proto = ToolExecutionComponentClass?.prototype as any;

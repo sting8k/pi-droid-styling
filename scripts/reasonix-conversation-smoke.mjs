@@ -134,12 +134,14 @@ const userLines = new UserMessageComponent("hello\nworld").render(40).map(stripA
 assert(userLines[0]?.includes("❯  hello"), "reasonix user should start directly with a compact prompt marker");
 assert(!userLines.some((line) => line.includes("─".repeat(40))), "reasonix user should not render a full-width divider");
 assert(!new UserMessageComponent("hello").render(40).some((line) => line.includes("\x1b[48;")), "reasonix user should not render a background card");
+assert(userLines.at(-1) === "", "reasonix user block should keep one trailing spacer row");
 
 const assistantMessage = { role: "assistant", content: [{ type: "text", text: "answer\nmore" }] };
 const assistantLines = new AssistantMessageComponent(assistantMessage).render(40).map(stripAnsi);
 assert(assistantLines[0]?.includes("•  answer"), "reasonix assistant should start directly with a compact role marker");
 assert(!assistantLines.some((line) => line.includes("─".repeat(40))), "reasonix assistant should not render a full-width divider");
 assert(fgCalls.includes("accent"), "reasonix prefix should use the active theme accent token");
+assert(assistantLines.at(-1) === "", "reasonix assistant block should keep one trailing spacer row");
 
 setPresentationStyle("droid");
 const droidUserRaw = new UserMessageComponent("hello").render(40);
@@ -158,9 +160,10 @@ const toolState = {};
 renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated file" }] }, { state: toolState });
 const compactTool = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState });
 const compactToolLines = compactTool.render(80).map(stripAnsi);
-assert(compactToolLines.length === 1, "reasonix collapsed tool should render one summary row");
-assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed summary should retain semantic success status, tool name, and subject");
-assert(!compactToolLines[0]?.includes("┌"), "reasonix collapsed tool should not render an outer box");
+assert(compactToolLines.length === 2, "reasonix collapsed tool component should render header plus metrics row");
+assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts"), "reasonix completed header should retain semantic success status, tool name, and subject");
+assert(compactToolLines[1]?.startsWith("  └─ ") && compactToolLines[1]?.includes("◷"), "reasonix collapsed metrics should occupy the first output position");
+assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collapsed tool should not render an outer box");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
@@ -179,23 +182,25 @@ const bashLikeLines = [
 	`     ${activeTheme.fg("text", "◷")} ${activeTheme.fg("dim", "1.20s · 4 words")}`,
 ];
 const collapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 80, false).map(stripAnsi);
-assert(collapsedBashLike.length === 1, "reasonix collapsed tool should discard every preview body line");
-assert(collapsedBashLike[0]?.includes("Bash npm test") && collapsedBashLike[0]?.includes("1.20s"), "reasonix collapsed summary should retain call subject and footer metrics");
-assert(!collapsedBashLike[0]?.includes("preview"), "reasonix collapsed summary should not leak the N-line preview");
+assert(collapsedBashLike.length === 3 && collapsedBashLike.at(-1) === "", "reasonix collapsed tool should render two visible rows plus one spacer");
+assert(collapsedBashLike[0]?.includes("Bash npm test") && !collapsedBashLike[0]?.includes("1.20s"), "reasonix collapsed header should retain call subject without inline metrics");
+assert(collapsedBashLike[1]?.startsWith("  └─ ") && collapsedBashLike[1]?.includes("1.20s"), "reasonix collapsed metrics should occupy the first output position");
+assert(!collapsedBashLike.some((line) => line.includes("preview")), "reasonix collapsed tool should discard every preview body line");
 const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, false).map(stripAnsi);
-assert((narrowCollapsedBashLike[0]?.length ?? 0) <= 24 && narrowCollapsedBashLike[0]?.includes("1.20s"), "reasonix narrow collapsed summary should retain duration without overflow");
+assert((narrowCollapsedBashLike[1]?.length ?? 0) <= 24 && narrowCollapsedBashLike[1]?.includes("1.20s"), "reasonix narrow collapsed metrics should retain duration without overflow");
 const expandedBashLike = normalizeReasonixToolLines(["", "─".repeat(80), ...bashLikeLines, ""], 80, true).map(stripAnsi);
-assert(expandedBashLike.length === 3, "reasonix expanded tool should retain summary and output while moving footer metrics into summary");
-assert(expandedBashLike[0]?.includes("1.20s"), "reasonix expanded summary should retain footer metrics");
+assert(expandedBashLike.length === 5 && expandedBashLike.at(-1) === "", "reasonix expanded tool should preserve summary, output, footer, and one spacer");
+assert(!expandedBashLike[0]?.includes("1.20s"), "reasonix expanded header should not inline footer metrics");
 assert(expandedBashLike[1]?.startsWith("  └─ ") && expandedBashLike[2]?.startsWith("     "), "reasonix expanded output should keep its corner connector and aligned continuation");
+assert(expandedBashLike[3]?.includes("1.20s"), "reasonix expanded footer metrics should remain below output");
 
 class FakeSpacingToolExecution {
 	constructor(expanded) { this.expanded = expanded; }
 	render() { return ["", "─".repeat(80), ...bashLikeLines, ""]; }
 }
 installCompactToolSpacing(FakeSpacingToolExecution);
-assert(new FakeSpacingToolExecution(false).render(80).length === 1, "reasonix ToolExecution patch should enforce one collapsed row");
-assert(new FakeSpacingToolExecution(true).render(80).length === 3, "reasonix ToolExecution patch should preserve expanded summary and output");
+assert(new FakeSpacingToolExecution(false).render(80).length === 3, "reasonix ToolExecution patch should enforce two collapsed visible rows plus spacing");
+assert(new FakeSpacingToolExecution(true).render(80).length === 5, "reasonix ToolExecution patch should preserve expanded body/footer plus spacing");
 
 class FakeToolExecutionComponent {
 	constructor() { this.toolName = "quick_edit"; }
@@ -212,8 +217,8 @@ const quickEditCall = quickEditCallRenderer({ path: "src/demo.ts" }, activeTheme
 const collapsedQuickEdit = quickEditRenderer(quickEditResult, { expanded: false }, activeTheme, { state: quickEditState, args: { path: "src/demo.ts" }, cwd: process.cwd() });
 assert(collapsedQuickEdit.render(80).length === 0, "reasonix quick-edit collapsed result should fold into the call row");
 const collapsedQuickEditLines = quickEditCall.render(80).map(stripAnsi);
-assert(collapsedQuickEditLines.length === 1, "reasonix quick-edit collapsed view should stay one row");
-assert(collapsedQuickEditLines[0]?.includes("+1") && collapsedQuickEditLines[0]?.includes("-1"), "reasonix quick-edit collapsed row should retain diff stats");
+assert(collapsedQuickEditLines.length === 2, "reasonix quick-edit collapsed component should render header plus metrics row");
+assert(collapsedQuickEditLines[1]?.startsWith("  └─ ") && collapsedQuickEditLines[1]?.includes("+1") && collapsedQuickEditLines[1]?.includes("-1"), "reasonix quick-edit collapsed metrics row should retain diff stats");
 
 const quickEditErrorState = {};
 const quickEditErrorCall = quickEditCallRenderer({ path: "src/demo.ts" }, activeTheme, { state: quickEditErrorState, cwd: process.cwd() });
@@ -224,8 +229,8 @@ const collapsedQuickEditError = quickEditRenderer(
 	{ state: quickEditErrorState, isError: true, args: { path: "src/demo.ts" }, cwd: process.cwd() },
 );
 assert(collapsedQuickEditError.render(80).length === 0, "reasonix quick-edit error should fold into the call row");
-const quickEditErrorLine = stripAnsi(quickEditErrorCall.render(80)[0] ?? "");
-assert(quickEditErrorLine.includes("✗") && quickEditErrorLine.includes("edit failed"), "reasonix quick-edit collapsed error should retain status and message");
+const quickEditErrorLines = quickEditErrorCall.render(80).map(stripAnsi);
+assert(quickEditErrorLines[0]?.includes("✗") && quickEditErrorLines[1]?.startsWith("  └─ ") && quickEditErrorLines[1]?.includes("edit failed"), "reasonix quick-edit collapsed error should retain status and message across header/output rows");
 
 const quickEditOutput = quickEditRenderer(
 	quickEditResult,

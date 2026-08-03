@@ -10,7 +10,7 @@ import {
 	countDiffStats,
 	renderDiffMeter,
 } from "../split-diff.js";
-import { formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, setCompactBoxedFooter } from "./common.js";
+import { clearCompactBoxedFooter, formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, setCompactBoxedFooter } from "./common.js";
 
 const RESULT_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.result.patched");
 const CALL_PATCHED = Symbol.for("pi-droid-styling.quick-edit-renderer.call.patched");
@@ -148,6 +148,7 @@ function renderQuickEditResult(
 	context: QuickEditRenderContext = {},
 ) {
 	const expanded = isExpanded(options);
+	if (expanded) clearCompactBoxedFooter(context.state);
 	const reasonixCollapsed = getPresentationStyle() === "reasonix" && !expanded && Boolean(context.state);
 	if (options.isPartial) {
 		if (reasonixCollapsed) {

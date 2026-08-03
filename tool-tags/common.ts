@@ -461,11 +461,13 @@ function renderReasonixToolRow(
 			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
-			const footer = compactFooter ? ` · ${compactFooter}` : "";
 			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : "✓";
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
-			const raw = `${theme.fg(markerColor, marker)} ${title} ${detail}${pending}${footer}`;
-			return [safeTruncateToWidth(raw, Math.max(1, width), "…")];
+			const header = safeTruncateToWidth(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`, Math.max(1, width), "…");
+			if (!compactFooter) return [header];
+			const footerWidth = getToolBodyWidth(width, 5);
+			const footer = `  ${theme.fg("borderMuted", "└─ ")}${safeTruncateToWidth(compactFooter, footerWidth, "…")}`;
+			return [header, footer];
 		},
 	};
 }
