@@ -1,13 +1,14 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationStyle } from "../presentation/state.js";
+import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { safeTruncateToWidth, toSingleRenderLine } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
-const PATCH_VERSION = 5;
+const PATCH_VERSION = 6;
 
 let cachedTheme: any = null;
 
@@ -47,7 +48,8 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	while (content.length > 0 && isFullWidthDivider(content[0] ?? "", width)) content.shift();
 	if (content.length === 0) return [];
 
-	content[0] = safeTruncateToWidth(toSingleRenderLine(content[0] ?? ""), Math.max(1, width), "…");
+	const rowWidth = expanded ? Math.max(1, width) : getReasonixCollapsedRowWidth(width);
+	content[0] = safeTruncateToWidth(toSingleRenderLine(content[0] ?? ""), rowWidth, "…");
 	if (expanded) return [...content, ""];
 
 	let footerIndex = -1;
@@ -58,7 +60,7 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 		break;
 	}
 	if (footerIndex < 0) return [content[0] ?? "", ""];
-	return [content[0] ?? "", formatReasonixMetricsLine(content[footerIndex] ?? "", width), ""];
+	return [content[0] ?? "", formatReasonixMetricsLine(content[footerIndex] ?? "", rowWidth), ""];
 }
 
 function normalizeBoxedLines(lines: string[]): string[] | undefined {

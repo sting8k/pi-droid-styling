@@ -167,14 +167,16 @@ assert(!compactToolLines.some((line) => line.includes("┌")), "reasonix collaps
 
 const longMultilineSubject = Array.from({ length: 40 }, (_, index) => `part-${index}`).join("\n");
 const responsiveSubjectNarrow = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(24).map(stripAnsi);
-const responsiveSubjectWide = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(40).map(stripAnsi);
+const responsiveSubjectMedium = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(80).map(stripAnsi);
+const responsiveSubjectWide = renderCompactBoxedToolCall(activeTheme, "Bash", longMultilineSubject).render(160).map(stripAnsi);
 assert(responsiveSubjectNarrow.length === 1 && !responsiveSubjectNarrow[0]?.includes("\n") && (responsiveSubjectNarrow[0]?.length ?? 0) <= 24, "reasonix collapsed tool subject should stay on one physical row at narrow widths");
-assert((responsiveSubjectWide[0]?.length ?? 0) > (responsiveSubjectNarrow[0]?.length ?? 0) && (responsiveSubjectWide[0]?.length ?? 0) <= 40, "reasonix collapsed tool subject should use the available terminal width responsively");
+assert((responsiveSubjectMedium[0]?.length ?? 0) === 48, "reasonix collapsed tool subject should use a 60% soft cap at medium widths");
+assert((responsiveSubjectWide[0]?.length ?? 0) === 72, "reasonix collapsed tool subject should stop at the 72-column hard cap on wide terminals");
 
 const longErrorState = {};
 setCompactBoxedFooter(longErrorState, activeTheme.fg("error", Array.from({ length: 40 }, (_, index) => `failure-${index}`).join("\n")), { isError: true });
-const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(24).map(stripAnsi);
-assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 24, "reasonix collapsed error should stay on one responsive output row");
+const responsiveErrorLines = renderCompactBoxedToolCall(activeTheme, "Bash", "failing command", { state: longErrorState }).render(80).map(stripAnsi);
+assert(responsiveErrorLines.length === 2 && !responsiveErrorLines[1]?.includes("\n") && (responsiveErrorLines[1]?.length ?? 0) <= 48, "reasonix collapsed error should share the responsive 60% soft cap");
 
 const expandedTool = renderBoxedToolResult(activeTheme, () => ["full detail line one", "full detail line two"], { footerLines: ["0.20s"] });
 const expandedToolLines = expandedTool.render(80).map(stripAnsi);
@@ -199,6 +201,10 @@ assert(collapsedBashLike[1]?.startsWith("  └─ ") && collapsedBashLike[1]?.in
 assert(!collapsedBashLike.some((line) => line.includes("preview")), "reasonix collapsed tool should discard every preview body line");
 const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, false).map(stripAnsi);
 assert((narrowCollapsedBashLike[1]?.length ?? 0) <= 24 && narrowCollapsedBashLike[1]?.includes("1.20s"), "reasonix narrow collapsed metrics should retain duration without overflow");
+const softCappedBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, false).map(stripAnsi);
+assert((softCappedBashLike[0]?.length ?? 0) === 48 && (softCappedBashLike[1]?.length ?? 0) <= 48, "reasonix generic collapsed tools should share the 60% soft cap");
+const expandedFullWidthBashLike = normalizeReasonixToolLines([activeTheme.fg("text", `✓ Bash ${"x".repeat(200)}`), ...bashLikeLines.slice(1)], 80, true).map(stripAnsi);
+assert((expandedFullWidthBashLike[0]?.length ?? 0) === 80, "reasonix expanded tools should keep the full available terminal width");
 const expandedBashLike = normalizeReasonixToolLines(["", "─".repeat(80), ...bashLikeLines, ""], 80, true).map(stripAnsi);
 assert(expandedBashLike.length === 5 && expandedBashLike.at(-1) === "", "reasonix expanded tool should preserve summary, output, footer, and one spacer");
 assert(!expandedBashLike[0]?.includes("1.20s"), "reasonix expanded header should not inline footer metrics");

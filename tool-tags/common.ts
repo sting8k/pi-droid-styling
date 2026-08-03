@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
 import { getPresentationStyle } from "../presentation/state.js";
+import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
 import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
@@ -463,10 +464,11 @@ function renderReasonixToolRow(
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
 			const marker = isError ? "✗" : options.isPending || isPartial ? "●" : "✓";
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
+			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const headerText = toSingleRenderLine(`${theme.fg(markerColor, marker)} ${title} ${detail}${pending}`);
-			const header = safeTruncateToWidth(headerText, Math.max(1, width), "…");
+			const header = safeTruncateToWidth(headerText, rowWidth, "…");
 			if (!compactFooter) return [header];
-			const footerWidth = getToolBodyWidth(width, 5);
+			const footerWidth = getToolBodyWidth(rowWidth, 5);
 			const footerText = toSingleRenderLine(compactFooter);
 			const footer = `  ${theme.fg("borderMuted", "└─ ")}${safeTruncateToWidth(footerText, footerWidth, "…")}`;
 			return [header, footer];
