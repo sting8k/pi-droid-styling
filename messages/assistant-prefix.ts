@@ -69,6 +69,13 @@ function stripItalicAnsi(text: string): string {
 	return text.replace(/\x1b\[3m/g, "").replace(/\x1b\[23m/g, "");
 }
 
+function styleThinkingLine(text: string): string {
+	if (!usesReasonixPresentation()) return stripItalicAnsi(text);
+	const plain = stripAnsi(text);
+	if (plain.trim().length === 0 || typeof activeTheme?.fg !== "function") return plain;
+	return activeTheme.fg("dim", plain);
+}
+
 function getAssistantBodyWidth(width: number): number {
 	return Math.max(1, width - safeVisibleWidth(composePrefixedLine("")) - 1);
 }
@@ -88,7 +95,7 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix")
 	const baseRender = child.render.bind(child);
 	child.render = (width: number): string[] => {
 		const bodyWidth = mode === "plain" ? width : getAssistantBodyWidth(width);
-		const lines = baseRender(bodyWidth).map(stripItalicAnsi);
+		const lines = baseRender(bodyWidth).map(styleThinkingLine);
 		if (mode === "prefix") return prefixFirstNonEmptyLine(lines, width);
 		if (mode === "gutter") return addAssistantGutter(lines);
 		return lines;

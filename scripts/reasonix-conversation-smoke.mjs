@@ -114,9 +114,11 @@ const { installUserMessagePrefix } = await importBuilt("messages/user-prefix.js"
 const { installAssistantMessagePrefix } = await importBuilt("messages/assistant-prefix.js");
 
 const fgCalls = [];
+const fgInputs = [];
 const activeTheme = {
 	fg: (color, text) => {
 		fgCalls.push(color);
+		fgInputs.push({ color, text });
 		return `\x1b[38;5;7m${text}\x1b[39m`;
 	},
 	bg: (_color, text) => `\x1b[48;5;8m${text}\x1b[49m`,
@@ -139,12 +141,22 @@ assert(userLines.at(-1) === "", "reasonix user block should keep one trailing sp
 
 const assistantMessage = { role: "assistant", content: [{ type: "text", text: "answer\nmore" }] };
 const assistantLines = new AssistantMessageComponent(assistantMessage).render(40).map(stripAnsi);
-assert(assistantLines[0]?.startsWith("• answer") && assistantLines[0]?.indexOf("answer") === 2, "reasonix assistant content should start one space after its marker");
-assert(assistantLines[1]?.indexOf("more") === 2, "reasonix assistant continuation content should align with the first-line content column");
+assert(assistantLines[0]?.startsWith("• answer") && assistantLines[0]?.indexOf("answer") === 2, "reasonix assistant answer should stay inline with the themed marker");
+assert(assistantLines[1]?.indexOf("more") === 2, "reasonix assistant continuation should align with its answer body");
 const thinkingAssistantMessage = { role: "assistant", content: [{ type: "thinking", thinking: "considering" }, { type: "text", text: "response" }] };
+const thinkingFgStart = fgInputs.length;
 const thinkingAssistantLines = new AssistantMessageComponent(thinkingAssistantMessage).render(40).map(stripAnsi);
-assert(thinkingAssistantLines.find((line) => line.includes("considering"))?.indexOf("considering") === 2, "reasonix assistant thinking should share the marker content column");
-assert(thinkingAssistantLines.find((line) => line.includes("response"))?.indexOf("response") === 2, "reasonix assistant response after thinking should keep the same content column");
+const thinkingLine = thinkingAssistantLines.find((line) => line.includes("considering"));
+assert(thinkingLine?.startsWith("• considering") && thinkingLine.indexOf("considering") === 2, "reasonix thinking should move to the first row beside the themed marker");
+assert(fgInputs.slice(thinkingFgStart).some(({ color, text }) => color === "dim" && stripAnsi(text).includes("considering")), "reasonix assistant thinking should use the semantic dim color");
+assert(thinkingAssistantLines.find((line) => line.includes("response"))?.indexOf("response") === 2, "reasonix assistant response after thinking should keep the shared body gutter");
+const streamingAssistant = new AssistantMessageComponent({ role: "assistant", content: [{ type: "thinking", thinking: "streaming thought" }] });
+const thinkingOnlyLines = streamingAssistant.render(40).map(stripAnsi);
+assert(thinkingOnlyLines.find((line) => line.includes("streaming thought"))?.startsWith("• streaming thought"), "reasonix thinking-only streaming state should use the first assistant row");
+streamingAssistant.updateContent({ role: "assistant", content: [{ type: "thinking", thinking: "streaming thought" }, { type: "text", text: "streamed answer" }] });
+const streamedAnswerLines = streamingAssistant.render(40).map(stripAnsi);
+assert(streamedAnswerLines.find((line) => line.includes("streaming thought"))?.indexOf("streaming thought") === 2, "reasonix streaming transition should keep thinking in the marker content column");
+assert(streamedAnswerLines.find((line) => line.includes("streamed answer"))?.indexOf("streamed answer") === 2, "reasonix streaming transition should keep the answer in the shared body gutter");
 assert(!assistantLines.some((line) => line.includes("─".repeat(40))), "reasonix assistant should not render a full-width divider");
 assert(fgCalls.includes("accent"), "reasonix prefix should use the active theme accent token");
 assert(assistantLines.at(-1) === "", "reasonix assistant block should keep one trailing spacer row");
@@ -156,6 +168,7 @@ assert(droidUserRaw.some((line) => line.includes("\x1b[48;")), "droid user shoul
 assert(droidUser.some((line) => line.includes("─".repeat(40))), "droid user should retain its divider");
 const droidAssistant = new AssistantMessageComponent(assistantMessage).render(40).map(stripAnsi);
 assert(droidAssistant.some((line) => line.includes("─".repeat(40))), "droid assistant should retain its divider");
+assert(droidAssistant.some((line) => line.includes("•  answer")), "droid assistant should retain its legacy inline bullet marker");
 
 const { renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
