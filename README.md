@@ -12,10 +12,12 @@ Opinionated Pi UI styling extension: compact startup UI, boxed editor, cleaner t
 pi install git:github.com/sting8k/pi-droid-styling
 ```
 
-For project-local install:
+## Themes
+
+This extension resolves color tokens (`accent`, `borderMuted`, `userPrefixColor`) from the active Pi theme. For compatible color schemes:
 
 ```sh
-pi install -l git:github.com/sting8k/pi-droid-styling
+pi install git:github.com/sting8k/pi-themes
 ```
 
 ## Features
@@ -93,7 +95,7 @@ The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, 
 ## Notes
 
 - Works with the active Pi theme; it paints TUI cells explicitly and uses OSC 11 terminal background sync on non-Windows hosts to cover terminal-owned padding/remainder areas. Windows/WSL/Windows Terminal skip OSC 11 unless `forceOSC11` is enabled.
-- Compatible color schemes: https://github.com/sting8k/pi-themes
+
 - `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
 - Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
 
