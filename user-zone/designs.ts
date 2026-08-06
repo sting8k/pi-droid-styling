@@ -29,22 +29,9 @@ export interface UserZoneEditorStyle {
 	footerValueColor: string;
 }
 
-export interface UserZoneFixedStyle {
-	jumpTopHint: string;
-	jumpBottomHint: string;
-	scrollHintRightInset: number;
-	scrollHintPlacement: "cursor" | "lastLine";
-	showScrollbar: boolean;
-	scrollbarGlyph: string;
-	scrollbarTrackColor: string;
-	scrollbarThumbColor: string;
-	scrollbarThumbActiveColor: string;
-}
-
 export interface UserZoneStyle {
 	name: UserZoneStyleName;
 	editor: UserZoneEditorStyle;
-	fixed: UserZoneFixedStyle;
 }
 
 const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
@@ -83,17 +70,6 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			footerLabelColor: "dim",
 			footerValueColor: "muted",
 		},
-		fixed: {
-			jumpTopHint: "^Alt T TOP",
-			jumpBottomHint: "^Alt G BOT",
-			scrollHintRightInset: 2,
-			scrollHintPlacement: "cursor",
-			showScrollbar: true,
-			scrollbarGlyph: "█",
-			scrollbarTrackColor: "borderMuted",
-			scrollbarThumbColor: "dim",
-			scrollbarThumbActiveColor: "muted",
-		},
 	},
 	gemini: {
 		name: "gemini",
@@ -121,17 +97,6 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			footerLabelColor: "dim",
 			footerValueColor: "dim",
 		},
-		fixed: {
-			jumpTopHint: "^Alt T TOP",
-			jumpBottomHint: "^Alt G BOT",
-			scrollHintRightInset: 0,
-			scrollHintPlacement: "lastLine",
-			showScrollbar: true,
-			scrollbarGlyph: "█",
-			scrollbarTrackColor: "borderMuted",
-			scrollbarThumbColor: "dim",
-			scrollbarThumbActiveColor: "muted",
-		},
 	},
 	"cli-dock": {
 		name: "cli-dock",
@@ -158,17 +123,6 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			inputFrame: "outline",
 			footerLabelColor: "dim",
 			footerValueColor: "muted",
-		},
-		fixed: {
-			jumpTopHint: "^Alt T TOP",
-			jumpBottomHint: "^Alt G BOT",
-			scrollHintRightInset: 0,
-			scrollHintPlacement: "lastLine",
-			showScrollbar: true,
-			scrollbarGlyph: "▰",
-			scrollbarTrackColor: "borderMuted",
-			scrollbarThumbColor: "dim",
-			scrollbarThumbActiveColor: "muted",
 		},
 	},
 };

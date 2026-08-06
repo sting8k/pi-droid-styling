@@ -15,7 +15,6 @@ const repoRoot = process.cwd();
 const buildDir = join(repoRoot, ".pi", "profile-bench-build");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const iterations = Math.max(1, Number(process.env.PI_DROID_PROFILE_BENCH_ITERATIONS || 120));
-const rootLineCount = Math.max(10, Number(process.env.PI_DROID_PROFILE_BENCH_ROOT_LINES || 180));
 
 function collectTsFiles(dir) {
 	const ignored = new Set([".git", ".memory", ".pi", "node_modules"]);
@@ -64,10 +63,8 @@ async function importBuilt(relativePath) {
 
 compileSources();
 
-const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, toolDebounce, streamingMarkdownCache, finishedRenderCache] = await Promise.all([
+const [profiler, gitStatus, renderThrottle, assistantDebounce, toolDebounce, streamingMarkdownCache, finishedRenderCache] = await Promise.all([
 	importBuilt("performance/profiler.js"),
-	importBuilt("fixed-zone/sidebar.js"),
-	importBuilt("fixed-zone/terminal-split.js"),
 	importBuilt("core/git-status.js"),
 	importBuilt("performance/render-throttle.js"),
 	importBuilt("performance/debounce-update.js"),
@@ -77,8 +74,6 @@ const [profiler, sidebar, split, gitStatus, renderThrottle, assistantDebounce, t
 ]);
 
 const { flushProfile, profileCount, profileSample } = profiler;
-const { renderFixedZoneSidebar } = sidebar;
-const { TerminalSplitCompositor } = split;
 const { createGitBranchFetcher } = gitStatus;
 const { installRenderThrottle } = renderThrottle;
 const { installAssistantUpdateDebounce, setAssistantUpdateRenderRequester } = assistantDebounce;
@@ -86,106 +81,6 @@ const { installToolExecutionUpdateDebounce } = toolDebounce;
 const { installAssistantStreamingMarkdownCache } = streamingMarkdownCache;
 const { installFinishedRenderCache } = finishedRenderCache;
 const { AssistantMessageComponent, ToolExecutionComponent } = await import("@earendil-works/pi-coding-agent");
-
-function makeFiles(count) {
-	return Array.from({ length: count }, (_value, index) => ({
-		path: `src/module-${index % 12}/component-${index}.ts`,
-		insertions: index % 4 === 0 ? index + 3 : undefined,
-		deletions: index % 5 === 0 ? index + 1 : undefined,
-	}));
-}
-
-const sidebarInfo = {
-	sessionId: "bench-session-abcdef1234567890",
-	sessionName: "Synthetic render profiling bench",
-	cwd: repoRoot,
-	branch: "feat/fuz-sidebar",
-	insertions: 1234,
-	deletions: 321,
-	modifiedFiles: makeFiles(64),
-	piVersion: "bench",
-};
-
-profileCount("bench.start");
-profileSample("bench.iterations", iterations);
-
-for (let i = 0; i < iterations; i++) {
-	renderFixedZoneSidebar(sidebarInfo, i % 2 === 0 ? 36 : 30, i % 3 === 0 ? 36 : 28);
-}
-
-let rawRows = 36;
-let terminalBytes = 0;
-const terminal = {
-	columns: 140,
-	get rows() { return rawRows; },
-	set rows(value) { rawRows = value; },
-	write(data) {
-		terminalBytes += Buffer.byteLength(String(data), "utf8");
-	},
-};
-
-class BenchRootLineComponent {
-	constructor(index) {
-		this.index = index;
-	}
-	render(width) {
-		profileCount("bench.root.component.render.calls");
-		const safeWidth = Math.max(20, width);
-		const prefix = `root ${String(this.index).padStart(4, "0")} `;
-		return [`${prefix}${"x".repeat(Math.max(0, safeWidth - prefix.length - 1))}`];
-	}
-	invalidate() {}
-}
-
-const tui = {
-	terminal,
-	children: Array.from({ length: rootLineCount }, (_value, index) => new BenchRootLineComponent(index)),
-	render(width) {
-		const lines = [];
-		for (const child of this.children) lines.push(...child.render(width));
-		return lines;
-	},
-	requestRender() {
-		profileCount("bench.tui.requestRender");
-		this.doRender?.();
-	},
-	doRender() {
-		const lines = this.render(this.terminal.columns);
-		this.terminal.write(`${lines.join("\n")}\n`);
-	},
-};
-
-const hiddenRenderables = [
-	{
-		target: { render: () => [] },
-		render: (width) => [
-			`status ${"─".repeat(Math.max(0, width - 8))}`,
-			`editor ${" ".repeat(Math.max(0, width - 8))}`,
-			`footer ${"π".repeat(Math.max(0, Math.min(8, width - 8)))}`,
-		],
-	},
-];
-
-const compositor = new TerminalSplitCompositor(tui, hiddenRenderables, {
-	sidebar: {
-		enabled: true,
-		getInfo: () => sidebarInfo,
-	},
-});
-
-compositor.install();
-for (let i = 0; i < Math.max(10, Math.floor(iterations / 3)); i++) {
-	tui.doRender();
-	terminal.write(`stream chunk ${i}\n`);
-	if (i % 4 === 0) compositor.handleInput("\x1b[<64;10;5M");
-	if (i % 9 === 0) {
-		terminal.columns = terminal.columns === 140 ? 124 : 140;
-		rawRows = rawRows === 36 ? 32 : 36;
-		tui.requestRender();
-	}
-}
-compositor.dispose();
-profileSample("bench.terminalBytes", terminalBytes);
 
 let throttledDispatches = 0;
 const throttledTui = { requestRender: () => { throttledDispatches++; } };
@@ -311,7 +206,5 @@ rmSync(buildDir, { recursive: true, force: true });
 console.log(JSON.stringify({
 	profileOut: process.env.PI_DROID_PROFILE_OUT,
 	iterations,
-	rootLineCount,
-	terminalBytes,
 	throttledDispatches,
 }, null, 2));

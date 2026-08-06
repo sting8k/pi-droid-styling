@@ -101,7 +101,6 @@ class FakeRenderer {
 		this.doRenderCalled = 0;
 		this.applyLineResetsCalled = 0;
 		this.requestRenderCalled = 0;
-		this.children = []; // used by terminal-split/installFixedUserZone
 	}
 	render(width) {
 		this.renderCalled++;
@@ -149,7 +148,7 @@ function ok(label) {
 
 compileSources();
 
-const [physicalSync, throttle, autowrap, widthGuard, frameBackground, frameDebug, padding, fixedInstall] = await Promise.all([
+const [physicalSync, throttle, autowrap, widthGuard, frameBackground, frameDebug, padding] = await Promise.all([
 	importBuilt("performance/render-physical-sync.js"),
 	importBuilt("performance/render-throttle.js"),
 	importBuilt("performance/render-autowrap-guard.js"),
@@ -157,7 +156,6 @@ const [physicalSync, throttle, autowrap, widthGuard, frameBackground, frameDebug
 	importBuilt("performance/render-frame-background.js"),
 	importBuilt("performance/render-frame-debug.js"),
 	importBuilt("tui-padding.js"),
-	importBuilt("fixed-zone/install.js"),
 ]);
 
 const { installRenderPhysicalSync } = physicalSync;
@@ -167,7 +165,6 @@ const { installRenderWidthGuard } = widthGuard;
 const { installRenderFrameBackground } = frameBackground;
 const { installRenderFrameDebug } = frameDebug;
 const { installTuiPadding } = padding;
-const { installFixedUserZone } = fixedInstall;
 
 // Enable the env-gated installers so all wrappers are exercised.
 process.env.PI_DROID_RENDER_AUTOWRAP_GUARD = "1";
@@ -251,50 +248,7 @@ console.log("Real renderer path (pre-0.84):");
 }
 
 // ---------------------------------------------------------------------------
-// 3. Fixed-zone compositor through the proxy (TerminalSplitCompositor).
-// ---------------------------------------------------------------------------
-console.log("Fixed-zone compositor path (Pi 0.84):");
-{
-	const renderer = new FakeRenderer();
-	renderer.children = [
-		{ render: () => ["child0"] }, // 0: not a fixed-zone index
-		{ render: () => ["child1"] },
-		{ render: () => ["child2"] },
-		{ render: () => ["child3"] }, // index 3: fixed-zone child -> hidden
-	];
-	let current = renderer;
-	const tui = createInteractiveTuiReference(() => current);
-	const sessionUi = {};
-
-	const install = installFixedUserZone(sessionUi, tui, {
-		enabled: true,
-		visibleChatTail: 2,
-		scrollFrameMs: 20,
-		requestScrollRender: () => {},
-		getShortcutHintPrefix: () => null,
-		theme: {},
-		userZoneStyle: undefined,
-		sidebar: { enabled: false },
-		onCopySelection: () => {},
-	});
-	assert(typeof install === "function", "fixed-user-zone installed");
-
-	assertNoRecursion(() => renderer.doRender(), "compositor renderer.doRender()");
-	ok("compositor renderer.doRender() no recursion");
-	assertNoRecursion(() => renderer.render(100), "compositor renderer.render()");
-	ok("compositor renderer.render() no recursion");
-	assertNoRecursion(() => renderer.requestRender(true), "compositor renderer.requestRender()");
-	ok("compositor renderer.requestRender() no recursion");
-
-	// Dispose restores the base methods without recursion on subsequent renders.
-	install();
-	assertNoRecursion(() => renderer.doRender(), "compositor renderer.doRender() after dispose");
-	assertNoRecursion(() => renderer.render(100), "compositor renderer.render() after dispose");
-	ok("compositor dispose + re-render no recursion");
-}
-
-// ---------------------------------------------------------------------------
-// 4. Fullscreen layout padding (Pi 0.84 TuiAltScreen). Fullscreen bypasses
+// 3. Fullscreen layout padding (Pi 0.84 TuiAltScreen). Fullscreen bypasses
 //    TUI.render(), so padding must wrap the persistent layout root instead.
 // ---------------------------------------------------------------------------
 console.log("Fullscreen layout padding path (Pi 0.84):");
@@ -326,7 +280,7 @@ console.log("Fullscreen layout padding path (Pi 0.84):");
 }
 
 // ---------------------------------------------------------------------------
-// 5. Chain preservation: padding -> widthGuard on the Pi proxy. The second
+// 4. Chain preservation: padding -> widthGuard on the Pi proxy. The second
 //    wrapper must chain to the first (padding) wrapper, not skip to base.
 // ---------------------------------------------------------------------------
 console.log("Chain preservation (padding -> widthGuard, Pi proxy):");
@@ -342,7 +296,7 @@ console.log("Chain preservation (padding -> widthGuard, Pi proxy):");
 }
 
 // ---------------------------------------------------------------------------
-// 6. Chain preservation: physicalSync -> frameDebug on the Pi proxy. The debug
+// 5. Chain preservation: physicalSync -> frameDebug on the Pi proxy. The debug
 //    wrapper must chain to the physical-sync wrapper so its self-heal still runs.
 // ---------------------------------------------------------------------------
 console.log("Chain preservation (physicalSync -> frameDebug, Pi proxy):");
