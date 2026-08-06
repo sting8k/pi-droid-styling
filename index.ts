@@ -7,7 +7,6 @@ import {
   InteractiveMode,
   SkillInvocationMessageComponent,
   ToolExecutionComponent,
-  copyToClipboard,
 } from "@earendil-works/pi-coding-agent";
 
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
@@ -22,11 +21,9 @@ type SetAssistantUpdateRenderRequester = SessionModules["setAssistantUpdateRende
 type RenderFrameDebugModule = typeof import("./performance/render-frame-debug.js");
 
 let syncThemeExtrasForCurrentSession: ((force?: boolean) => void) | undefined;
-let disposeFixedUserZoneForCurrentSession: (() => void) | undefined;
 let restoreTerminalBackgroundForCurrentSession: (() => void) | undefined;
 let disposePiTasksWidgetStylingForCurrentSession: (() => void) | undefined;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
-const FIXED_ZONE_SCROLL_FRAME_MS = 20;
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 let setAssistantUpdateRenderRequesterForCurrentSession: SetAssistantUpdateRenderRequester | undefined;
 let sessionModulesPromise: Promise<SessionModules> | undefined;
@@ -61,12 +58,6 @@ function profileCount(name: string, value?: number): void {
 function flushProfile(reason: string): void {
 	if (!isProfileEnabled()) return;
 	void loadProfilerModule().then((profiler) => profiler.flushProfile(reason));
-}
-
-function isRemoteClipboardSession(env = process.env): boolean {
-	// jump's browser terminal receives clipboard writes through OSC 52, but
-	// jump sessions are local PTYs, not necessarily SSH/MOSH sessions.
-	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION || env.TERM_PROGRAM === "jump");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -148,8 +139,6 @@ export default function (pi: ExtensionAPI) {
 		syncThemeExtrasForCurrentSession = undefined;
 		restoreTerminalBackgroundForCurrentSession?.();
 		restoreTerminalBackgroundForCurrentSession = undefined;
-		disposeFixedUserZoneForCurrentSession?.();
-		disposeFixedUserZoneForCurrentSession = undefined;
 		setAssistantUpdateRenderRequesterForCurrentSession?.(undefined);
 		workingLoaderController?.dispose();
 		workingLoaderController = undefined;
@@ -204,15 +193,6 @@ export default function (pi: ExtensionAPI) {
 		currentVisibleChatTail = config.visibleChatTail;
 		await ensureToolCallTagsRegistered();
 		if (!isCurrentSessionRun()) return;
-		const fixedZoneModules = config.fixedUserZone
-			? await Promise.all([
-				import("./fixed-zone/install.js"),
-				import("./fixed-zone/theme.js"),
-				import("./core/pi-version.js"),
-				import("./core/session-metadata.js"),
-			])
-			: undefined;
-		if (!isCurrentSessionRun()) return;
 		const renderFrameDebugModule = process.env.PI_DROID_RENDER_DEBUG === "1"
 			? await loadRenderFrameDebugModule()
 			: undefined;
@@ -222,8 +202,6 @@ export default function (pi: ExtensionAPI) {
 		disposePiTasksWidgetStylingForCurrentSession = modules.installPiTasksWidgetStyling(sessionUi, config.tasksWidgetStyle);
 		restoreTerminalBackgroundForCurrentSession?.();
 		restoreTerminalBackgroundForCurrentSession = undefined;
-		disposeFixedUserZoneForCurrentSession?.();
-		disposeFixedUserZoneForCurrentSession = undefined;
 		workingLoaderController = modules.createWorkingLoaderController(sessionUi, config.customWorkingMessage);
 		workingLoaderController.configure();
 
@@ -282,72 +260,7 @@ export default function (pi: ExtensionAPI) {
 			modules.virtualizeChatContainer(tui as any, config.visibleChatTail);
 			modules.installTuiPadding(tui as any);
 			modules.installRenderAutowrapGuard(tui as any);
-			let fixedZoneSidebarActive = false;
-			let fixedZoneSelectionCopySerial = Promise.resolve();
-			let fixedZoneSelectionCopySeq = 0;
 			const fetchBranch = modules.createGitBranchFetcher(sessionCwd, () => tui.requestRender());
-			if (fixedZoneModules) {
-				const [{ installFixedUserZone }, { createFixedZoneTheme }, { getPiVersion }, { readSessionMetadata }] = fixedZoneModules;
-				const piVersion = getPiVersion();
-				const fixedZoneTheme = createFixedZoneTheme(uiTheme);
-				disposeFixedUserZoneForCurrentSession = installFixedUserZone(sessionUi as any, tui as any, {
-					enabled: config.fixedUserZone,
-					visibleChatTail: config.visibleChatTail,
-					onCopySelection: (text, clipboard) => {
-						const copySeq = ++fixedZoneSelectionCopySeq;
-						const terminalClipboardEmitted = clipboard.emitOsc52Clipboard();
-						if (terminalClipboardEmitted) clipboard.showNotice("success", "Selected text copied to clipboard");
-
-						fixedZoneSelectionCopySerial = fixedZoneSelectionCopySerial
-							.catch(() => undefined)
-							.then(() => copyToClipboard(text))
-							.then(
-								() => {
-									if (copySeq !== fixedZoneSelectionCopySeq) return;
-									if (terminalClipboardEmitted) return; // optimistic success already shown
-									const remoteClipboard = isRemoteClipboardSession();
-									const fallbackOsc52Emitted = clipboard.emitOsc52Clipboard();
-									clipboard.showNotice(
-										remoteClipboard && !fallbackOsc52Emitted ? "warning" : "success",
-										remoteClipboard && !fallbackOsc52Emitted ? "Copy failed" : "Selected text copied to clipboard",
-									);
-								},
-								() => {
-									if (copySeq !== fixedZoneSelectionCopySeq) return;
-									const fallbackOsc52Emitted = terminalClipboardEmitted || clipboard.emitOsc52Clipboard();
-									clipboard.showNotice(
-										fallbackOsc52Emitted ? "warning" : "error",
-										fallbackOsc52Emitted ? "Copy may not work in all applications" : "Copy failed",
-									);
-								},
-							);
-					},
-					requestScrollRender: () => modules.requestRenderWithFrameMs(tui, FIXED_ZONE_SCROLL_FRAME_MS),
-					theme: fixedZoneTheme,
-					scrollFrameMs: FIXED_ZONE_SCROLL_FRAME_MS,
-					userZoneStyle,
-					getShortcutHintPrefix: modules.getFooterTokenUsageLine,
-					sidebar: {
-						enabled: false,
-						theme: fixedZoneTheme,
-						onActiveChange: (active) => { fixedZoneSidebarActive = active; },
-						getInfo: () => {
-							const git = fetchBranch();
-							const sessionMetadata = readSessionMetadata(ctx);
-							return {
-								sessionId: sessionMetadata.id,
-								sessionName: sessionMetadata.name,
-								cwd: sessionCwd,
-								branch: git?.branch,
-								insertions: git?.insertions,
-								deletions: git?.deletions,
-								modifiedFiles: git?.modifiedFiles,
-								piVersion,
-							};
-						},
-					},
-				});
-			}
 			modules.installRenderWidthGuard(tui as any);
 			modules.installRenderFrameBackground(tui as any, uiTheme);
 			modules.installRenderPhysicalSync(tui as any);
@@ -382,10 +295,10 @@ export default function (pi: ExtensionAPI) {
 				fetchBranch,
 				() => tracker.getWordsPerSecond(),
 				modules.getFooterStatusLine,
-				() => fixedZoneSidebarActive ? "sidebar" : "footer",
+				() => "footer",
 				userZoneStyle,
 				config.inputBox.style,
-				config.fixedUserZone ? () => null : modules.getFooterTokenUsageLine,
+				modules.getFooterTokenUsageLine,
 			);
 		});
 	});

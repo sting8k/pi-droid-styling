@@ -724,6 +724,18 @@ await runConfigSmoke("non-string style backfilled", '{"userZoneStyle":42}', ({ c
 	assert(config.userZoneStyle === "droid", "non-string userZoneStyle did not normalize to droid");
 });
 
+await runConfigSmoke("scaffold excludes fixedUserZone", undefined, ({ config, raw }) => {
+	assert(!("fixedUserZone" in raw), "fresh scaffold should not write fixedUserZone");
+	assert(!("fixedUserZone" in config), "normalized config should not expose fixedUserZone");
+});
+
+await runConfigSmoke("legacy fixedUserZone removed", '{"fixedUserZone":true,"userZoneStyle":"gemini"}', ({ config, raw }) => {
+	assert(!("fixedUserZone" in raw), "legacy fixedUserZone:true should be deleted from disk");
+	assert(!("fixedUserZone" in config), "normalized config should not expose fixedUserZone");
+	assert(raw.userZoneStyle === "gemini", "other keys preserved during migration");
+	assert(config.userZoneStyle === "gemini", "migrated config still normalizes userZoneStyle");
+});
+
 await runStyleResolverSmoke();
 await runBoxEditorSmoke();
 await runFixedZoneSmoke();

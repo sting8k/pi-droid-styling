@@ -294,7 +294,39 @@ console.log("Fixed-zone compositor path (Pi 0.84):");
 }
 
 // ---------------------------------------------------------------------------
-// 4. Chain preservation: padding -> widthGuard on the Pi proxy. The second
+// 4. Fullscreen layout padding (Pi 0.84 TuiAltScreen). Fullscreen bypasses
+//    TUI.render(), so padding must wrap the persistent layout root instead.
+// ---------------------------------------------------------------------------
+console.log("Fullscreen layout padding path (Pi 0.84):");
+{
+	const layoutNode = Symbol.for("@earendil-works/pi-tui/layout-node");
+	const originalNode = { type: "vstack", entries: [], gap: 0, align: "stretch" };
+	const root = {
+		render: () => ["content"],
+		invalidate: () => {},
+		[layoutNode]: () => originalNode,
+	};
+	const renderer = new FakeRenderer();
+	renderer.mode = "fullscreen";
+	renderer.layoutRoot = root;
+	renderer.setLayoutRoot = (nextRoot) => { renderer.layoutRoot = nextRoot; };
+	const tui = createInteractiveTuiReference(() => renderer);
+
+	installTuiPadding(tui);
+	const paddedNode = root[layoutNode]();
+	assert(paddedNode.type === "hstack", `fullscreen padding should wrap the root in an hstack, got ${paddedNode.type}`);
+	assert(paddedNode.entries.length === 3, `fullscreen padding should create left/content/right entries, got ${paddedNode.entries.length}`);
+	assert(paddedNode.entries[0].basis === 1 && paddedNode.entries[2].basis === 1, "fullscreen padding should keep one-column gutters");
+	assert(paddedNode.entries[1].component[layoutNode]() === originalNode, "fullscreen padding should preserve the original root layout node");
+
+	const installedLayoutNode = root[layoutNode];
+	installTuiPadding(tui);
+	assert(root[layoutNode] === installedLayoutNode, "fullscreen padding reinstall should not stack wrappers");
+	ok("fullscreen layout keeps one-column gutters without double wrapping");
+}
+
+// ---------------------------------------------------------------------------
+// 5. Chain preservation: padding -> widthGuard on the Pi proxy. The second
 //    wrapper must chain to the first (padding) wrapper, not skip to base.
 // ---------------------------------------------------------------------------
 console.log("Chain preservation (padding -> widthGuard, Pi proxy):");
@@ -310,7 +342,7 @@ console.log("Chain preservation (padding -> widthGuard, Pi proxy):");
 }
 
 // ---------------------------------------------------------------------------
-// 5. Chain preservation: physicalSync -> frameDebug on the Pi proxy. The debug
+// 6. Chain preservation: physicalSync -> frameDebug on the Pi proxy. The debug
 //    wrapper must chain to the physical-sync wrapper so its self-heal still runs.
 // ---------------------------------------------------------------------------
 console.log("Chain preservation (physicalSync -> frameDebug, Pi proxy):");

@@ -34,7 +34,6 @@ export interface DroidStylingConfig {
 	userZoneStyle: UserZoneStyleName;
 	inputBox: InputBoxConfig;
 	tasksWidgetStyle: TasksWidgetStyle;
-	fixedUserZone: boolean;
 	forceOSC11: boolean;
 	visibleChatTail: number;
 }
@@ -59,14 +58,13 @@ const DEFAULTS: DroidStylingConfig = {
 	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
 	inputBox: DEFAULT_INPUT_BOX,
 	tasksWidgetStyle: "compact",
-	fixedUserZone: false,
 	forceOSC11: false,
 	visibleChatTail: 30,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
 const MAX_EXPANDED_LINES_LIMIT = 1000;
-const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll", "fixedUserZoneSidebar"] as const;
+const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll", "fixedUserZoneSidebar", "fixedUserZone"] as const;
 
 let cached: DroidStylingConfig = defaultConfig();
 let cachedMtimeMs = -1;
@@ -204,7 +202,6 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
 		inputBox: inputBoxOrDefault(config.inputBox),
 		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
-		fixedUserZone: booleanOrDefault(config.fixedUserZone, DEFAULTS.fixedUserZone),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 		visibleChatTail: visibleChatTailOrDefault(config.visibleChatTail),
 	};
