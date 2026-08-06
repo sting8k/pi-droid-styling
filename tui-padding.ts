@@ -1,4 +1,5 @@
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./performance/tui-proxy-original.js";
 
 /**
  * Add horizontal padding to the entire TUI output.
@@ -50,11 +51,13 @@ export function installTuiPadding(tui: AnyComponent): void {
 	const state = tui as any;
 	if (state[PATCHED]) return;
 	state[PATCHED] = true;
-	state[ORIGINAL_RENDER] ??= tui.render.bind(tui);
+	state[ORIGINAL_RENDER] ??= getOriginalTuiMethod(tui, "render");
 
-	tui.render = function paddedTuiRender(width: number): string[] {
+	const paddedTuiRender = function paddedTuiRender(this: unknown, width: number): string[] {
 		const innerWidth = getTuiContentInnerWidth(width);
-		const lines = state[ORIGINAL_RENDER](innerWidth);
+		const lines = (state[ORIGINAL_RENDER] as (w: number) => string[]).call(this, innerWidth);
 		return lines.map((line: string) => padTuiContentLine(line, width));
 	};
+	tui.render = paddedTuiRender;
+	rememberTuiMethodWrapper(tui, "render", paddedTuiRender);
 }

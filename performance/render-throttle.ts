@@ -9,6 +9,7 @@
  */
 
 import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-throttle.patched");
 const REQUEST_WITH_FRAME_MS = Symbol.for("pi-droid-styling.render-throttle.request-with-frame-ms");
@@ -39,13 +40,14 @@ export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_
 	}
 	tui[PATCHED] = true;
 
-	const origRequestRender = tui.requestRender.bind(tui);
+	const origRequestRender = getOriginalTuiMethod(tui, "requestRender");
 	const defaultFrameMs = normalizeFrameMs(frameMs, DEFAULT_FRAME_MS);
 
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let timerDueAt = 0;
 	let lastRenderTime = 0;
 	let pendingForce = false;
+	let currentTui: any = tui;
 
 	function clearScheduledRender(): void {
 		if (timer === null) return;
@@ -57,7 +59,7 @@ export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_
 	function dispatchRender(now: number): void {
 		clearScheduledRender();
 		lastRenderTime = now;
-		origRequestRender(pendingForce);
+		origRequestRender.call(currentTui, pendingForce);
 		pendingForce = false;
 	}
 
@@ -70,7 +72,7 @@ export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_
 			lastRenderTime = Date.now();
 			profileCount("render.request.dispatch.delayed");
 			profileDuration("render.request.latency.ms", scheduledAt);
-			origRequestRender(pendingForce);
+			origRequestRender.call(currentTui, pendingForce);
 			pendingForce = false;
 		}, delay);
 	}
@@ -115,7 +117,10 @@ export function installRenderThrottle(tui: any, frameMs: number = DEFAULT_FRAME_
 	}
 
 	tui[REQUEST_WITH_FRAME_MS] = (requestedFrameMs: number, force = false) => requestRenderAtFrame(force, requestedFrameMs);
-	tui.requestRender = function throttledRequestRender(force = false) {
+	const throttledRequestRender = function throttledRequestRender(this: any, force = false) {
+		if (this != null) currentTui = this;
 		requestRenderAtFrame(force, defaultFrameMs);
 	};
+	tui.requestRender = throttledRequestRender;
+	rememberTuiMethodWrapper(tui, "requestRender", throttledRequestRender);
 }

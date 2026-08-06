@@ -1,4 +1,5 @@
 import { paintFrameBackgroundClears, paintFrameBackgroundLines, padFrameRows, resolveFrameBackgroundAnsi } from "../theme/frame-background.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 import { profileCount } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-frame-background.patched");
@@ -75,19 +76,20 @@ export function installRenderFrameBackground(tui: TuiLike, theme: any): void {
 	if (typeof existingPatch === "function" && tui.applyLineResets === existingPatch) return;
 	if (existingPatch === true && tui.applyLineResets.name === "droidFrameBackgroundApplyLineResets") return;
 
-	const originalApplyLineResets = tui.applyLineResets.bind(tui);
+	const originalApplyLineResets = getOriginalTuiMethod(tui, "applyLineResets");
 	const patch: FrameBackgroundApplyLineResetsPatch = {
 		theme,
-		wrapper: function droidFrameBackgroundApplyLineResets(lines: string[]): string[] {
+		wrapper: function droidFrameBackgroundApplyLineResets(this: TuiLike, lines: string[]): string[] {
 			const bgAnsi = resolveFrameBackgroundAnsi(patch.theme);
-			if (!bgAnsi) return originalApplyLineResets(lines);
-			const frameLines = padFrameRows(lines, readRows(tui));
-			const resetLines = originalApplyLineResets(frameLines);
+			if (!bgAnsi) return originalApplyLineResets.call(this, lines) as string[];
+			const frameLines = padFrameRows(lines, readRows(this));
+			const resetLines = originalApplyLineResets.call(this, frameLines) as string[];
 			profileCount("render.frameBackground.row", resetLines.length);
-			return paintFrameBackgroundLines(resetLines, bgAnsi, readColumns(tui));
+			return paintFrameBackgroundLines(resetLines, bgAnsi, readColumns(this));
 		},
 	};
 
 	tui[PATCHED] = patch;
 	tui.applyLineResets = patch.wrapper;
+	rememberTuiMethodWrapper(tui, "applyLineResets", patch.wrapper);
 }

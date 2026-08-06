@@ -1,4 +1,5 @@
 import { profileCount } from "./profiler.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-physical-sync.patched");
 const DEBUG_EVENTS = Symbol.for("pi-droid-styling.render-physical-sync.debug-events");
@@ -112,35 +113,37 @@ export function installRenderPhysicalSync(tui: AnyTui): void {
 	const terminal = tui.terminal;
 	if (!terminal || typeof terminal.write !== "function") return;
 
-	const originalDoRender = tui.doRender.bind(tui);
+	const originalDoRender = getOriginalTuiMethod(tui, "doRender");
 	const fullRepaintIntervalMs = readFullRepaintIntervalMs();
 	const fullSweepIntervalMs = readFullSweepIntervalMs();
 	const selfHealMode = readSelfHealMode();
 	const debugEnabled = process.env.PI_DROID_RENDER_DEBUG === "1";
 	let lastSelfHealAt = 0;
 	let lastFullSweepAt = 0;
-	const physicallySyncedDoRender = function physicallySyncedDoRender(this: unknown, ...args: unknown[]): unknown {
-		const activeWrite = terminal.write;
-		if (typeof activeWrite !== "function") return originalDoRender(...args);
-		if (debugEnabled) tui[DEBUG_EVENTS] = [];
+	const physicallySyncedDoRender = function physicallySyncedDoRender(this: AnyTui, ...args: unknown[]): unknown {
+		const renderer = this;
+		const terminal = renderer.terminal;
+		const activeWrite = terminal?.write;
+		if (typeof activeWrite !== "function") return originalDoRender.call(renderer, ...args);
+		if (debugEnabled) renderer[DEBUG_EVENTS] = [];
 
-		const previousLines = repaintEnabled ? readStringLines(tui.previousLines) : [];
-		const previousViewportVisualState = readViewportVisualStateFromLines(tui, previousLines);
-		const anchorState = anchorEnabled ? readAnchorState(tui) : undefined;
-		terminal.write = function physicallySyncedWrite(this: unknown, data: string): unknown {
+		const previousLines = repaintEnabled ? readStringLines(renderer.previousLines) : [];
+		const previousViewportVisualState = readViewportVisualStateFromLines(renderer, previousLines);
+		const anchorState = anchorEnabled ? readAnchorState(renderer) : undefined;
+		terminal!.write = function physicallySyncedWrite(this: unknown, data: string): unknown {
 			const text = String(data);
 			const normalized = anchorState ? normalizeLeadingRelativeMove(text, anchorState) : unchangedWrite(text);
-			if (debugEnabled) pushDebugEvent(tui, buildWriteRewriteDebugEvent(text, normalized));
+			if (debugEnabled) pushDebugEvent(renderer, buildWriteRewriteDebugEvent(text, normalized));
 			return activeWrite.call(this, normalized.text);
 		};
 		try {
-			const result = originalDoRender(...args);
+			const result = originalDoRender.call(renderer, ...args);
 			if (repaintEnabled) {
-				const currentLines = readStringLines(tui.previousLines);
-				const currentViewportVisualState = readViewportVisualStateFromLines(tui, currentLines);
+				const currentLines = readStringLines(renderer.previousLines);
+				const currentViewportVisualState = readViewportVisualStateFromLines(renderer, currentLines);
 				const now = Date.now();
 				const repaint = buildSelfHealRepaint(
-					tui,
+					renderer,
 					previousLines,
 					currentLines,
 					previousViewportVisualState,
@@ -154,22 +157,23 @@ export function installRenderPhysicalSync(tui: AnyTui): void {
 					periodicSelfHealEnabled,
 					selfHealMode,
 				);
-				if (debugEnabled) pushDebugEvent(tui, buildSelfHealDebugEvent(repaint, selfHealMode, previousViewportVisualState, currentViewportVisualState, now, lastSelfHealAt, lastFullSweepAt, fullRepaintIntervalMs, fullSweepIntervalMs));
+				if (debugEnabled) pushDebugEvent(renderer, buildSelfHealDebugEvent(repaint, selfHealMode, previousViewportVisualState, currentViewportVisualState, now, lastSelfHealAt, lastFullSweepAt, fullRepaintIntervalMs, fullSweepIntervalMs));
 				if (repaint.output.length > 0) {
 					lastSelfHealAt = now;
 					if (repaint.fullViewport) lastFullSweepAt = now;
-					activeWrite.call(terminal, repaint.output);
+					activeWrite.call(renderer.terminal, repaint.output);
 				} else {
 					profileCount("render.physicalSync.selfHeal.skipInterval");
 				}
 			}
 			return result;
 		} finally {
-			terminal.write = activeWrite;
+			terminal!.write = activeWrite;
 		}
 	};
 	tui[PATCHED] = physicallySyncedDoRender;
 	tui.doRender = physicallySyncedDoRender;
+	rememberTuiMethodWrapper(tui, "doRender", physicallySyncedDoRender);
 }
 
 function readFullRepaintIntervalMs(): number {

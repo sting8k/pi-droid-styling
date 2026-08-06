@@ -27,7 +27,8 @@
     "test:core-message-blocks": "node scripts/core-message-blocks-smoke.mjs",
     "test:tasks-widget-compact": "node scripts/tasks-widget-compact-smoke.mjs",
     "test:reasonix-conversation": "node scripts/reasonix-conversation-smoke.mjs",
-    "test:session-resume-styling": "node scripts/session-resume-styling-smoke.mjs"
+    "test:session-resume-styling": "node scripts/session-resume-styling-smoke.mjs",
+    "test:tui-proxy": "node scripts/tui-proxy-recursion-smoke.mjs"
   },
   "pi": {
     "extensions": [

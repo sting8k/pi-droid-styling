@@ -5,6 +5,7 @@ import { MAX_FIXED_ROOT_LINES, safeTruncateToWidth, safeVisibleWidth } from "../
 import { getTuiContentCursorColumn, getTuiContentInnerWidth, padTuiContentLine } from "../tui-padding.js";
 import { paintFrameBackgroundLine, paintFrameBackgroundSegment } from "../theme/frame-background.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "../performance/tui-proxy-original.js";
 
 import { type FixedZoneCluster, type FixedZoneClusterOptions, type HiddenRenderable, renderFixedUserZoneCluster } from "./cluster.js";
 import { computeFixedZoneSidebarLayout, renderFixedZoneSidebar, type FixedZoneSidebarInfoProvider, type FixedZoneSidebarLayout, type FixedZoneSidebarTheme } from "./sidebar.js";
@@ -265,8 +266,12 @@ function isJumpTopInput(data: string): boolean {
 
 export class TerminalSplitCompositor {
 	private readonly originalTerminalWrite: TerminalLike["write"];
-	private readonly originalTuiRender: TuiLike["render"];
-	private readonly originalTuiDoRender?: () => void;
+	private readonly baseTuiRender: TuiLike["render"];
+	private readonly baseTuiDoRender?: () => void;
+	private readonly hasTuiDoRender: boolean;
+	private originalTuiRender?: TuiLike["render"];
+	private originalTuiDoRender?: () => void;
+	private lockedRenderer: any = undefined;
 	private readonly hiddenRenderableTargets: WeakSet<object>;
 	private readonly originalRowsOwnDescriptor?: PropertyDescriptor;
 	private readonly originalRowsDescriptor?: PropertyDescriptor;
@@ -316,12 +321,20 @@ export class TerminalSplitCompositor {
 		private readonly options: TerminalSplitOptions,
 	) {
 		this.originalTerminalWrite = tui.terminal.write;
-		this.originalTuiRender = tui.render.bind(tui);
-		this.originalTuiDoRender = typeof tui.doRender === "function" ? tui.doRender.bind(tui) : undefined;
+		this.baseTuiRender = getOriginalTuiMethod(tui, "render") as TuiLike["render"];
+		this.hasTuiDoRender = typeof tui.doRender === "function";
+		this.baseTuiDoRender = this.hasTuiDoRender ? (getOriginalTuiMethod(tui, "doRender") as () => void) : undefined;
 		this.hiddenRenderableTargets = new WeakSet(hiddenRenderables.map((renderable) => renderable.target as object));
 		this.hadOwnRowsDescriptor = Object.prototype.hasOwnProperty.call(tui.terminal, "rows");
 		this.originalRowsOwnDescriptor = Object.getOwnPropertyDescriptor(tui.terminal, "rows");
 		this.originalRowsDescriptor = findPropertyDescriptor(tui.terminal, "rows");
+	}
+
+	private captureRenderer(ref: any): void {
+		if (this.lockedRenderer !== undefined || !ref) return;
+		this.lockedRenderer = ref;
+		this.originalTuiRender = this.baseTuiRender.bind(ref);
+		this.originalTuiDoRender = this.baseTuiDoRender ? this.baseTuiDoRender.bind(ref) : undefined;
 	}
 
 	private fixedStyle(): UserZoneStyle["fixed"] {
@@ -370,10 +383,21 @@ export class TerminalSplitCompositor {
 			configurable: true,
 			get: () => this.renderingCluster ? this.getRawRows() : this.getScrollableRows(),
 		});
-		this.tui.render = (width: number) => this.renderScrollableRoot(width);
+		const compositor = this;
+		const splitRender = function (this: any, width: number): string[] {
+			compositor.captureRenderer(this);
+			return compositor.renderScrollableRoot(width);
+		};
+		this.tui.render = splitRender;
+		rememberTuiMethodWrapper(this.tui, "render", splitRender);
 		terminal.write = (data: string) => this.write(data);
-		if (this.originalTuiDoRender) {
-			this.tui.doRender = () => this.renderPass();
+		if (this.hasTuiDoRender) {
+			const splitDoRender = function (this: any): void {
+				compositor.captureRenderer(this);
+				compositor.renderPass();
+			};
+			this.tui.doRender = splitDoRender;
+			rememberTuiMethodWrapper(this.tui, "doRender", splitDoRender);
 		}
 		this.writeRaw(ENABLE_MOUSE);
 	}
@@ -425,9 +449,13 @@ export class TerminalSplitCompositor {
 		}
 		this.setSidebarActive(false);
 		this.tui.terminal.write = this.originalTerminalWrite;
-		this.tui.render = this.originalTuiRender;
-		if (this.originalTuiDoRender) {
-			this.tui.doRender = this.originalTuiDoRender;
+		const restoredRender = this.originalTuiRender ?? this.baseTuiRender;
+		this.tui.render = restoredRender;
+		rememberTuiMethodWrapper(this.tui, "render", restoredRender);
+		if (this.hasTuiDoRender) {
+			const restoredDoRender = this.originalTuiDoRender ?? this.baseTuiDoRender;
+			this.tui.doRender = restoredDoRender;
+			rememberTuiMethodWrapper(this.tui, "doRender", restoredDoRender);
 		}
 		if (this.hadOwnRowsDescriptor && this.originalRowsOwnDescriptor) {
 			Object.defineProperty(this.tui.terminal, "rows", this.originalRowsOwnDescriptor);
@@ -946,7 +974,7 @@ export class TerminalSplitCompositor {
 					lines = windowed.omitted ? [this.rootOmittedMarker(windowed, rootRenderWidth), ...windowed.lines] : windowed.lines;
 				} else {
 					profileCount("fixed.root.windowRender.fallback.noChildren");
-					const renderedLines = this.originalTuiRender(layout.contentWidth);
+					const renderedLines = this.originalTuiRender!(layout.contentWidth);
 					profileDuration("fixed.root.originalRender.ms", rootRenderStart);
 					profileSample("fixed.root.originalLines.count", renderedLines.length);
 					omittedLines = Math.max(0, renderedLines.length - retainedLines);
@@ -961,7 +989,7 @@ export class TerminalSplitCompositor {
 			} catch {
 				profileCount("fixed.root.windowRender.fallback.error");
 				const fallbackStart = profileNow();
-				const renderedLines = this.originalTuiRender(layout.contentWidth);
+				const renderedLines = this.originalTuiRender!(layout.contentWidth);
 				profileDuration("fixed.root.originalRender.ms", fallbackStart);
 				profileSample("fixed.root.originalLines.count", renderedLines.length);
 				omittedLines = Math.max(0, renderedLines.length - retainedLines);
@@ -1527,7 +1555,7 @@ export class TerminalSplitCompositor {
 			this.sidebarRowsCache = undefined;
 			try {
 				const doRenderStart = profileNow();
-				this.originalTuiDoRender();
+				this.originalTuiDoRender!();
 				profileDuration("tui.doRender.ms", doRenderStart);
 				this.requestRepaint();
 			} finally {

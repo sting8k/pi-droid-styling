@@ -1,6 +1,7 @@
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 import { profileCount, profileSample } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-width-guard.patched");
@@ -59,9 +60,11 @@ export function clampRenderLinesToWidth(lines: readonly string[], width: number)
 
 export function installRenderWidthGuard(tui: any): void {
 	if (!tui || tui[PATCHED] || typeof tui.render !== "function") return;
-	const originalRender = tui.render.bind(tui);
+	const originalRender = getOriginalTuiMethod(tui, "render");
 	tui[PATCHED] = true;
-	tui.render = function guardedRender(width: number): string[] {
-		return clampRenderLinesToWidth(originalRender(width), width);
+	const guardedRender = function guardedRender(this: unknown, width: number): string[] {
+		return clampRenderLinesToWidth(originalRender.call(this, width) as string[], width);
 	};
+	tui.render = guardedRender;
+	rememberTuiMethodWrapper(tui, "render", guardedRender);
 }

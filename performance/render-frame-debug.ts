@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-frame-debug.patched");
 const FRAME_COUNTER = Symbol.for("pi-droid-styling.render-frame-debug.frame");
@@ -136,7 +137,7 @@ export function installRenderFrameDebug(tui: AnyTui): void {
 	const terminal = tui.terminal;
 	if (!terminal || typeof terminal.write !== "function") return;
 
-	const originalDoRender = tui.doRender.bind(tui);
+	const originalDoRender = getOriginalTuiMethod(tui, "doRender");
 	const logPath = getLogPath();
 	const markerState = installDebugMarker(logPath);
 	let screenSimulation: ScreenSimulationState | undefined;
@@ -148,45 +149,46 @@ export function installRenderFrameDebug(tui: AnyTui): void {
 		startedAt: new Date().toISOString(),
 	});
 
-	tui.doRender = function frameLoggedDoRender(...args: unknown[]): unknown {
-		const frame = ((tui[FRAME_COUNTER] ?? 0) as number) + 1;
-		tui[FRAME_COUNTER] = frame;
+	const frameLoggedDoRender = function frameLoggedDoRender(this: AnyTui, ...args: unknown[]): unknown {
+		const frame = ((this[FRAME_COUNTER] ?? 0) as number) + 1;
+		this[FRAME_COUNTER] = frame;
 		markerState.frame = frame;
 		const startedAt = Date.now();
-		const before = readRenderState(tui);
-		const previousLines = readStringLines(tui.previousLines);
+		const before = readRenderState(this);
+		const previousLines = readStringLines(this.previousLines);
 		const writes: string[] = [];
 		const capturedRenders: CapturedRender[] = [];
-		const activeWrite = terminal.write;
-		const activeRender = tui.render;
-		if (typeof activeWrite !== "function" || typeof activeRender !== "function") return originalDoRender(...args);
+		const activeTerminal = this.terminal;
+		const activeWrite = activeTerminal?.write;
+		const activeRender = this.render;
+		if (typeof activeWrite !== "function" || typeof activeRender !== "function") return originalDoRender.call(this, ...args);
 
-		terminal.write = function capturedWrite(this: unknown, data: string): unknown {
+		activeTerminal!.write = function capturedWrite(this: unknown, data: string): unknown {
 			writes.push(String(data));
 			return activeWrite.call(this, data);
 		};
-		tui.render = function capturedRender(this: unknown, width: number): string[] {
+		this.render = function capturedRender(this: unknown, width: number): string[] {
 			const lines = activeRender.call(this, width);
 			capturedRenders.push({
 				width,
 				lineCount: lines.length,
-				viewportSample: sampleViewport(lines, readNumber(tui.previousViewportTop), readNumber(tui.previousHeight)),
-				duplicateRuns: collectAdjacentDuplicates(lines, readNumber(tui.previousViewportTop), readNumber(tui.previousHeight)),
+				viewportSample: sampleViewport(lines, readNumber((this as AnyTui).previousViewportTop), readNumber((this as AnyTui).previousHeight)),
+				duplicateRuns: collectAdjacentDuplicates(lines, readNumber((this as AnyTui).previousViewportTop), readNumber((this as AnyTui).previousHeight)),
 			});
 			return lines;
 		};
 
 		let error: unknown;
 		try {
-			return originalDoRender(...args);
+			return originalDoRender.call(this, ...args);
 		} catch (caught) {
 			error = caught;
 			throw caught;
 		} finally {
-			terminal.write = activeWrite;
-			tui.render = activeRender;
-			const after = readRenderState(tui);
-			const nextLines = readStringLines(tui.previousLines);
+			activeTerminal!.write = activeWrite;
+			this.render = activeRender;
+			const after = readRenderState(this);
+			const nextLines = readStringLines(this.previousLines);
 			const changed = summarizeLineChanges(previousLines, nextLines);
 			const viewportStart = Math.max(0, after.previousViewportTop);
 			const rowCoverage = summarizeRowCoverage(writes, before, after, changed);
@@ -207,11 +209,13 @@ export function installRenderFrameDebug(tui: AnyTui): void {
 				writes: summarizeWrites(writes),
 				rowCoverage,
 				screenSimulation: screenSimulationResult.summary,
-				physicalSync: summarizePhysicalSyncDebug(tui),
+				physicalSync: summarizePhysicalSyncDebug(this),
 				error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error === undefined ? undefined : String(error),
 			});
 		}
 	};
+	tui.doRender = frameLoggedDoRender;
+	rememberTuiMethodWrapper(tui, "doRender", frameLoggedDoRender);
 }
 
 function getLogPath(): string {
