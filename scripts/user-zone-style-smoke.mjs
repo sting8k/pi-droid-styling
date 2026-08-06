@@ -302,7 +302,8 @@ async function runBoxEditorSmoke() {
 	assert(gemini[5]?.trimEnd().endsWith("ready"), "gemini footer status value should align right");
 	assert(!gemini[5]?.includes("gpt-test"), "gemini footer should not keep model column after model moves to status row");
 	assert(rawGemini[5]?.includes("\x1b[2m"), "gemini footer values should use dim text");
-	assert(narrowGemini.length > gemini.length, "gemini narrow footer should wrap long status content");
+	assert(narrowGemini.length === gemini.length, "gemini narrow footer should keep the right cluster on one line instead of wrapping");
+	assert(narrowGemini[5]?.trimEnd().endsWith("…"), "gemini narrow footer right cluster should be truncated at the right edge, not clipped by panel padding");
 	assert(narrowGemini.every((line) => stripAnsi(line).length <= 34), "gemini narrow layout should not overflow terminal width");
 	assert(!gemini.some((line) => line.includes("== [")), "gemini should hide host border");
 	assert(!gemini.some((line) => /sandbox|quota/i.test(line)), "gemini should not render sandbox/quota columns");

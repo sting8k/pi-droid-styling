@@ -345,11 +345,6 @@ export class BoxEditor extends CustomEditor {
 		return `${truncated}${" ".repeat(Math.max(0, width - safeVisibleWidth(truncated)))}`;
 	}
 
-	private padLeft(content: string, width: number): string {
-		const truncated = safeVisibleWidth(content) > width ? safeTruncateToWidth(content, width, "") : content;
-		return `${" ".repeat(Math.max(0, width - safeVisibleWidth(truncated)))}${truncated}`;
-	}
-
 	private formatCompactTokens(count: number): string {
 		if (count < 1000) return count.toString();
 		if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -716,43 +711,22 @@ export class BoxEditor extends CustomEditor {
 		const style = this.userZoneStyle.editor;
 		const footerStatus = this.metadataInSidebar() ? "" : normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
 		const tokenUsage = this.formatFooterTokenUsage();
-		const rightAffordance = [tokenUsage, footerStatus].filter(Boolean).join("  ");
-		const items = [
-			{ value: this.formatCwd(), weight: 2 },
-			{ value: rightAffordance, weight: 1 },
-		].filter((item) => item.value.length > 0);
-		if (items.length === 0) return [];
+		const affordance = [tokenUsage, footerStatus].filter(Boolean).join("  ");
+		const cwd = this.formatCwd();
+		if (!affordance && !cwd) return [];
 
-		const gap = "   ";
-		const gapWidth = safeVisibleWidth(gap);
-		const available = Math.max(1, contentWidth - gapWidth * (items.length - 1));
-		const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-		let remaining = available;
-		const widths = items.map((item, index) => {
-			const last = index === items.length - 1;
-			const columnWidth = last ? remaining : Math.max(1, Math.floor((available * item.weight) / totalWeight));
-			remaining -= columnWidth;
-			return columnWidth;
-		});
-		const wrappedColumns = items.map((item, index) => {
-			const columnWidth = widths[index] ?? 1;
-			const wrapped = safeWrapTextWithAnsi(item.value, columnWidth);
-			return wrapped.length > 0 ? wrapped : [""];
-		});
-		const rowCount = Math.max(...wrappedColumns.map((column) => column.length));
-		const rows: string[] = [];
-		for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-			const parts = wrappedColumns.map((column, columnIndex) => {
-				const value = column[rowIndex] ?? "";
-				const colored = value ? this.tone(style.footerValueColor, value) : "";
-				const columnWidth = widths[columnIndex] ?? 1;
-				return columnIndex === wrappedColumns.length - 1 && wrappedColumns.length > 1
-					? this.padLeft(colored, columnWidth)
-					: this.pad(colored, columnWidth);
-			});
-			rows.push(this.renderPanelLine(parts.join(gap), width));
-		}
-		return rows;
+		// Right cluster stays anchored to the right edge and grows leftward on a
+		// single line; the cwd is truncated instead of wrapping the cluster into
+		// a narrow column.
+		// Reserve one column for the truncated cwd plus the minimum gap so the
+		// cluster never gets clipped by the panel padding.
+		const maxRightWidth = Math.max(1, contentWidth - 3);
+		const rightPlain = safeVisibleWidth(affordance) > maxRightWidth
+			? safeTruncateToWidth(affordance, maxRightWidth, "…")
+			: affordance;
+		const left = cwd ? this.tone(style.footerValueColor, cwd) : "";
+		const right = rightPlain ? this.tone(style.footerValueColor, rightPlain) : "";
+		return [this.renderPanelLine(this.renderSplitRow(left, right, rightPlain, contentWidth), width)];
 	}
 
 	private appendAutocomplete(lines: string[], autocompleteLines: string[], width: number): string[] {
