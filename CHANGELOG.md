@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.2 - 2026-08-17
+
+### Changed
+- Align the cli-dock status row with the input text and remove the redundant `Model:` label.
+
 ## 2.9.1 - 2026-08-17
 
 ### Changed

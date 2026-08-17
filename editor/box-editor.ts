@@ -8,6 +8,9 @@ import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 import type { InputBoxStyle } from "../config.js";
 
+/** Outline border plus the prompt gap, so the cli-dock status row lines up with the input text. */
+const CLI_DOCK_STATUS_INSET = 2;
+
 type SlashAutocompleteItem = {
 	value?: string;
 	label?: string;
@@ -676,10 +679,7 @@ export class BoxEditor extends CustomEditor {
 		const parts: Array<{ plain: string; rendered: string }> = [];
 		const model = this.formatCliDockModelBadge();
 		if (model) {
-			parts.push({
-				plain: `Model: ${model.plain}`,
-				rendered: `${this.tone("accent", "Model:")} ${model.rendered}`,
-			});
+			parts.push({ plain: model.plain, rendered: model.rendered });
 		}
 
 		const usage = this.contextUsage();
@@ -761,7 +761,11 @@ export class BoxEditor extends CustomEditor {
 	private renderCliDockLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
 		const lines: string[] = [];
 		lines.push(...this.renderInputBoxFrame(inputLines, contentInnerWidth).map((line) => this.renderPanelLine(line, width)));
-		lines.push(this.renderPanelLine(this.renderCliDockStatusLine(contentInnerWidth), width));
+		// Align the status row with the text inside the outline box (border + gap) instead of the box edges.
+		const statusInset = Math.min(CLI_DOCK_STATUS_INSET, Math.floor(Math.max(0, contentInnerWidth - 1) / 2));
+		const statusPad = " ".repeat(statusInset);
+		const statusLine = this.renderCliDockStatusLine(Math.max(1, contentInnerWidth - statusInset * 2));
+		lines.push(this.renderPanelLine(`${statusPad}${statusLine}${statusPad}`, width));
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
