@@ -9,12 +9,22 @@ Opinionated Pi UI styling extension: compact startup UI, boxed editor, cleaner t
 ## Install
 
 ```sh
+pi install npm:@sting8k/pi-droid-styling
+```
+
+Or install directly from Git:
+
+```sh
 pi install git:github.com/sting8k/pi-droid-styling
 ```
 
 ## Themes
 
-This extension resolves color tokens (`accent`, `borderMuted`, `userPrefixColor`) from the active Pi theme. For compatible color schemes:
+This extension uses [`pi-themes`](https://github.com/sting8k/pi-themes) as its color layer. Installing `pi-droid-styling` automatically installs and registers those themes—no second install command is needed.
+
+Already have `pi-themes` installed separately? Keep it. Existing themes take priority, and `pi-droid-styling` adds only the bundled themes that are missing—without duplicate-theme conflicts.
+
+To install only the theme collection without this styling extension:
 
 ```sh
 pi install git:github.com/sting8k/pi-themes
@@ -22,14 +32,17 @@ pi install git:github.com/sting8k/pi-themes
 
 ## Features
 
-- Compact startup header and loaded resources table.
-- Boxed editor with selectable `userZoneStyle` presets and adjusted TUI padding.
-- Cleaner assistant/user message spacing and prefixes.
-- Compact tool tags with badges, elapsed time, and dimmed output support.
-- Conversation presentation presets (`presentationStyle` `droid`/`reasonix`): `reasonix` removes turn dividers/user cards, folds collapsed tools into one-line status/name/subject rows, and shows `Ctrl+O` expanded output as indented bodies.
-- Footer stats including token speed and compact session context.
-- Optional true fixed user zone that keeps status/widgets/editor/footer at the bottom while chat/feed scrolls above, with mouse selection/copy support, themed bottom-row feedback, and OSC 52 clipboard propagation for terminal proxies.
-- Reload/session-safe patches avoid stacked padding or spacing and rebind tool presentation state when resuming another session.
+### Look and feel
+
+- **A cleaner Pi, instantly.** Compact startup, a focused input editor, tidier conversations, collapsed tool output, and a footer that tracks your session.
+- **Make it yours.** Two conversation layouts, three prompt styles, multiple input frames, and 25 themes included.
+
+### Built for the terminal
+
+- **Smoother while the model works.** Streaming text and fast tool updates are batched into steady frames instead of repainting on every token.
+- **Stays aligned when you resize.** Boxes, labels, and right-aligned status account for terminal escape codes, so they wrap and truncate cleanly.
+- **Long sessions stay fast.** Only the newest part of the chat is rendered, while huge tool results are capped so history does not slow you down.
+- **Reloads stay clean.** UI patches are applied once and removed cleanly, so extension reloads and session switches do not stack layout changes.
 
 ## Config
 
@@ -52,23 +65,23 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
     "style": "auto"
   },
   "tasksWidgetStyle": "compact",
-  "fixedUserZone": false,
   "forceOSC11": false,
   "visibleChatTail": 30
 }
 ```
 
-| Key | Type | Default | Description |
+| Setting | Options | Default | What it does |
 | --- | --- | --- | --- |
-| `alwaysExpanded` | `bool` | `false` | Initial tool-output expansion state. Pi core `Ctrl+O` stays authoritative after that. |
-| `customWorkingMessage` | `object` | `{"working":"Working", ...}` | Custom labels for the working/thinking/answering/running loader. Accepts partial objects; legacy `true`/`false` auto-normalizes. |
-| `presentationStyle` | `"droid"` \| `"reasonix"` | `"droid"` | Conversation preset. `droid` preserves existing cards/dividers/tool boxes. `reasonix` removes turn dividers/user cards, folds collapsed tools into one-line status/name/subject rows (non-compact metrics on a `└─` row), and shows `Ctrl+O` expanded output as indented bodies — with one blank row between blocks. See docs/product/overview.md for layout details. |
-| `userZoneStyle` | `"gemini"` \| `"droid"` \| `"cli-dock"` | `"gemini"` | Input-zone preset. `gemini` = compact header/divider/status/halfblock-input/footer layout whose `❯` uses `userPrefixColor`/accent rather than `bashPromptColor`. `droid` = boxed legacy layout. `cli-dock` = opt-in Droid CLI-style bottom dock with a true outlined `›` prompt box, placeholder, model/context/branch/project status on the left, and MCP/footer status on the right. |
-| `inputBox.style` | `"auto"` \| `"halfblock"` \| `"line"` \| `"solid"` | `"auto"` | Input-frame override. `auto` = preset default (gemini uses halfblock, droid uses its native boxed layout). `solid` uses selected-background input plus a bottom padding row without half-block glyphs for terminals with `▀`/`▄` seams. `cli-dock` intentionally keeps its outline box even if this is set to `line`. |
-| `fixedUserZone` | `bool` | `false` | When enabled, status/widgets/editor/footer stay fixed at the bottom while chat/feed scrolls above. |
-| `tasksWidgetStyle` | `"default"` \| `"compact"` | `"compact"` | Tasks sidebar widget style. `compact` = one-line summary `● Tasks › [N] <current task> · <time> (x/y done · n running)` with `idle`/`done`/blocked variants; current-task text is truncated to fit while counts are preserved. `default` = do not patch `pi-tasks`; leave the upstream widget untouched. Auto-scaffolded into the config file on first load. |
-| `forceOSC11` | `bool` | `false` | Enable OSC 11 terminal background sync on Windows/WSL (off by default). |
-| `visibleChatTail` | `number` | `30` | Number of recent chat UI children to render in long sessions. `0` disables chat virtualization and renders all history. Auto-scaffolded/backfilled into the config file. |
+| `alwaysExpanded` | `true`, `false` | `false` | Open tool output by default. `Ctrl+O` still toggles it. |
+| `maxExpandedLines` | `0`–`1000` | `50` | Limit expanded tool output. Use `0` for no limit. |
+| `dimToolOutput` | `true`, `false` | `false` | Dim tool output so the conversation stands out. |
+| `customWorkingMessage` | Custom text | See example | Rename the working, thinking, answering, and tool-running labels. You can set only the ones you want to change. |
+| `presentationStyle` | `droid`, `reasonix` | `droid` | `droid` keeps cards and tool boxes. `reasonix` uses a cleaner, compact conversation layout. |
+| `userZoneStyle` | `gemini`, `droid`, `cli-dock` | `gemini` | Choose the look of the prompt, status rows, and footer. |
+| `inputBox.style` | `auto`, `halfblock`, `line`, `solid` | `auto` | Choose the input-box frame. `auto` uses the best match for the selected user-zone style. |
+| `tasksWidgetStyle` | `compact`, `default` | `compact` | Use the one-line tasks widget, or leave the original `pi-tasks` widget unchanged. |
+| `forceOSC11` | `true`, `false` | `false` | Force terminal background sync on Windows/WSL. Usually leave this off. |
+| `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
 
 ## Profiling
 
@@ -90,7 +103,7 @@ Synthetic self-check:
 npm run profile:render
 ```
 
-The synthetic bench exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. Runtime terminal paint/GPU cost still needs a real Pi TUI capture.
+The synthetic bench exercises footer/editor rendering, render throttle, assistant/tool debounce, and git status refresh. Runtime terminal paint/GPU cost still needs a real Pi TUI capture.
 
 ## Notes
 

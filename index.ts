@@ -12,6 +12,7 @@ import {
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 import { installInteractiveChatVirtualization } from "./performance/virtualize-chat.js";
+import { registerCompanionThemes } from "./theme/companion-themes.js";
 
 type SessionModules = typeof import("./session-modules.js");
 type AssistantSpeedTracker = ReturnType<SessionModules["createAssistantSpeedTracker"]>;
@@ -61,6 +62,7 @@ function flushProfile(reason: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	registerCompanionThemes(pi, InteractiveMode);
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
 	// Default matches config.ts; session_start refreshes from disk before messages render.

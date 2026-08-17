@@ -1,28 +1,37 @@
 {
-  "name": "pi-droid-styling",
-  "version": "2.8.2",
+  "name": "@sting8k/pi-droid-styling",
+  "version": "2.9.0",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",
   "keywords": [
     "pi-package",
     "pi-coding-agent",
-    "pi-extension"
+    "pi-extension",
+    "pi-themes",
+    "pi-droid-styling"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/sting8k/pi-droid-styling"
+    "url": "git+https://github.com/sting8k/pi-droid-styling.git"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev:link": "npm install",
     "dev:clean": "rm -rf node_modules",
+    "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck --noImplicitAny false index.ts",
+    "test": "npm run test:working-message && npm run test:startup-resources && npm run test:theme-extras && npm run test:companion-themes && npm run test:user-zone-style && npm run test:core-message-blocks && npm run test:tasks-widget-compact && npm run test:reasonix-conversation && npm run test:session-resume-styling && npm run test:tui-proxy",
+    "check": "npm run typecheck && npm test && npm pack --dry-run",
     "profile:render": "node scripts/render-profile-bench.mjs",
     "trace:pi": "node scripts/pi-trace.mjs",
     "debug:render-log": "node scripts/render-frame-log-summary.mjs",
     "test:working-message": "node scripts/working-message-config-smoke.mjs",
     "test:startup-resources": "node scripts/startup-resources-smoke.mjs",
     "test:theme-extras": "node scripts/theme-extras-smoke.mjs",
+    "test:companion-themes": "node scripts/companion-themes-smoke.mjs",
     "test:user-zone-style": "node scripts/user-zone-style-smoke.mjs",
     "test:core-message-blocks": "node scripts/core-message-blocks-smoke.mjs",
     "test:tasks-widget-compact": "node scripts/tasks-widget-compact-smoke.mjs",
@@ -36,12 +45,18 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.78.0",
-    "@earendil-works/pi-tui": "^0.78.0"
+    "@earendil-works/pi-coding-agent": ">=0.78.0 <1.0.0",
+    "@earendil-works/pi-tui": ">=0.78.0 <1.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.0",
     "@earendil-works/pi-tui": "^0.78.0",
     "typescript": "^6.0.3"
-  }
+  },
+  "dependencies": {
+    "pi-themes": "https://github.com/sting8k/pi-themes/archive/refs/heads/main.tar.gz"
+  },
+  "bundledDependencies": [
+    "pi-themes"
+  ]
 }

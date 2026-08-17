@@ -1,0 +1,68 @@
+name: CI and Release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to actions/checkout v4.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      # Pinned to actions/setup-node v4.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm audit --omit=dev --audit-level=critical
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Pinned to actions/checkout v4.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Tag version and create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid package version: $version" >&2
+            exit 1
+          }
+          tag="v$version"
+          grep -Fq "## $version " CHANGELOG.md || {
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          }
+          git fetch --force --tags origin
+
+          if ! git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "pi-droid-styling $tag"
+            git push origin "$tag"
+          fi
+
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag --title "pi-droid-styling $tag" --generate-notes
+          fi

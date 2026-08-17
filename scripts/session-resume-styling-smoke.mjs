@@ -122,7 +122,7 @@ try {
 	runtimeBCompact.installCompactToolSpacing(ToolExecutionComponent);
 	const resumedLines = proto.render.call({ expanded: false }, 40);
 	assert(resumedLines[0] === "┌box", "runtime B should preserve the tool title");
-	assert(resumedLines.length === 2 && resumedLines.at(-1) === "", "runtime B should take ownership and collapse restored Droid tool framing");
+	assert(resumedLines.length === 4 && resumedLines.at(-1) === "", "runtime B should take ownership and apply Reasonix trailing spacing");
 
 	const restoredTool = {
 		toolName: "read",
