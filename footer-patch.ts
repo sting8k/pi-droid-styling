@@ -61,8 +61,12 @@ function computeTokenUsageLine(session: any): string | null {
 			if (!u || entry.message.stopReason === "aborted" || entry.message.stopReason === "error") continue;
 			const inp = formatCompactToken(u.input ?? 0);
 			const out = formatCompactToken(u.output ?? 0);
-			const cr = formatCompactToken(u.cacheRead ?? 0);
-			return `[↑${inp} ↓${out} R${cr}]`;
+			const cacheRead = u.cacheRead ?? 0;
+			const cacheWrite = u.cacheWrite ?? 0;
+			const cr = formatCompactToken(cacheRead);
+			const promptTokens = (u.input ?? 0) + cacheRead + cacheWrite;
+			const cacheHitRate = promptTokens > 0 ? (cacheRead / promptTokens) * 100 : 0;
+			return `[↑${inp} ↓${out} R${cr} CH${cacheHitRate.toFixed(1)}%]`;
 		}
 	}
 	return null;
