@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.1 - 2026-08-17
+
+### Changed
+- Refresh the README screenshot to show the current interface.
+
 ## 2.9.0 - 2026-08-17
 
 ### Added
