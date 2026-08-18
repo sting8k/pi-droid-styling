@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.3 - 2026-08-17
+
+### Changed
+- Declare the README screenshot as the package thumbnail (`pi.image`) so the pi.dev gallery card shows it.
+
 ## 2.9.2 - 2026-08-17
 
 ### Changed

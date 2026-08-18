@@ -1,6 +1,6 @@
 {
   "name": "@sting8k/pi-droid-styling",
-  "version": "2.9.2",
+  "version": "2.9.3",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",
@@ -42,7 +42,8 @@
   "pi": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/sting8k/pi-droid-styling/main/screenshots/image.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.78.0 <1.0.0",
