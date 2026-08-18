@@ -31,9 +31,12 @@ jobs:
   install-registry:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       # Pinned to actions/checkout v4.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       # Pinned to actions/setup-node v4.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -45,9 +48,9 @@ jobs:
           dir="$(mktemp -d)"
           cd "$dir"
           npm init -y >/dev/null
-          npm install "@sting8k/pi-droid-styling@$version" --no-audit --no-fund
-          test -f node_modules/@sting8k/pi-droid-styling/index.ts
-          node -e "const m = require('./node_modules/@sting8k/pi-droid-styling/package.json'); if (!m.pi?.image || !m.pi?.extensions) throw new Error('pi manifest missing image/extensions'); if (!m.version) throw new Error('no version'); console.log('registry install ok:', m.name + '@' + m.version, '| pi.image:', m.pi.image)"
+          npm install "@sting8k/pi-droid-styling@$version" --no-audit --no-fund --ignore-scripts
+          export PKG_DIR="$dir/node_modules/@sting8k/pi-droid-styling"
+          node -e "const fs=require('fs'); const path=require('path'); const root=process.env.PKG_DIR; const m=require(root+'/package.json'); if(m.name!=='@sting8k/pi-droid-styling') throw new Error('name mismatch: '+m.name); if(m.version!==process.argv[1]) throw new Error('version mismatch: '+m.version); const ext=m.pi&&m.pi.extensions; if(!Array.isArray(ext)||ext.length===0) throw new Error('pi.extensions invalid'); for(const e of ext){ if(typeof e!=='string'||!e.startsWith('./')) throw new Error('extension entry must be relative: '+e); const p=path.resolve(root,e); if(!(p===root||p.startsWith(root+path.sep))) throw new Error('extension escapes package root: '+e); if(!fs.existsSync(p)) throw new Error('extension file missing: '+e); } const img=m.pi&&m.pi.image; if(typeof img!=='string'||!/^https:\/\//.test(img)) throw new Error('pi.image must be an https URL'); console.log('registry install ok:', m.name+'@'+m.version, '| extensions:', JSON.stringify(ext), '| image:', img)" "$version"
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
