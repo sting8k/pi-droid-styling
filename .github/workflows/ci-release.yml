@@ -28,6 +28,27 @@ jobs:
       - run: npm run check
       - run: npm audit --omit=dev --audit-level=critical
 
+  install-registry:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to actions/checkout v4.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      # Pinned to actions/setup-node v4.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Install published package from npm registry
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          dir="$(mktemp -d)"
+          cd "$dir"
+          npm init -y >/dev/null
+          npm install "@sting8k/pi-droid-styling@$version" --no-audit --no-fund
+          test -f node_modules/@sting8k/pi-droid-styling/index.ts
+          node -e "const m = require('./node_modules/@sting8k/pi-droid-styling/package.json'); if (!m.pi?.image || !m.pi?.extensions) throw new Error('pi manifest missing image/extensions'); if (!m.version) throw new Error('no version'); console.log('registry install ok:', m.name + '@' + m.version, '| pi.image:', m.pi.image)"
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: verify
