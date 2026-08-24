@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.10.0 - 2026-08-24
+
+### Added
+- Bundle the new `lipgloss` companion theme built entirely from the official CharmTone palette used by Charm's Crush.
+
 ## 2.9.3 - 2026-08-17
 
 ### Changed
