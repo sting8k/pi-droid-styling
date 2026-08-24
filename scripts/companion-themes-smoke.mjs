@@ -66,9 +66,9 @@ let reapplyCount = 0;
 mode.themeController = { applyFromSettings: async () => { reapplyCount++; } };
 
 const fresh = call([]).themePaths;
-assert(fresh.length === 25, `fresh install should register 25 themes, got ${fresh.length}`);
+assert(fresh.length === 26, `fresh install should register 26 themes, got ${fresh.length}`);
 const names = fresh.map((path) => JSON.parse(readFileSync(path, "utf8")).name);
-assert(new Set(names).size === 25, "bundled theme names should be unique");
+assert(new Set(names).size === 26, "bundled theme names should be unique");
 await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 1, "fresh install should re-apply the selected theme after discovery");
 await mode.bindCurrentSessionExtensions();
@@ -79,7 +79,7 @@ await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 1, "full standalone collection should not trigger theme re-apply");
 
 const partial = call(names.slice(0, 7)).themePaths;
-assert(partial.length === 18, `partial standalone collection should register 18 missing themes, got ${partial.length}`);
+assert(partial.length === 19, `partial standalone collection should register 19 missing themes, got ${partial.length}`);
 assert(partial.every((path) => !names.slice(0, 7).includes(JSON.parse(readFileSync(path, "utf8")).name)), "partial fallback should not return duplicate names");
 await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 2, "partial fallback should re-apply after missing themes are added");
@@ -87,5 +87,5 @@ assert(reapplyCount === 2, "partial fallback should re-apply after missing theme
 const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 assert(manifest.pi?.themes === undefined, "package manifest must not register bundled themes statically");
 assert(manifest.bundledDependencies?.includes("pi-themes"), "pi-themes must remain bundled");
-console.log("companion themes smoke ok: fresh=25 standalone=0 partial=18 reapply=2 reload-safe");
+console.log("companion themes smoke ok: fresh=26 standalone=0 partial=19 reapply=2 reload-safe");
 rmSync(workDir, { recursive: true, force: true });
