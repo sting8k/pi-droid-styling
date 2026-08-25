@@ -477,34 +477,41 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	// Single source of the `⎇ branch [+N] [-M]` FORMAT (token order, spaces, brackets), shared by the
-	// footer badges (all three non-nvim presets) and the nvim input-frame top-rule label (US-023).
-	// Colour is CALLER-decided: `tones` maps each token to a theme tone name, or `null` to render that
-	// token in the terminal-default fg (the nvim rule's ⎇ and branch name -- minimal by design, while
-	// the LOC brackets keep their semantic success/error tones). Omitting `tones` entirely keeps the
-	// historic footer styling byte-identical. `withDiff: false` drops the LOC tail -- the nvim label's
-	// middle degrade rung, where churn yields to identity; zero insertions/deletions self-hide.
+	// existing non-nvim branch-badge call sites (droid's renderTopRow and gemini's status row --
+	// cli-dock renders no branch) and the nvim input-frame top-rule label (US-023).
+	// Colour is CALLER-decided: each `tones` entry is a theme tone NAME, a custom colorizer FUNCTION
+	// (the nvim rule passes the rule's own colorizer so ⎇ and the name melt into the rule), or `null`
+	// for terminal-default fg. Omitting `tones` keeps the historic footer styling byte-identical.
+	// `withDiff: false` drops the LOC tail -- the nvim label's middle degrade rung, where churn yields
+	// to identity; zero insertions/deletions self-hide.
 	private buildBranchBadge(
 		branch: string,
 		insertions: number | undefined,
 		deletions: number | undefined,
 		withDiff: boolean,
-		tones?: { icon: string | null; name: string | null; ins: string | null; del: string | null },
+		tones?: { icon: string | ((text: string) => string) | null; name: string | ((text: string) => string) | null; ins: string | null; del: string | null },
+		style: "brackets" | "bare" = "brackets",
 	): { plain: string; rendered: string } | null {
 		if (!branch) return null;
 		const toneMap = tones ?? { icon: "bashMode", name: "mdLinkUrl", ins: "success", del: "error" };
-		const seg = (tone: string | null, text: string) => (tone ? this.tone(tone, text) : text);
+		const seg = (tone: string | ((text: string) => string) | null, text: string) => {
+			if (typeof tone === "function") return tone(text);
+			return tone ? this.tone(tone, text) : text;
+		};
+		const insText = style === "bare" ? `+${insertions}` : `[+${insertions}]`;
+		const delText = style === "bare" ? `-${deletions}` : `[-${deletions}]`;
 		const icon = "⎇";
 		const diffPlain = withDiff
 			? [
-				insertions ? `[+${insertions}]` : "",
-				deletions ? `[-${deletions}]` : "",
+				insertions ? insText : "",
+				deletions ? delText : "",
 			  ].filter(Boolean)
 			: [];
 		const plain = [icon, branch, ...diffPlain].join(" ");
 		const renderedDiff = withDiff
 			? [
-				insertions ? seg(toneMap.ins, `[+${insertions}]`) : "",
-				deletions ? seg(toneMap.del, `[-${deletions}]`) : "",
+				insertions ? seg(toneMap.ins, insText) : "",
+				deletions ? seg(toneMap.del, delText) : "",
 			  ].filter(Boolean).join(" ")
 			: "";
 		const rendered = [
@@ -652,20 +659,28 @@ export class BoxEditor extends CustomEditor {
 		return process.env.NO_COLOR ? "line" : "halfblock";
 	}
 
+	// The colorizer the nvim `line` frame's rule runs use -- ONE source for the rule segments AND the
+	// US-023 top-rule label, so the label's ⎇ and branch name always melt into the rule's exact tone
+	// (user round-3: plain default-fg outshone the rule; the label must share the rule's colour, never
+	// a guessed token). Exposed as a closure so the branch-badge formatter can consume it verbatim.
+	private inputRuleColorizer(): (text: string) => string {
+		const style = this.userZoneStyle.editor;
+		return (text: string) => this.styleBackgroundAsFg(style.inputBackgroundColor, text);
+	}
+
 	private renderInputLineBorder(width: number, topLabel?: { plain: string; rendered: string } | null): string {
 		const style = this.userZoneStyle.editor;
 		const char = (style.dividerChar || "─") as string;
+		const ruleFg = this.inputRuleColorizer();
 		if (!topLabel) {
-			return this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(Math.max(1, width)));
+			return ruleFg(char.repeat(Math.max(1, width)));
 		}
 		// US-023 nvim top rule: rule xN + ' label ' + one trailing rule dash, total exactly `width`. The
 		// rule keeps the frame colour; the label keeps the shared branch-badge formatter's colours, each
 		// tone closed with its own \x1b[39m so no full reset ever leaks between the two colour regimes.
 		const labelWidth = safeVisibleWidth(topLabel.plain);
 		const leftCount = Math.max(2, width - labelWidth - 3);
-		const left = this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(leftCount));
-		const right = this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(1));
-		return `${left} ${topLabel.rendered} ${right}`;
+		return `${ruleFg(char.repeat(leftCount))} ${topLabel.rendered} ${ruleFg(char.repeat(1))}`;
 	}
 
 	private renderInputBoxFrame(inputLines: string[], width: number, topLabel?: { plain: string; rendered: string } | null): string[] {
@@ -1015,12 +1030,16 @@ export class BoxEditor extends CustomEditor {
 		const deletions = info?.deletions;
 		// A rung fits when 2 leading rule dashes + ' label ' + 1 trailing dash still fit the width.
 		const fits = (badge: { plain: string } | null) => Boolean(badge && safeVisibleWidth(badge.plain) + 5 <= width);
-		// User-approved colouring: ⎇ and the branch name render in the terminal-default fg (no tone);
-		// only the LOC brackets keep their semantic success/error tones.
-		const nvimTones = { icon: null, name: null, ins: "success", del: "error" } as const;
-		const full = this.buildBranchBadge(name, insertions, deletions, true, nvimTones);
+		// User-approved colouring (round 3): ⎇ and the branch name take the RULE's own colorizer so the
+		// label melts into the line; only the LOC numbers keep their semantic success/error tones.
+		const ruleFg = this.inputRuleColorizer();
+		const nvimTones = { icon: ruleFg, name: ruleFg, ins: "success", del: "error" } as const;
+		// User round-4: bare LOC (`+2 -1`, no brackets) per the gitsigns/lualine convention -- real nvim
+		// shows diffs unbracketed, colour separates the numbers. Format still owned by buildBranchBadge
+		// via its `style` mode; the legacy call sites never pass it and stay byte-identical.
+		const full = this.buildBranchBadge(name, insertions, deletions, true, nvimTones, "bare");
 		if (fits(full)) return full;
-		const nameOnly = this.buildBranchBadge(name, insertions, deletions, false, nvimTones);
+		const nameOnly = this.buildBranchBadge(name, insertions, deletions, false, nvimTones, "bare");
 		if (fits(nameOnly)) return nameOnly;
 		return null;
 	}

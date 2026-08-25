@@ -289,9 +289,9 @@ async function runNvimStatuslineSmoke() {
 	const empty = render(100);
 	assert(empty.length === 4, `nvim should always render 4 rows, got ${empty.length}`);
 	// US-023: the default fixture carries a branch, so the top rule embeds the shared branch label
-	// (`⎇ main [+2][-1]` for this fixture) while the bottom rule stays plain; the exact-format checks
-	// live in Property 7 -- here it is the shape gate: rule-prefixed, label, one trailing dash.
-	assert(/^\u2500+ \u2387 main \[\+2\] \[-1\] \u2500$/.test(empty[0]) && empty[0].length === 100, `nvim top border should be a full-width rule embedding the branch label, got ${JSON.stringify(empty[0])}`);
+	// (`⎇ main +2 -1` for this fixture, bare LOC) while the bottom rule stays plain; the exact-format
+	// checks live in Property 7 -- here it is the shape gate: rule-prefixed, label, one trailing dash.
+	assert(/^\u2500+ \u2387 main \+2 -1 \u2500$/.test(empty[0]) && empty[0].length === 100, `nvim top border should be a full-width rule embedding the branch label (bare LOC), got ${JSON.stringify(empty[0])}`);
 	assert(empty[2].replace(/\u2500/g, "").trim() === "" && empty[2].length === 100, "nvim bottom border should be a full-width line rule");
 	const emptyBar = renderBar(100);
 	assert(emptyBar.index === 3, `nvim statusline should be row 3 for a single-line, autocomplete-free render, got row ${emptyBar.index}`);
@@ -589,6 +589,10 @@ async function runNvimStatuslineSmoke() {
 		{ label: "branch main", branch: "main", insertions: 2, deletions: 1 },
 		{ label: "CJK branch", branch: "feature/rename-\u7528\u6236-flow", insertions: 12, deletions: 3 },
 		{ label: "40-char branch", branch: "x".repeat(40), insertions: 5, deletions: 9 },
+		{ label: "CJK 60-col capped", branch: "\u6a21".repeat(30), insertions: 1, deletions: 2 },
+		// Git allows `+`/`-` inside branch names: this fixture pins that stage detection reads the
+		// FORMATTER's own LOC suffix, never a loose `[+-]\d` regex that would false-positive on the name.
+		{ label: "plusminus name", branch: "fix+2-retry", insertions: 3, deletions: 6 },
 		{ label: "ins only", branch: "main", insertions: 7, deletions: 0 },
 		{ label: "del only", branch: "main", insertions: 0, deletions: 4 },
 		{ label: "no LOC", branch: "main", insertions: 0, deletions: 0 },
@@ -598,6 +602,22 @@ async function runNvimStatuslineSmoke() {
 		let lastStage = 0; // 0 = plain rule, 1 = name-only, 2 = full with LOC
 		let appeared = false;
 		let sawStage1 = false;
+		// Cap oracle (Biscuit round-2 blocker): the DISPLAYED name must equal truncatePlain's output for
+		// the contract cap -- same helper, not a hardcoded string, so the test pins NVIM_BRANCH_MAX
+		// BOTH ways: a missing cap shows a longer name than the oracle (red), a wrong cap shows a
+		// different cut than truncatePlain at 24 (red). The 40-char fixture additionally pins the exact
+		// ASCII cut (23 x + …) and forbids any 24+ x run -- mutation M7 (cap removed) must turn P7 red.
+		const capOracle = makeEditor({}).truncatePlain;
+		const badgeOracle = makeEditor({});
+		const expectedName = capOracle(f.branch, 24, "\u2026");
+		assert(visibleWidth(expectedName) <= 24, `${f.label}: cap oracle itself must stay within 24 columns`);
+		// Stage oracle (Biscuit seam): the label row is classified by comparing against the FORMATTER's
+		// own plain output for each rung (same buildBranchBadge, `bare` style), anchored between the
+		// rule's spaces and trailing dash -- so a branch name containing literal `+2`/`-1` can never be
+		// mistaken for LOC, and a corrupted/unknown label fails outright instead of defaulting green.
+		const fullPlain = badgeOracle.buildBranchBadge(expectedName, f.insertions, f.deletions, true, undefined, "bare").plain;
+		const namePlain = badgeOracle.buildBranchBadge(expectedName, f.insertions, f.deletions, false, undefined, "bare").plain;
+		assert(fullPlain.startsWith(`\u2387 ${expectedName}`) && namePlain.startsWith(`\u2387 ${expectedName}`), `${f.label}: badge oracle must embed the capped name`);
 		for (const width of range(1, 200)) {
 			const rows = render(width, { branch: branchFn, raw: true });
 			const topRow = rows[0];
@@ -606,11 +626,19 @@ async function runNvimStatuslineSmoke() {
 			assert(!topRow.includes("\x1b[0m"), `${f.label} width ${width}: top rule must not leak a full \x1b[0m reset`);
 			const icons = (topPlain.match(/\u2387/g) ?? []).length;
 			assert(icons <= 1, `${f.label} width ${width}: branch label must appear at most once in the top rule, got ${icons}`);
-			const stage = icons === 0 ? 0 : (topPlain.includes("[") ? 2 : 1);
+			const stage = topPlain.endsWith(` ${fullPlain} \u2500`) ? 2 : topPlain.endsWith(` ${namePlain} \u2500`) ? 1 : icons === 0 ? 0 : -1;
+			assert(stage >= 0, `${f.label} width ${width}: top-rule label matches NEITHER formatter rung (formatter-owned oracle; expected full ${JSON.stringify(fullPlain)} or name-only ${JSON.stringify(namePlain)}), got ${JSON.stringify(topPlain)}`);
 			assert(stage >= lastStage, `${f.label} width ${width}: branch-label information must be monotonic in width, went stage ${lastStage} -> ${stage}`);
 			lastStage = stage;
 			appeared = appeared || icons === 1;
 			sawStage1 = sawStage1 || stage === 1;
+			if (stage >= 1) {
+				assert(topPlain.includes(`\u2387 ${expectedName}`), `${f.label} width ${width}: displayed branch name must be exactly the truncatePlain(…, 24, …) cut \`${expectedName}\`, got ${JSON.stringify(topPlain)}`);
+				if (f.label === "40-char branch") {
+					assert(expectedName === "x".repeat(23) + "\u2026", `40-char fixture: exact ASCII cut must be 23 x + ellipsis, got ${JSON.stringify(expectedName)}`);
+					assert(!/x{24}/.test(topPlain), `${f.label} width ${width}: a 24+ x run means the source cap is gone (M7 class)`);
+				}
+			}
 			if (stage === 0) {
 				assert(topPlain === "\u2500".repeat(width), `${f.label} width ${width}: below threshold the top rule must be a plain rule, no dangling ellipsis: ${JSON.stringify(topPlain)}`);
 			} else {
@@ -618,17 +646,29 @@ async function runNvimStatuslineSmoke() {
 				assert(/\u2500 \u2387 .+ \u2500$/.test(topPlain), `${f.label} width ${width}: top rule must read rule + ' label ' + one dash, got ${JSON.stringify(topPlain)}`);
 				assert(!topPlain.trimEnd().endsWith("\u2026 \u2500") || f.branch.length > 24, `${f.label} width ${width}: ellipsis in label while branch is under the cap`);
 			}
-			// RAW colour spot-check: LOC tones present exactly when stage 2, in the shared formatter's tones.
+			// RAW colour spot-check (bare LOC, round-4): each sign+number must be ONE coloured segment
+			// (`\x1b[92m+2\x1b[39m` -- a bare `+` followed by a coloured digit is a seam violation), shown
+			// exactly when stage 2; zeros self-hide per the shared formatter; the bracketed spelling must
+			// NOT appear (mutation M8: nvim passing the default `brackets` style turns these red).
 			const hasIns = f.insertions > 0 && stage === 2;
 			const hasDel = f.deletions > 0 && stage === 2;
-			assert(topRow.includes(`\x1b[92m[+${f.insertions}]`) === hasIns, `${f.label} width ${width}: [+${f.insertions}] success tone must be present iff shown at stage 2`);
-			assert(topRow.includes(`\x1b[31m[-${f.deletions}]`) === hasDel, `${f.label} width ${width}: [-${f.deletions}] error tone must be present iff shown at stage 2`);
-			// ...and the `⎇ <name>` portion carries NO SGR at all (user-approved minimal colouring): the
-			// icon and the capped name must be plain terminal-default fg, so the run after `⎇ ` must be
-			// non-empty and escape-free until the LOC brackets (or the rule) begin. Mutation M6 (toning the
-			// name, e.g. dim) breaks the escape-free run and turns this red -- the match itself is asserted.
-			const unstyled = stage >= 1 ? topRow.match(/\u2387 [^\x1b]+/) : null;
-			assert(stage === 0 || Boolean(unstyled), `${f.label} width ${width}: the ⎇ and branch name must carry no SGR in the top rule (terminal-default fg), found styled label: ${JSON.stringify(topRow)}`);
+			assert(topRow.includes(`\x1b[92m+${f.insertions}\x1b[39m`) === hasIns, `${f.label} width ${width}: +${f.insertions} must be one success-coloured segment iff shown at stage 2`);
+			assert(topRow.includes(`\x1b[31m-${f.deletions}\x1b[39m`) === hasDel, `${f.label} width ${width}: -${f.deletions} must be one error-coloured segment iff shown at stage 2`);
+			assert(!topPlain.includes("+0") && !topPlain.includes("-0"), `${f.label} width ${width}: zero LOC must self-hide, found +0/-0`);
+			assert(!/\x1b\[9[12]m\[/.test(topRow) && !/\x1b\[31m\[/.test(topRow), `${f.label} width ${width}: LOC must be bare (no brackets) on the nvim rule`);
+			// ...and (user round-3) the `⎇ <name>` portion carries the RULE's OWN SGR exactly — same source,
+			// no hardcoded code: the rule opens the row, so its leading escape IS the rule tone, and both the
+			// icon and the displayed name text must appear prefixed by that exact escape (each closed with
+			// its own \x1b[39m; the LOC numbers keep success/error). Mutation M6 (round-2 flavour: unstyled
+			// icon/name) breaks this and turns P7 red; the round-1 flavour (dim name) is retired with the
+			// unstyled baseline it guarded.
+			if (stage >= 1) {
+				const ruleSgr = topRow.match(/^\x1b\[[0-9;]*m/)?.[0] ?? null;
+			assert(ruleSgr, `${f.label} width ${width}: top rule row must open with the rule's SGR escape`);
+			const nameText = topPlain.split("\u2387 ")[1]?.split(/ [+-]\d/)[0]?.split(" \u2500")[0] ?? "";
+			assert(topRow.includes(`${ruleSgr}\u2387`), `${f.label} width ${width}: the ⎇ glyph must carry the rule's own SGR (${JSON.stringify(ruleSgr)}), found: ${JSON.stringify(topRow)}`);
+			assert(nameText && topRow.includes(`${ruleSgr}${nameText}`), `${f.label} width ${width}: the branch name must carry the rule's own SGR (${JSON.stringify(ruleSgr)}), found: ${JSON.stringify(topRow)}`);
+			}
 		}
 		assert(appeared, `${f.label}: branch label must appear in the top rule by width 200`);
 		// The middle rung must be REACHABLE for LOC-carrying fixtures: deleting the LOC-degrade branch

@@ -2,7 +2,7 @@
 
 ## Status
 
-planned
+implemented
 
 ## Lane
 
@@ -39,6 +39,7 @@ Statusline (companion change):
 - P7 (new, red-first greenfield: written and run BEFORE implementation, red because the label never appears, then green): sentinel branches (ASCII + CJK), width 1..200 — label appears monotonic, appears exactly once, truncates with `…` at the 24-col cap, below threshold a plain rule with no dangling ellipsis, the rule row carries no `\x1b[0m` and `visibleWidth === width`.
 - P7 mutation-proof (ritual, same as P6 round 5b): (a) label with 0 spaces around it (`⎇ main` glued to the rule) must turn P7 red; (b) removing the drop law (label squeezing into narrow widths) must turn P7 red.
 - Round-2 additions: RAW negative assert that the `⎇ <name>` portion carries NO SGR (unstyled); mutation M6 (name re-toned dim) must turn P7 red. Total mutations M1-M6 + P3 all proven red.
+- Round-4 additions (final colouring): `⎇` + name take the RULE's own colorizer (`inputRuleColorizer`, melt into the line); LOC rendered BARE (`+2 -1`, gitsigns/lualine convention) keeping success/error; mutations M6' (unstyled), M7 (cap removed), M8 (bare→brackets) all red. Stage detection is formatter-owned (classified against `buildBranchBadge`'s own plain output, anchored by rule spaces + trailing dash) with a `fix+2-retry` fixture pinning that git-legal `+`/`-` in names is never mistaken for LOC; each sign+number is one coloured segment; zeros self-hide; unknown labels fail outright.
 - P3 negative assert mutation: re-adding `⎇` to the statusline must turn it red.
 - P1/P2/P4/P6 must stay green unchanged.
 
