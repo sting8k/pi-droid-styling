@@ -1,6 +1,6 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
-import { getPresentationStyle } from "../presentation/state.js";
+import { getPresentationDesign } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { isImageRenderLine, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { dropLeadingColumns, fgHex, stripAnsi } from "../theme/ansi.js";
@@ -152,7 +152,7 @@ function legacyWrapperInChain(): boolean {
 function normalizeToolRenderLines(lines: string[], width: number, expanded: boolean): string[] {
 	const { content, tail } = splitImageTail(lines);
 
-	if (getPresentationStyle() === "reasonix") {
+	if (getPresentationDesign().compactLayout) {
 		return appendImageTail(normalizeReasonixToolLines(content, width, expanded), tail);
 	}
 

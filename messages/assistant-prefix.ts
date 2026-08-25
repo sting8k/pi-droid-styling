@@ -1,7 +1,6 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
-import { REASONIX_MARKER_GAP } from "../presentation/reasonix-layout.js";
-import { getPresentationStyle } from "../presentation/state.js";
+import { getPresentationDesign } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
@@ -15,10 +14,6 @@ function buildPrefixSegment(): string {
 	return activeTheme ? fgHex(activeTheme, color, prefix) : prefix;
 }
 
-function usesReasonixPresentation(): boolean {
-	return getPresentationStyle() === "reasonix";
-}
-
 function buildDividerLine(width: number): string {
 	if (width <= 0) return "";
 	const char = getThemeExtra(activeTheme, "dividerChar");
@@ -29,9 +24,10 @@ function buildDividerLine(width: number): string {
 
 function composePrefixedLine(line: string): string {
 	const prefix = buildPrefixSegment();
-	if (usesReasonixPresentation()) {
-		if (!line) return `${prefix}${REASONIX_MARKER_GAP}`;
-		return startsWithVisibleSpace(line) ? `${prefix}${line}` : `${prefix}${REASONIX_MARKER_GAP}${line}`;
+	const design = getPresentationDesign();
+	if (design.compactLayout) {
+		if (!line) return `${prefix}${design.markerGap}`;
+		return startsWithVisibleSpace(line) ? `${prefix}${line}` : `${prefix}${design.markerGap}${line}`;
 	}
 	if (!line) return `${prefix}  `;
 	return startsWithVisibleSpace(line) ? `${prefix} ${line}` : `${prefix}  ${line}`;
@@ -70,7 +66,7 @@ function stripItalicAnsi(text: string): string {
 }
 
 function styleThinkingLine(text: string): string {
-	if (!usesReasonixPresentation()) return stripItalicAnsi(text);
+	if (!getPresentationDesign().compactLayout) return stripItalicAnsi(text);
 	const plain = stripAnsi(text);
 	if (plain.trim().length === 0 || typeof activeTheme?.fg !== "function") return plain;
 	const colored = activeTheme.fg("thinkingText", plain);
@@ -237,6 +233,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 	proto.render = function patchedAssistantMessageRender(width: number): string[] {
 		if (width <= 0) return baseRender.call(this, width);
 		const lines = baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width));
+		const design = getPresentationDesign();
 
 		const compactPrefixBase = composePrefixedLine("");
 		const compactPrefix =
@@ -251,7 +248,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			const result = lines.map((renderedLine) =>
 				safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 			);
-			if (usesReasonixPresentation()) return compactReasonixLines(result);
+			if (design.compactLayout) return compactReasonixLines(result);
 			const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";
 			return showDivider ? [divider, ...result, ""] : [...result, ""];
 		}
@@ -281,7 +278,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,
 		);
 
-		if (usesReasonixPresentation()) return compactReasonixLines(result);
+		if (design.compactLayout) return compactReasonixLines(result);
 
 		// Add turn divider before assistant message
 		const showDivider = getThemeExtra(activeTheme, "showDivider") !== "false";

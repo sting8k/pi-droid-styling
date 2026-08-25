@@ -3,7 +3,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
-import { getPresentationStyle } from "../presentation/state.js";
+import { getPresentationDesign } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { profileCount } from "../performance/profiler.js";
@@ -442,7 +442,7 @@ function renderBoxedOutputLines(theme: any, outputLines: string[], width: number
 	return [...head, boxLine(theme, theme.fg("muted", skippedText), width), ...tail];
 }
 function isReasonixPresentation(): boolean {
-	return getPresentationStyle() === "reasonix";
+	return getPresentationDesign().compactLayout;
 }
 
 function reasonixEllipsis(theme: any): string {
