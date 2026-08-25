@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.12.0 - 2026-08-25
+
+### Added
+- nvim preset: the current git branch is embedded in the input frame's top rule, right-aligned — `─── ⎇ branch +N -M ─`. Diff counts are gitsigns-style bare numbers (insertions in `success`, deletions in `error`, zero counts self-hide), the `⎇` glyph and branch name use `muted` (the same tier as the model id on the statusline), and the rule dashes keep the frame tone. The branch name is capped at 24 columns at the source; on narrow widths the label degrades LOC-first, then disappears entirely rather than leaving a bare ellipsis.
+
+### Changed
+- nvim statusline no longer renders the `⎇ branch` segment — it moved to the top rule, and the freed width flows to other extensions' status text.
+- The branch badge formatter is now a single shared source (`buildBranchBadge`) with per-caller tone and bracket/bare style parameters; the droid and gemini badges render byte-identically to before.
+
 ## 2.11.0 - 2026-08-25
 
 ### Added
