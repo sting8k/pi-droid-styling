@@ -22,6 +22,13 @@ const NVIM_MIN_MODEL_WIDTH = 8;
 // the allocator consumes the left cluster's actual width, which this cap keeps bounded by construction.
 const NVIM_MODEL_ID_MAX = 40;
 
+// Display cap for the branch NAME in the nvim input-frame top-rule label (US-023), applied at source
+// like NVIM_MODEL_ID_MAX. The [+N][-M] LOC tail is never truncated -- split integers are meaningless;
+// when the tail does not fit, the label degrades to the name-only rung first (churn yields to
+// identity), then to a plain rule. 24 keeps `feature/...` slugs readable while leaving the label
+// comfortably inside typical terminal widths alongside the model cluster.
+const NVIM_BRANCH_MAX = 24;
+
 type SlashAutocompleteItem = {
 	value?: string;
 	label?: string;
@@ -466,19 +473,43 @@ export class BoxEditor extends CustomEditor {
 	private formatBranchBadge(): { plain: string; rendered: string } | null {
 		const info = this.getBranch?.();
 		if (!info?.branch) return null;
+		return this.buildBranchBadge(info.branch, info.insertions, info.deletions, true);
+	}
+
+	// Single source of the `⎇ branch [+N] [-M]` FORMAT (token order, spaces, brackets), shared by the
+	// footer badges (all three non-nvim presets) and the nvim input-frame top-rule label (US-023).
+	// Colour is CALLER-decided: `tones` maps each token to a theme tone name, or `null` to render that
+	// token in the terminal-default fg (the nvim rule's ⎇ and branch name -- minimal by design, while
+	// the LOC brackets keep their semantic success/error tones). Omitting `tones` entirely keeps the
+	// historic footer styling byte-identical. `withDiff: false` drops the LOC tail -- the nvim label's
+	// middle degrade rung, where churn yields to identity; zero insertions/deletions self-hide.
+	private buildBranchBadge(
+		branch: string,
+		insertions: number | undefined,
+		deletions: number | undefined,
+		withDiff: boolean,
+		tones?: { icon: string | null; name: string | null; ins: string | null; del: string | null },
+	): { plain: string; rendered: string } | null {
+		if (!branch) return null;
+		const toneMap = tones ?? { icon: "bashMode", name: "mdLinkUrl", ins: "success", del: "error" };
+		const seg = (tone: string | null, text: string) => (tone ? this.tone(tone, text) : text);
 		const icon = "⎇";
-		const diffPlain = [
-			info.insertions ? `[+${info.insertions}]` : "",
-			info.deletions ? `[-${info.deletions}]` : "",
-		].filter(Boolean);
-		const plain = [icon, info.branch, ...diffPlain].join(" ");
-		const renderedDiff = [
-			info.insertions ? this.tone("success", `[+${info.insertions}]`) : "",
-			info.deletions ? this.tone("error", `[-${info.deletions}]`) : "",
-		].filter(Boolean).join(" ");
+		const diffPlain = withDiff
+			? [
+				insertions ? `[+${insertions}]` : "",
+				deletions ? `[-${deletions}]` : "",
+			  ].filter(Boolean)
+			: [];
+		const plain = [icon, branch, ...diffPlain].join(" ");
+		const renderedDiff = withDiff
+			? [
+				insertions ? seg(toneMap.ins, `[+${insertions}]`) : "",
+				deletions ? seg(toneMap.del, `[-${deletions}]`) : "",
+			  ].filter(Boolean).join(" ")
+			: "";
 		const rendered = [
-			this.tone("bashMode", icon),
-			this.tone("mdLinkUrl", info.branch),
+			seg(toneMap.icon, icon),
+			seg(toneMap.name, branch),
 			renderedDiff,
 		].filter(Boolean).join(" ");
 		return { plain, rendered };
@@ -621,17 +652,29 @@ export class BoxEditor extends CustomEditor {
 		return process.env.NO_COLOR ? "line" : "halfblock";
 	}
 
-	private renderInputLineBorder(width: number): string {
+	private renderInputLineBorder(width: number, topLabel?: { plain: string; rendered: string } | null): string {
 		const style = this.userZoneStyle.editor;
-		return this.styleBackgroundAsFg(style.inputBackgroundColor, (style.dividerChar || "─").repeat(Math.max(1, width)));
+		const char = (style.dividerChar || "─") as string;
+		if (!topLabel) {
+			return this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(Math.max(1, width)));
+		}
+		// US-023 nvim top rule: rule xN + ' label ' + one trailing rule dash, total exactly `width`. The
+		// rule keeps the frame colour; the label keeps the shared branch-badge formatter's colours, each
+		// tone closed with its own \x1b[39m so no full reset ever leaks between the two colour regimes.
+		const labelWidth = safeVisibleWidth(topLabel.plain);
+		const leftCount = Math.max(2, width - labelWidth - 3);
+		const left = this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(leftCount));
+		const right = this.styleBackgroundAsFg(style.inputBackgroundColor, char.repeat(1));
+		return `${left} ${topLabel.rendered} ${right}`;
 	}
 
-	private renderInputBoxFrame(inputLines: string[], width: number): string[] {
+	private renderInputBoxFrame(inputLines: string[], width: number, topLabel?: { plain: string; rendered: string } | null): string[] {
 		const style = this.userZoneStyle.editor;
 		const inputFrame = this.resolveInputFrame();
 		if (inputFrame === "line") {
-			const border = this.renderInputLineBorder(width);
-			return [border, ...inputLines.map((line) => this.pad(line, width)), border];
+			const top = this.renderInputLineBorder(width, topLabel);
+			const bottom = this.renderInputLineBorder(width);
+			return [top, ...inputLines.map((line) => this.pad(line, width)), bottom];
 		}
 		if (inputFrame === "none") return inputLines;
 		if (inputFrame === "outline") {
@@ -806,19 +849,21 @@ export class BoxEditor extends CustomEditor {
 			: badgeRendered;
 		const leftModelOnlyPlain = modelId ? `${badgePlain}${badgeGap}${modelId}` : badgePlain;
 		const leftModelOnlyRendered = modelId ? `${badgeRendered}${badgeGap}${this.tone("muted", modelId)}` : badgeRendered;
-
-		const branch = this.getBranch?.()?.branch ?? "";
 		const usage = this.contextUsage();
+
+
 		const ctxPercent = usage && typeof usage.percent === "number" && Number.isFinite(usage.percent) ? `${Math.round(usage.percent)}%` : "";
 		const tokensPart = usage && typeof usage.tokens === "number" && Number.isFinite(usage.tokens)
 			? `${this.formatCompactTokens(usage.tokens)}/${this.formatCompactTokens(usage.contextWindow)}`
 			: "";
 		const chPercent = this.formatNvimCacheHitPercent();
 		const tokensCtx = [tokensPart, ctxPercent].filter(Boolean).join(" ");
-		const branchSegment = branch ? `⎇ ${branch}` : "";
 
-		const chromeFullPlain = [branchSegment, tokensCtx, chPercent ? `CH ${chPercent}` : ""].filter(Boolean).join(" · ");
-		const chromeDropChPlain = [branchSegment, ctxPercent].filter(Boolean).join(" · ");
+		// US-023: the branch moved to the input-frame top rule (`⎇ name [+N][-M]`), so the right cluster is
+		// tokens/ctx/CH only -- a value must never appear twice in the user zone. The freed columns flow
+		// to the extension status through the same candidate scoring as before.
+		const chromeFullPlain = [tokensCtx, chPercent ? `CH ${chPercent}` : ""].filter(Boolean).join(" · ");
+		const chromeDropChPlain = ctxPercent;
 		const chromeCtxOnlyPlain = ctxPercent;
 
 		const candidates = [
@@ -957,8 +1002,31 @@ export class BoxEditor extends CustomEditor {
 		return { plain, render };
 	}
 
+	// US-023: the nvim layout's top-rule branch label, degraded by width in two monotonic rungs -- full
+	// `⎇ name [+N][-M]`, then `⎇ name` (LOC first: churn yields to identity), then null (plain rule).
+	// Name comes from the same provider the statusline used, normalized like status text and capped at
+	// NVIM_BRANCH_MAX; the string itself is the shared buildBranchBadge output, colours included.
+	private nvimTopRuleLabel(width: number): { plain: string; rendered: string } | null {
+		const info = this.getBranch?.();
+		const branch = info?.branch ? normalizeSingleLine(stripAnsi(info.branch)) : "";
+		if (!branch) return null;
+		const name = this.truncatePlain(branch, NVIM_BRANCH_MAX, "…");
+		const insertions = info?.insertions;
+		const deletions = info?.deletions;
+		// A rung fits when 2 leading rule dashes + ' label ' + 1 trailing dash still fit the width.
+		const fits = (badge: { plain: string } | null) => Boolean(badge && safeVisibleWidth(badge.plain) + 5 <= width);
+		// User-approved colouring: ⎇ and the branch name render in the terminal-default fg (no tone);
+		// only the LOC brackets keep their semantic success/error tones.
+		const nvimTones = { icon: null, name: null, ins: "success", del: "error" } as const;
+		const full = this.buildBranchBadge(name, insertions, deletions, true, nvimTones);
+		if (fits(full)) return full;
+		const nameOnly = this.buildBranchBadge(name, insertions, deletions, false, nvimTones);
+		if (fits(nameOnly)) return nameOnly;
+		return null;
+	}
+
 	private renderNvimLayout(inputLines: string[], autocompleteLines: string[], width: number, _contentInnerWidth: number): string[] {
-		const lines: string[] = [...this.renderInputBoxFrame(inputLines, width), this.renderNvimStatusline(width)];
+		const lines: string[] = [...this.renderInputBoxFrame(inputLines, width, this.nvimTopRuleLabel(width)), this.renderNvimStatusline(width)];
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 

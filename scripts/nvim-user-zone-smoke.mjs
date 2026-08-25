@@ -224,7 +224,7 @@ async function runNvimStatuslineSmoke() {
 			"/tmp/pi-droid-nvim-smoke",
 			usage,
 			options.model ?? model,
-			branch,
+			options.branch ?? branch,
 			speed,
 			options.footer ?? (() => ""),
 			() => "footer",
@@ -288,7 +288,10 @@ async function runNvimStatuslineSmoke() {
 	// (no second row for extension status) whether or not a status is present.
 	const empty = render(100);
 	assert(empty.length === 4, `nvim should always render 4 rows, got ${empty.length}`);
-	assert(empty[0].replace(/\u2500/g, "").trim() === "" && empty[0].length === 100, "nvim top border should be a full-width line rule");
+	// US-023: the default fixture carries a branch, so the top rule embeds the shared branch label
+	// (`⎇ main [+2][-1]` for this fixture) while the bottom rule stays plain; the exact-format checks
+	// live in Property 7 -- here it is the shape gate: rule-prefixed, label, one trailing dash.
+	assert(/^\u2500+ \u2387 main \[\+2\] \[-1\] \u2500$/.test(empty[0]) && empty[0].length === 100, `nvim top border should be a full-width rule embedding the branch label, got ${JSON.stringify(empty[0])}`);
 	assert(empty[2].replace(/\u2500/g, "").trim() === "" && empty[2].length === 100, "nvim bottom border should be a full-width line rule");
 	const emptyBar = renderBar(100);
 	assert(emptyBar.index === 3, `nvim statusline should be row 3 for a single-line, autocomplete-free render, got row ${emptyBar.index}`);
@@ -493,8 +496,11 @@ async function runNvimStatuslineSmoke() {
 			const seen = { branch: false, tokens: false, ctx: false, ch: false, provider: false };
 			for (const width of range(20, 140)) {
 				const { plain } = bar(width, { model: modelFn, footer });
+				// US-023 negative assert: the branch moved to the input-frame top rule, so `⎇` must NEVER
+				// appear in the statusline at any width (mutation: re-adding `⎇ branch` here turns this red).
+				assert(!plain.includes("\u2387"), `${m.label} / ${label} width ${width}: statusline must not contain \u2387 after US-023 (branch lives on the input top rule)`);
 				const now = {
-					branch: plain.includes("\u2387 main"),
+					branch: false,
 					tokens: /\d+k\/\d+k/.test(plain),
 					ctx: plain.includes("42%"),
 					ch: /CH \d+%/.test(plain),
@@ -570,17 +576,85 @@ async function runNvimStatuslineSmoke() {
 	}
 
 
-	// Width degradation ladder, verified exact at every rung boundary against the default (short model, no
-	// status) fixture. The two narrow rungs (44/32) differ from the original baseline BY DESIGN: the badge
-	// breath gap (Property 6) adds one space outside the block on every rung, so the model-only rungs now
-	// read " HIGH  claude" instead of the old " HIGH claude" -- a deliberate, user-requested baseline
-	// change recorded in docs/TEST_MATRIX.md, not a regression. The wide rungs (100/80/60) are byte-
-	// identical to the pre-gap ladder: they always carried the gap as `gapWide`.
+	// Property 7 -- nvim input-frame top-rule branch label (US-023). The git branch (with its [+N][-M]
+	// LOC tail, same shared formatter the other presets' footer badge uses) is embedded in the TOP rule of
+	// the `line` input frame, exactly once, while the statusline drops `⎇` entirely (P3-negative below).
+	// Written RED-FIRST greenfield: on pre-US-023 code the label never renders, so the "must appear by
+	// width 200" assert fails before implementation and goes green after. Degrade is TWO rungs: full
+	// `⎇ name [+N][-M]`, then `⎇ name` (LOC drops first -- churn yields to identity), then a plain rule
+	// with no dangling ellipsis; information never decreases as the width grows. The rule row must keep
+	// exact visibleWidth and never leak a full \x1b[0m reset (the label's success/error tones sit BETWEEN
+	// the rule's border colour -- the likeliest reset-scope leak of this story, asserted on RAW).
+	const branchLabelFixtures = [
+		{ label: "branch main", branch: "main", insertions: 2, deletions: 1 },
+		{ label: "CJK branch", branch: "feature/rename-\u7528\u6236-flow", insertions: 12, deletions: 3 },
+		{ label: "40-char branch", branch: "x".repeat(40), insertions: 5, deletions: 9 },
+		{ label: "ins only", branch: "main", insertions: 7, deletions: 0 },
+		{ label: "del only", branch: "main", insertions: 0, deletions: 4 },
+		{ label: "no LOC", branch: "main", insertions: 0, deletions: 0 },
+	];
+	for (const f of branchLabelFixtures) {
+		const branchFn = () => ({ branch: f.branch, insertions: f.insertions, deletions: f.deletions });
+		let lastStage = 0; // 0 = plain rule, 1 = name-only, 2 = full with LOC
+		let appeared = false;
+		let sawStage1 = false;
+		for (const width of range(1, 200)) {
+			const rows = render(width, { branch: branchFn, raw: true });
+			const topRow = rows[0];
+			const topPlain = stripAnsi(topRow);
+			assert(visibleWidth(topPlain) === width, `${f.label} width ${width}: top rule must keep exact terminal width, got ${visibleWidth(topPlain)}`);
+			assert(!topRow.includes("\x1b[0m"), `${f.label} width ${width}: top rule must not leak a full \x1b[0m reset`);
+			const icons = (topPlain.match(/\u2387/g) ?? []).length;
+			assert(icons <= 1, `${f.label} width ${width}: branch label must appear at most once in the top rule, got ${icons}`);
+			const stage = icons === 0 ? 0 : (topPlain.includes("[") ? 2 : 1);
+			assert(stage >= lastStage, `${f.label} width ${width}: branch-label information must be monotonic in width, went stage ${lastStage} -> ${stage}`);
+			lastStage = stage;
+			appeared = appeared || icons === 1;
+			sawStage1 = sawStage1 || stage === 1;
+			if (stage === 0) {
+				assert(topPlain === "\u2500".repeat(width), `${f.label} width ${width}: below threshold the top rule must be a plain rule, no dangling ellipsis: ${JSON.stringify(topPlain)}`);
+			} else {
+				// Label spacing: exactly one space each side of the label block, exactly one trailing rule dash.
+				assert(/\u2500 \u2387 .+ \u2500$/.test(topPlain), `${f.label} width ${width}: top rule must read rule + ' label ' + one dash, got ${JSON.stringify(topPlain)}`);
+				assert(!topPlain.trimEnd().endsWith("\u2026 \u2500") || f.branch.length > 24, `${f.label} width ${width}: ellipsis in label while branch is under the cap`);
+			}
+			// RAW colour spot-check: LOC tones present exactly when stage 2, in the shared formatter's tones.
+			const hasIns = f.insertions > 0 && stage === 2;
+			const hasDel = f.deletions > 0 && stage === 2;
+			assert(topRow.includes(`\x1b[92m[+${f.insertions}]`) === hasIns, `${f.label} width ${width}: [+${f.insertions}] success tone must be present iff shown at stage 2`);
+			assert(topRow.includes(`\x1b[31m[-${f.deletions}]`) === hasDel, `${f.label} width ${width}: [-${f.deletions}] error tone must be present iff shown at stage 2`);
+			// ...and the `⎇ <name>` portion carries NO SGR at all (user-approved minimal colouring): the
+			// icon and the capped name must be plain terminal-default fg, so the run after `⎇ ` must be
+			// non-empty and escape-free until the LOC brackets (or the rule) begin. Mutation M6 (toning the
+			// name, e.g. dim) breaks the escape-free run and turns this red -- the match itself is asserted.
+			const unstyled = stage >= 1 ? topRow.match(/\u2387 [^\x1b]+/) : null;
+			assert(stage === 0 || Boolean(unstyled), `${f.label} width ${width}: the ⎇ and branch name must carry no SGR in the top rule (terminal-default fg), found styled label: ${JSON.stringify(topRow)}`);
+		}
+		assert(appeared, `${f.label}: branch label must appear in the top rule by width 200`);
+		// The middle rung must be REACHABLE for LOC-carrying fixtures: deleting the LOC-degrade branch
+		// (full-or-plain only) still satisfies monotonicity, so this assert is what catches it -- proven
+		// by mutation M3 of the US-023 ritual.
+		assert(sawStage1 || (f.insertions === 0 && f.deletions === 0), `${f.label}: the name-only degrade rung must be reachable at some width when LOC exists`);
+		assert(lastStage === 2 || (f.insertions === 0 && f.deletions === 0), `${f.label}: full label (with LOC when present) must fit by width 200, stuck at stage ${lastStage}`);
+	}
+	// No-git: plain rule, byte-identical top rule at every width.
+	for (const width of range(1, 120)) {
+		const rows = render(width, { branch: () => undefined, raw: true });
+		const topPlain = stripAnsi(rows[0]);
+		assert(topPlain === "\u2500".repeat(width), `no-git width ${width}: top rule must be a plain rule, got ${JSON.stringify(topPlain)}`);
+		assert(visibleWidth(topPlain) === width, `no-git width ${width}: top rule width drift`);
+	}
+
+	// Width degradation ladder, verified exact at every rung boundary against the default (short model,
+	// no status) fixture. US-023 DELIBERATE baseline change: `⎇ branch` left the right cluster for the
+	// input-frame top rule, so every rung shifts — the tokens rung (`84k/200k 42% · CH 91%`) now fits as
+	// early as w60 and the with-provider left joins at w44 instead of w60. Narrow rungs keep the Property
+	// 6 badge breath gap. Recorded in docs/TEST_MATRIX.md, not a regression.
 	const ladder = {
-		100: " HIGH  anthropic \u00b7 claude-sonnet-4                                    \u2387 main \u00b7 84k/200k 42% \u00b7 CH 91%",
-		80: " HIGH  anthropic \u00b7 claude-sonnet-4                \u2387 main \u00b7 84k/200k 42% \u00b7 CH 91%",
-		60: " HIGH  anthropic \u00b7 claude-sonnet-4              \u2387 main \u00b7 42%",
-		44: " HIGH  claude-sonnet-4                   42%",
+		100: " HIGH  anthropic \u00b7 claude-sonnet-4                                             84k/200k 42% \u00b7 CH 91%",
+		80: " HIGH  anthropic \u00b7 claude-sonnet-4                         84k/200k 42% \u00b7 CH 91%",
+		60: " HIGH  anthropic \u00b7 claude-sonnet-4     84k/200k 42% \u00b7 CH 91%",
+		44: " HIGH  anthropic \u00b7 claude-sonnet-4       42%",
 		32: " HIGH  claude-sonnet-4       42%",
 	};
 	for (const [width, expected] of Object.entries(ladder)) {
