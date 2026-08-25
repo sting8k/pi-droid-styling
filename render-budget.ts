@@ -14,6 +14,13 @@ const TRUNCATE_ELLIPSIS = "…";
 const ANSI_RESET = "\x1b[0m";
 const SGR_PREFIX_PATTERN = /^(?:\x1b\[[0-9;]*m)+/;
 const SGR_SUFFIX_PATTERN = /(?:\x1b\[[0-9;]*m)+$/;
+const KITTY_IMAGE_PREFIX = "\x1b_G";
+const ITERM2_IMAGE_PREFIX = "\x1b]1337;File=";
+
+/** Terminal image-protocol lines (kitty APC / iTerm2 OSC) must pass through render transforms untouched. */
+export function isImageRenderLine(line: string): boolean {
+	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM2_IMAGE_PREFIX);
+}
 
 type SimpleSgrWrappedText = {
 	prefix: string;

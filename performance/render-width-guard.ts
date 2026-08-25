@@ -1,22 +1,16 @@
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 
-import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { isImageRenderLine, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 import { profileCount, profileSample } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.render-width-guard.patched");
-const KITTY_IMAGE_PREFIX = "\x1b_G";
-const ITERM2_IMAGE_PREFIX = "\x1b]1337;File=";
 
 type RenderFunction = (width: number) => string[];
 
 function normalizeWidth(width: number): number {
 	const normalized = Math.floor(width);
 	return Number.isFinite(normalized) && normalized > 0 ? normalized : 0;
-}
-
-function isImageRenderLine(line: string): boolean {
-	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM2_IMAGE_PREFIX);
 }
 
 function clampLineWithCursorMarker(line: string, width: number): string {

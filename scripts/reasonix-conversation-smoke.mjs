@@ -362,6 +362,83 @@ assert(collapsedBashLike[1]?.startsWith("  └─ ") && collapsedBashLike[1]?.in
 assert(!collapsedBashLike.some((line) => line.includes("preview")), "reasonix collapsed tool should discard every preview body line");
 const narrowCollapsedBashLike = normalizeReasonixToolLines(bashLikeLines, 24, false).map(stripAnsi);
 assert((narrowCollapsedBashLike[1]?.length ?? 0) <= 24 && narrowCollapsedBashLike[1]?.includes("1.20s"), "reasonix narrow collapsed metrics should retain duration without overflow");
+const kittyImageLine = "\x1b_Gf=100,t=d,a=T;QUFBQQ==\x1b\\";
+class FakeImageToolComponent {
+	render() {
+		return [activeTheme.fg("text", "✓ Read photo.png"), `  └─ ${activeTheme.fg("text", "◷")} ${activeTheme.fg("dim", "0.50s")}`, "", kittyImageLine];
+	}
+}
+installCompactToolSpacing(FakeImageToolComponent);
+const reasonixImageLines = new FakeImageToolComponent().render(80);
+assert(reasonixImageLines.includes(kittyImageLine), "reasonix collapsed tool should keep terminal image lines appended by the core component");
+assert(reasonixImageLines.indexOf(kittyImageLine) > 0 && reasonixImageLines[reasonixImageLines.indexOf(kittyImageLine) - 1] === "", "reasonix should keep one spacer row before the terminal image line");
+setPresentationStyle("droid");
+class FakeBoxedImageToolComponent {
+	render() {
+		return ["┌─ Read ─┐", "│ photo │", "└────────┘", "", kittyImageLine];
+	}
+}
+installCompactToolSpacing(FakeBoxedImageToolComponent);
+const boxedImageLines = new FakeBoxedImageToolComponent().render(80);
+assert(boxedImageLines.includes(kittyImageLine), "droid boxed tool should keep terminal image lines appended by the core component");
+setPresentationStyle("reasonix");
+const iterm2ImageLine = "\x1b]1337;File=inline=1:QUFBQQ==\x07";
+class FakeMultiImageToolComponent {
+	expanded = true;
+	render() {
+		return [activeTheme.fg("text", "✓ Read photos"), "", kittyImageLine, "", iterm2ImageLine];
+	}
+}
+installCompactToolSpacing(FakeMultiImageToolComponent);
+const multiImageLines = new FakeMultiImageToolComponent().render(80);
+assert(multiImageLines.includes(kittyImageLine) && multiImageLines.includes(iterm2ImageLine), "reasonix expanded tool should keep kitty and iTerm2 image lines");
+assert(multiImageLines.indexOf(kittyImageLine) < multiImageLines.indexOf(iterm2ImageLine), "multiple image lines should keep their original order");
+// Live-upgrade path: a session that still holds the delegate-aware v10 wrapper
+// must pick up image preservation through the refreshed runtime delegate alone.
+const runtimeStateKey = Symbol.for("pi-droid-styling.compact-tool-spacing.runtime-state");
+class FakeUpgradedToolComponent {
+	render() {
+		return [activeTheme.fg("text", "✓ Read photo.png"), `  └─ ${activeTheme.fg("text", "◷")} ${activeTheme.fg("dim", "0.50s")}`, "", kittyImageLine];
+	}
+}
+const upgradedProto = FakeUpgradedToolComponent.prototype;
+const upgradedBase = upgradedProto.render;
+const v10Render = function (width) {
+	const lines = upgradedBase.call(this, width);
+	if (lines.length === 0 || width <= 0) return lines;
+	const runtime = upgradedProto[runtimeStateKey];
+	if (runtime.usesReasonix()) return runtime.normalizeReasonix(lines, width, Boolean(this.expanded));
+	// stale v10 inline droid path: lossy stand-in that drops image lines
+	return lines.filter((line) => stripAnsi(line).trim() !== "");
+};
+v10Render.__compactToolSpacingPatchVersion__ = 10;
+upgradedProto.render = v10Render;
+installCompactToolSpacing(FakeUpgradedToolComponent);
+assert(upgradedProto.render === v10Render, "upgrade install must refresh the delegate without stacking a new wrapper on a v10 session");
+const upgradedReasonixLines = new FakeUpgradedToolComponent().render(80);
+assert(upgradedReasonixLines.includes(kittyImageLine), "v10 wrapper with refreshed delegate should keep image lines in reasonix");
+setPresentationStyle("droid");
+class FakeUpgradedBoxedToolComponent {
+	render() {
+		return ["┌─ Read ─┐", "│ photo │", "└────────┘", "", kittyImageLine];
+	}
+}
+const upgradedBoxedProto = FakeUpgradedBoxedToolComponent.prototype;
+const upgradedBoxedBase = upgradedBoxedProto.render;
+const v10BoxedRender = function (width) {
+	const lines = upgradedBoxedBase.call(this, width);
+	if (lines.length === 0 || width <= 0) return lines;
+	const runtime = upgradedBoxedProto[runtimeStateKey];
+	if (runtime.usesReasonix()) return runtime.normalizeReasonix(lines, width, Boolean(this.expanded));
+	return lines.filter((line) => stripAnsi(line).trim() !== "");
+};
+v10BoxedRender.__compactToolSpacingPatchVersion__ = 10;
+upgradedBoxedProto.render = v10BoxedRender;
+installCompactToolSpacing(FakeUpgradedBoxedToolComponent);
+const upgradedBoxedLines = new FakeUpgradedBoxedToolComponent().render(80);
+assert(upgradedBoxedLines.includes(kittyImageLine), "v10 wrapper with refreshed delegate should keep image lines in droid boxed mode");
+assert(upgradedBoxedLines[0]?.startsWith("┌"), "v10 wrapper with refreshed delegate should still normalize the droid box");
+setPresentationStyle("reasonix");
 const underToolCallCapHeader = `✓ Bash ${"x".repeat(50)}`;
 const pendingUnderToolCallCap = normalizeReasonixToolLines([activeTheme.fg("text", underToolCallCapHeader)], 80, false).map(stripAnsi);
 assert(pendingUnderToolCallCap[0] === underToolCallCapHeader && !pendingUnderToolCallCap[0]?.includes("…"), "reasonix pending call should use the same 80% cap before output exists");

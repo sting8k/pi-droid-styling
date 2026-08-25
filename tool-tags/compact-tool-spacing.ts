@@ -2,14 +2,18 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationStyle } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
-import { safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
+import { isImageRenderLine, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
 import { dropLeadingColumns, fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 
 const PATCH_FLAG = "__compactToolSpacingPatched__";
+const LEGACY_CHAIN_FLAG = "__compactToolSpacingLegacyChain__";
 const PATCH_VERSION_KEY = "__compactToolSpacingPatchVersion__";
 const RUNTIME_STATE_KEY = Symbol.for("pi-droid-styling.compact-tool-spacing.runtime-state");
-const PATCH_VERSION = 10;
+const PATCH_VERSION = 11;
+// RUNTIME_STATE_KEY delegation shipped with wrapper version 10; older stamped
+// wrappers (2-9) never read the delegate and still need to be wrapped over.
+const DELEGATE_AWARE_PATCH_VERSION = 10;
 
 type ToolSpacingRuntimeState = {
 	usesReasonix(): boolean;
@@ -22,6 +26,7 @@ let cachedTheme: any = null;
 
 export function setToolSpacingTheme(theme: any): void {
 	cachedTheme = theme;
+	cachedDividerWidth = -1;
 }
 
 function buildDividerLine(width: number): string {
@@ -38,6 +43,27 @@ function trimOuterBlankLines(lines: string[]): string[] {
 	while (start < end && stripAnsi(lines[start] ?? "").trim() === "") start++;
 	while (end > start && stripAnsi(lines[end - 1] ?? "").trim() === "") end--;
 	return lines.slice(start, end);
+}
+
+/**
+ * ToolExecutionComponent appends terminal image lines (kitty/iTerm2 escape
+ * payloads) after the text content. stripAnsi() reduces them to empty strings,
+ * so spacing normalization would silently trim them as blank lines. Split them
+ * off (with their leading spacer) before normalizing and re-append after.
+ */
+function splitImageTail(lines: string[]): { content: string[]; tail: string[] } {
+	const first = lines.findIndex(isImageRenderLine);
+	if (first < 0) return { content: lines, tail: [] };
+	let start = first;
+	while (start > 0 && stripAnsi(lines[start - 1] ?? "").trim() === "") start--;
+	return { content: lines.slice(0, start), tail: lines.slice(start) };
+}
+
+function appendImageTail(lines: string[], tail: string[]): string[] {
+	if (tail.length === 0) return lines;
+	let end = lines.length;
+	while (end > 0 && stripAnsi(lines[end - 1] ?? "").trim() === "") end--;
+	return [...lines.slice(0, end), ...tail, ""];
 }
 
 function isFullWidthDivider(line: string, width: number): boolean {
@@ -108,61 +134,85 @@ function normalizeBoxedLines(lines: string[]): string[] | undefined {
 	return lines.slice(boxStart, boxEnd + 1);
 }
 
+// Cache divider per width to keep stable string references across frames.
+// Reset by setToolSpacingTheme() whenever the session theme changes.
+let cachedDivider = "";
+let cachedDividerWidth = -1;
+
+function legacyWrapperInChain(): boolean {
+	return Boolean((globalThis as Record<string, unknown>)[LEGACY_CHAIN_FLAG]);
+}
+
 /**
- * Normalizes ToolExecution spacing without stacking reload patches.
+ * Full spacing normalizer for every presentation style. Image lines appended
+ * by the core component are split off first and re-appended untouched.
  * Reasonix removes outer dividers, keeps one spacer row, and folds collapsed
  * output into a header plus metrics connector. Droid keeps existing spacing.
  */
+function normalizeToolRenderLines(lines: string[], width: number, expanded: boolean): string[] {
+	const { content, tail } = splitImageTail(lines);
+
+	if (getPresentationStyle() === "reasonix") {
+		return appendImageTail(normalizeReasonixToolLines(content, width, expanded), tail);
+	}
+
+	const boxedLines = normalizeBoxedLines(content);
+	if (boxedLines) return appendImageTail(boxedLines, tail);
+
+	// A pre-versioned legacy wrapper already added divider/trailing-blank
+	// spacing; keep its non-boxed output instead of stacking a second divider.
+	if (legacyWrapperInChain()) return lines;
+
+	if (getThemeExtra(cachedTheme, "showDivider") === "false") return appendImageTail([...content, ""], tail);
+	if (cachedDividerWidth !== width) {
+		cachedDivider = buildDividerLine(width);
+		cachedDividerWidth = width;
+	}
+	return appendImageTail([cachedDivider, ...content, ""], tail);
+}
+
+/**
+ * Normalizes ToolExecution spacing without stacking reload patches.
+ *
+ * The render wrapper is installed at most once per host prototype and stays
+ * behavior-free: all normalization flows through the RUNTIME_STATE_KEY
+ * delegate, which is refreshed on every install. Wrappers left behind by
+ * earlier module versions also read this delegate, so they pick up current
+ * behavior (usesReasonix() is pinned true so old wrappers route every style
+ * through the delegate instead of their stale inline droid/boxed paths that
+ * would drop terminal image lines).
+ */
 export function installCompactToolSpacing(ToolExecutionComponentClass: any = ToolExecutionComponent): void {
 	const proto = ToolExecutionComponentClass?.prototype as any;
-	if (!proto) return;
+	if (!proto || typeof proto.render !== "function") return;
 
-	// Pi reloads extension modules on session replacement while retaining the host
-	// ToolExecutionComponent prototype. Refresh this delegate on every install so
-	// the persistent wrapper reads the new session's presentation and theme state.
+	const globalState = globalThis as Record<string, unknown>;
+	const existingVersion = proto.render[PATCH_VERSION_KEY];
+	const existingDelegateAware = typeof existingVersion === "number" && existingVersion >= DELEGATE_AWARE_PATCH_VERSION;
+	// Decide once per process whether a delegate-less wrapper (legacy unstamped
+	// or version 2-9) already added its own spacing to the render chain.
+	if (!(LEGACY_CHAIN_FLAG in globalState)) {
+		globalState[LEGACY_CHAIN_FLAG] = Boolean(globalState[PATCH_FLAG]) && !existingDelegateAware;
+	}
+	globalState[PATCH_FLAG] = true;
+
 	proto[RUNTIME_STATE_KEY] = {
-		usesReasonix: () => getPresentationStyle() === "reasonix",
-		normalizeReasonix: normalizeReasonixToolLines,
+		usesReasonix: () => true,
+		normalizeReasonix: normalizeToolRenderLines,
 		showDivider: () => getThemeExtra(cachedTheme, "showDivider") !== "false",
 		buildDivider: buildDividerLine,
 	} satisfies ToolSpacingRuntimeState;
-	if (proto.render?.[PATCH_VERSION_KEY] === PATCH_VERSION) return;
 
-	const globalState = globalThis as Record<string, unknown>;
-	const legacyPatched = Boolean(globalState[PATCH_FLAG]);
-	globalState[PATCH_FLAG] = true;
+	// A delegate-aware wrapper (version >= 10, this or an earlier module version)
+	// already routes through RUNTIME_STATE_KEY; never stack a second wrapper on it.
+	if (existingDelegateAware) return;
 
 	const baseRender = proto.render;
-	if (typeof baseRender !== "function") return;
-
-	// Cache divider per width to keep stable string references across frames
-	let cachedDivider = "";
-	let cachedDividerWidth = -1;
-	let cachedDividerRuntime: ToolSpacingRuntimeState | undefined;
-
 	const patchedToolRender = function patchedToolRender(this: any, width: number): string[] {
-		const lines = baseRender.call(this, width);
-		if (lines.length === 0 || width <= 0) return lines;
+		const rendered = baseRender.call(this, width);
+		if (rendered.length === 0 || width <= 0) return rendered;
 		const runtime = proto[RUNTIME_STATE_KEY] as ToolSpacingRuntimeState;
-
-		if (runtime.usesReasonix()) {
-			return runtime.normalizeReasonix(lines, width, Boolean(this.expanded));
-		}
-
-		const boxedLines = normalizeBoxedLines(lines);
-		if (boxedLines) return boxedLines;
-
-		// If this session already had the old patch installed, keep its non-boxed
-		// spacing output instead of stacking a second divider/trailing blank.
-		if (legacyPatched) return lines;
-
-		if (!runtime.showDivider()) return [...lines, ""];
-		if (cachedDividerWidth !== width || cachedDividerRuntime !== runtime) {
-			cachedDivider = runtime.buildDivider(width);
-			cachedDividerWidth = width;
-			cachedDividerRuntime = runtime;
-		}
-		return [cachedDivider, ...lines, ""];
+		return runtime.normalizeReasonix(rendered, width, Boolean(this.expanded));
 	};
 	(patchedToolRender as any)[PATCH_VERSION_KEY] = PATCH_VERSION;
 	proto.render = patchedToolRender;
