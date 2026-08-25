@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.10.1 - 2026-08-25
+
+### Fixed
+- Terminal images in tool results (kitty/iTerm2, e.g. reading an image file) are no longer dropped by the tool spacing normalization; live sessions holding the previous render wrapper pick up the fix through the refreshed runtime delegate.
+
 ## 2.10.0 - 2026-08-24
 
 ### Added
