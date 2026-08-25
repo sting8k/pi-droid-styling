@@ -1018,7 +1018,7 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	// US-023: the nvim layout's top-rule branch label, degraded by width in two monotonic rungs -- full
-	// `⎇ name [+N][-M]`, then `⎇ name` (LOC first: churn yields to identity), then null (plain rule).
+	// `⎇ name +N -M`, then `⎇ name` (LOC first: churn yields to identity), then null (plain rule).
 	// Name comes from the same provider the statusline used, normalized like status text and capped at
 	// NVIM_BRANCH_MAX; the string itself is the shared buildBranchBadge output, colours included.
 	private nvimTopRuleLabel(width: number): { plain: string; rendered: string } | null {
@@ -1030,10 +1030,10 @@ export class BoxEditor extends CustomEditor {
 		const deletions = info?.deletions;
 		// A rung fits when 2 leading rule dashes + ' label ' + 1 trailing dash still fit the width.
 		const fits = (badge: { plain: string } | null) => Boolean(badge && safeVisibleWidth(badge.plain) + 5 <= width);
-		// User-approved colouring (round 3): ⎇ and the branch name take the RULE's own colorizer so the
-		// label melts into the line; only the LOC numbers keep their semantic success/error tones.
-		const ruleFg = this.inputRuleColorizer();
-		const nvimTones = { icon: ruleFg, name: ruleFg, ins: "success", del: "error" } as const;
+		// FINAL user-approved colouring (round 5): ⎇ and the branch name take the `muted` tone -- the
+		// SAME tier the model id uses on the bar, because the branch is identity like the model id; the
+		// rule's dashes keep their own ruleFg colorizer and the LOC numbers keep success/error.
+		const nvimTones = { icon: "muted" as const, name: "muted" as const, ins: "success" as const, del: "error" as const };
 		// User round-4: bare LOC (`+2 -1`, no brackets) per the gitsigns/lualine convention -- real nvim
 		// shows diffs unbracketed, colour separates the numbers. Format still owned by buildBranchBadge
 		// via its `style` mode; the legacy call sites never pass it and stay byte-identical.

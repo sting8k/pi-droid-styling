@@ -656,18 +656,14 @@ async function runNvimStatuslineSmoke() {
 			assert(topRow.includes(`\x1b[31m-${f.deletions}\x1b[39m`) === hasDel, `${f.label} width ${width}: -${f.deletions} must be one error-coloured segment iff shown at stage 2`);
 			assert(!topPlain.includes("+0") && !topPlain.includes("-0"), `${f.label} width ${width}: zero LOC must self-hide, found +0/-0`);
 			assert(!/\x1b\[9[12]m\[/.test(topRow) && !/\x1b\[31m\[/.test(topRow), `${f.label} width ${width}: LOC must be bare (no brackets) on the nvim rule`);
-			// ...and (user round-3) the `⎇ <name>` portion carries the RULE's OWN SGR exactly — same source,
-			// no hardcoded code: the rule opens the row, so its leading escape IS the rule tone, and both the
-			// icon and the displayed name text must appear prefixed by that exact escape (each closed with
-			// its own \x1b[39m; the LOC numbers keep success/error). Mutation M6 (round-2 flavour: unstyled
-			// icon/name) breaks this and turns P7 red; the round-1 flavour (dim name) is retired with the
-			// unstyled baseline it guarded.
+			// ...and (FINAL round-5 colouring) the `⎇ <name>` glyphs carry the MUTED tone -- the same tier
+			// as the model id on the bar, because the branch is identity like the model id -- asserted via
+			// the suite's own tone source (COLOR_ANSI), each segment closed with \x1b[39m, while the rule's
+			// dashes keep ruleFg. Mutation M6-final (name switched to ruleFg OR unstyled) turns this red.
 			if (stage >= 1) {
-				const ruleSgr = topRow.match(/^\x1b\[[0-9;]*m/)?.[0] ?? null;
-			assert(ruleSgr, `${f.label} width ${width}: top rule row must open with the rule's SGR escape`);
-			const nameText = topPlain.split("\u2387 ")[1]?.split(/ [+-]\d/)[0]?.split(" \u2500")[0] ?? "";
-			assert(topRow.includes(`${ruleSgr}\u2387`), `${f.label} width ${width}: the ⎇ glyph must carry the rule's own SGR (${JSON.stringify(ruleSgr)}), found: ${JSON.stringify(topRow)}`);
-			assert(nameText && topRow.includes(`${ruleSgr}${nameText}`), `${f.label} width ${width}: the branch name must carry the rule's own SGR (${JSON.stringify(ruleSgr)}), found: ${JSON.stringify(topRow)}`);
+				const mutedSgr = COLOR_ANSI.muted;
+				assert(topRow.includes(`${mutedSgr}\u2387\x1b[39m`), `${f.label} width ${width}: the ⎇ glyph must carry the muted tone (model-id tier), found: ${JSON.stringify(topRow)}`);
+				assert(topRow.includes(`${mutedSgr}${expectedName}\x1b[39m`), `${f.label} width ${width}: the branch name must carry the muted tone (model-id tier), found: ${JSON.stringify(topRow)}`);
 			}
 		}
 		assert(appeared, `${f.label}: branch label must appear in the top rule by width 200`);
