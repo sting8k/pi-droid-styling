@@ -77,8 +77,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `dimToolOutput` | `true`, `false` | `false` | Dim tool output so the conversation stands out. |
 | `customWorkingMessage` | Custom text | See example | Rename the working, thinking, answering, and tool-running labels. You can set only the ones you want to change. |
 | `presentationStyle` | `droid`, `reasonix` | `droid` | `droid` keeps cards and tool boxes. `reasonix` uses a cleaner, compact conversation layout. |
-| `userZoneStyle` | `gemini`, `droid`, `cli-dock` | `gemini` | Choose the look of the prompt, status rows, and footer. |
-| `inputBox.style` | `auto`, `halfblock`, `line`, `solid` | `auto` | Choose the input-box frame. `auto` uses the best match for the selected user-zone style. |
+| `userZoneStyle` | `gemini`, `droid`, `cli-dock`, `nvim` | `gemini` | Choose the look of the prompt, status rows, and footer. `nvim` is a Neovim-style dock: a lined input plus one statusline bar (thinking-level badge, model, branch, tokens, context %, cache-hit %). |
+| `inputBox.style` | `auto`, `halfblock`, `line`, `solid` | `auto` | Choose the input-box frame. `auto` uses the best match for the selected user-zone style. Some presets always resolve to a frame outside this list regardless of the setting: `cli-dock` always renders `outline`, and `droid` collapses an explicit `line` to `none`. |
 | `tasksWidgetStyle` | `compact`, `default` | `compact` | Use the one-line tasks widget, or leave the original `pi-tasks` widget unchanged. |
 | `forceOSC11` | `true`, `false` | `false` | Force terminal background sync on Windows/WSL. Usually leave this off. |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |

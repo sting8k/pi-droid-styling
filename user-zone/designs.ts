@@ -1,11 +1,11 @@
-export const USER_ZONE_STYLE_NAMES = ["droid", "gemini", "cli-dock"] as const;
+export const USER_ZONE_STYLE_NAMES = ["droid", "gemini", "cli-dock", "nvim"] as const;
 
 export type UserZoneStyleName = typeof USER_ZONE_STYLE_NAMES[number];
 
 type UserZoneStyleNameSet = Record<UserZoneStyleName, true>;
 
 export interface UserZoneEditorStyle {
-	layout: "droid" | "gemini" | "cli-dock";
+	layout: "droid" | "gemini" | "cli-dock" | "nvim";
 	panelPaddingX: number;
 	prompt: string;
 	promptColor: string;
@@ -27,6 +27,7 @@ export interface UserZoneEditorStyle {
 	inputFrame: "auto" | "none" | "halfblock" | "line" | "solid" | "outline";
 	footerLabelColor: string;
 	footerValueColor: string;
+	placeholder?: string;
 }
 
 export interface UserZoneStyle {
@@ -38,6 +39,7 @@ const USER_ZONE_STYLE_NAME_SET: UserZoneStyleNameSet = {
 	droid: true,
 	gemini: true,
 	"cli-dock": true,
+	nvim: true,
 };
 
 export const DEFAULT_USER_ZONE_STYLE: UserZoneStyleName = "gemini";
@@ -123,6 +125,35 @@ export const USER_ZONE_STYLES: Record<UserZoneStyleName, UserZoneStyle> = {
 			inputFrame: "outline",
 			footerLabelColor: "dim",
 			footerValueColor: "muted",
+			placeholder: " Type a prompt or / for commands",
+		},
+	},
+	nvim: {
+		name: "nvim",
+		editor: {
+			layout: "nvim",
+			panelPaddingX: 1,
+			prompt: "❯",
+			promptColor: "accent",
+			promptBold: true,
+			promptGap: 2,
+			showHostBorder: false,
+			hostBorderFill: "",
+			hostPrefixColor: "accent",
+			hostBorderColor: "borderMuted",
+			showMetadataRow: false,
+			showRuntimeRow: false,
+			showDivider: false,
+			dividerChar: "─",
+			dividerColor: "border",
+			dividerBold: true,
+			showTrailingBlankLine: false,
+			slashBorderColor: "borderMuted",
+			inputBackgroundColor: "selectedBg",
+			inputFrame: "line",
+			footerLabelColor: "dim",
+			footerValueColor: "muted",
+			placeholder: "Type a prompt  ·  / commands  ·  ! bash",
 		},
 	},
 };

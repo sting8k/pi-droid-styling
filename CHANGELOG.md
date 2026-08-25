@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.11.0 - 2026-08-25
+
+### Added
+- New `userZoneStyle: "nvim"` preset: a Neovim-inspired dock with a lined input frame and one full-width statusline bar. A leading solid-block badge (reverse video) shows the thinking level uppercased verbatim from Pi's own six levels, or `BASH` while the input starts with `!`, coloured by mode rather than level (`accent` for normal input — the theme's own general highlight token, so a theme author retuning it deliberately carries every accented UI element, including this badge, along with it; measured alternatives scored higher on raw contrast/distinctness but borrow meaning from an unrelated part of the theme (syntax highlighting); known and accepted that `accent` equals `bashMode` in 5 of 26 companion themes, where bash mode recolours only the label; Pi's own `theme.getBashModeBorderColor()` for bash — the level lives in the label text only); a non-reasoning model renders no badge at all. The bar shows `provider · model`, and `branch · tokens ctx% · CH%` right-aligned, with a width-based degradation ladder so the row always fills the terminal exactly. Other extensions' status is appended to the far right of that same row and truncated with `…` if it overflows.
+
 ## 2.10.1 - 2026-08-25
 
 ### Fixed
