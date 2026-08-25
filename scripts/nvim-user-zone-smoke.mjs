@@ -459,11 +459,10 @@ async function runNvimStatuslineSmoke() {
 			let prevCount = -1;
 			for (const width of range(1, 200)) {
 				const { plain } = bar(width, { model: modelFn, footer: () => status });
-				// An over-cap model id always ends in the id-cap ellipsis (NVIM_MODEL_ID_MAX), so a trailing
-				// ellipsis is the MODEL's cap marker, not the status truncation marker this law is about: strip
-				// the trailing ellipsis (a suffix strip, not an exact-marker check -- the capped tail's exact
-				// content is pinned separately by Property 4) before the law fires; the law then proves no
-				// second ellipsis remains.
+				// The capped model value carries an ellipsis; for over-cap fixtures the oracle removes one final
+				// suffix without source attribution (the capped tail's exact content is pinned separately by
+				// Property 4), so the model's cap marker is never mistaken for the status truncation marker
+				// this law is about; the law then proves no second ellipsis remains.
 				const lawPlain = m.overCap && plain.trimEnd().endsWith("\u2026") ? plain.trimEnd().slice(0, -1) : plain;
 				const { count, hasEllipsis } = countSentinelTail(lawPlain, sentinel);
 				const full = countSentinelTail(plain, sentinel);
