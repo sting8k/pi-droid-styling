@@ -1,17 +1,12 @@
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 
-import { REASONIX_MARKER_GAP } from "../presentation/reasonix-layout.js";
-import { getPresentationStyle } from "../presentation/state.js";
+import { getPresentationDesign } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
-
-function usesReasonixPresentation(): boolean {
-	return getPresentationStyle() === "reasonix";
-}
 
 function usesLegacyQuotePrefix(): boolean {
 	return getThemeExtra(activeTheme, "quoteStyle") === "true" && getThemeExtra(activeTheme, "userPrefix") === "│";
@@ -33,10 +28,11 @@ function buildPrefixSegment(): string {
 	const configuredChar = getThemeExtra(activeTheme, "userPrefix");
 	const char = usesLegacyQuotePrefix() ? "❯" : configuredChar;
 	const prefix = colorUserPrefix(char);
-	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
+	const design = getPresentationDesign();
+	if (!design.stripsBackground && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix}${usesReasonixPresentation() ? REASONIX_MARKER_GAP : "  "}`;
+	return `${prefix}${design.markerGap}`;
 }
 
 function buildDividerLine(width: number): string {
@@ -57,10 +53,11 @@ function stripEmphasisAnsi(text: string): string {
 function buildContinuationSegment(): string {
 	const char = getThemeExtra(activeTheme, "quoteChar") || "┆";
 	const prefix = colorUserPrefix(char);
-	if (!usesReasonixPresentation() && typeof activeTheme?.bg === "function") {
+	const design = getPresentationDesign();
+	if (!design.stripsBackground && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
-	return `${prefix}${usesReasonixPresentation() ? REASONIX_MARKER_GAP : "  "}`;
+	return `${prefix}${design.markerGap}`;
 }
 
 function alignContinuationLines(lines: string[], targetIndex: number): void {
@@ -100,6 +97,7 @@ export function installUserMessagePrefix(theme: any): void {
 		if (trimmed.length === 0) return lines;
 
 		const output = [...trimmed];
+		const design = getPresentationDesign();
 
 		// Find first non-empty line to inject prefix
 		let targetIndex = 0;
@@ -113,18 +111,18 @@ export function installUserMessagePrefix(theme: any): void {
 
 		const prefixSegment = buildPrefixSegment();
 		const line = output[targetIndex] ?? "";
-		const presentationLine = usesReasonixPresentation() ? stripBackgroundAnsi(line) : line;
+		const presentationLine = design.stripsBackground ? stripBackgroundAnsi(line) : line;
 		const remainder = stripEmphasisAnsi(dropLeadingColumns(presentationLine, 1));
 		output[targetIndex] = `${prefixSegment}${remainder}`;
 		alignContinuationLines(output, targetIndex);
 
 		const result = output.map((renderedLine) => {
-			const presentationLine = usesReasonixPresentation() ? stripBackgroundAnsi(renderedLine) : renderedLine;
+			const presentationLine = design.stripsBackground ? stripBackgroundAnsi(renderedLine) : renderedLine;
 			const plainLine = stripEmphasisAnsi(presentationLine);
 			return safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
 		});
 
-		if (usesReasonixPresentation()) return [...result, ""];
+		if (design.compactLayout) return [...result, ""];
 
 		// Add turn divider before user message
 		const divider = buildDividerLine(width);

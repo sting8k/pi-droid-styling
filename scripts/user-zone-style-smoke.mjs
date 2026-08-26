@@ -134,7 +134,7 @@ async function runConfigSmoke(name, initialJson, validate) {
 
 async function runStyleResolverSmoke() {
 	const styles = await importBuilt("user-zone/designs.js");
-	assert(styles.USER_ZONE_STYLE_NAMES.join(",") === "droid,gemini,cli-dock", "style names changed unexpectedly");
+	assert(styles.USER_ZONE_STYLE_NAMES.join(",") === "droid,gemini,cli-dock,nvim", "style names changed unexpectedly");
 	assert(styles.resolveUserZoneStyle("droid").editor.showHostBorder === true, "droid style did not preserve host border");
 	assert(styles.resolveUserZoneStyle("gemini").editor.layout === "gemini", "gemini style did not select gemini layout");
 	assert(styles.resolveUserZoneStyle("gemini").editor.prompt === "❯", "gemini style did not keep droid prompt icon");

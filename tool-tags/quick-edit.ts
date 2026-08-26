@@ -2,7 +2,7 @@ import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
-import { getPresentationStyle } from "../presentation/state.js";
+import { getPresentationDesign } from "../presentation/state.js";
 import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
@@ -149,7 +149,7 @@ function renderQuickEditResult(
 ) {
 	const expanded = isExpanded(options);
 	if (expanded) clearCompactBoxedFooter(context.state);
-	const reasonixCollapsed = getPresentationStyle() === "reasonix" && !expanded && Boolean(context.state);
+	const reasonixCollapsed = getPresentationDesign().compactLayout && !expanded && Boolean(context.state);
 	if (options.isPartial) {
 		if (reasonixCollapsed) {
 			setCompactBoxedFooter(context.state, theme.fg("muted", `Applying ${config.applyingLabel}...`), { isPartial: true });
