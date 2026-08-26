@@ -682,15 +682,20 @@ async function runNvimStatuslineSmoke() {
 	}
 
 	// Width degradation ladder, verified exact at every rung boundary against the default (short model,
-	// no status) fixture. US-023 DELIBERATE baseline change: `⎇ branch` left the right cluster for the
-	// input-frame top rule, so every rung shifts — the tokens rung (`84k/200k 42% · CH 91%`) now fits as
-	// early as w60 and the with-provider left joins at w44 instead of w60. Narrow rungs keep the Property
-	// 6 badge breath gap. Recorded in docs/TEST_MATRIX.md, not a regression.
+	// no status) fixture. DELIBERATE baseline change (post-2.12.0 tuning): the context metric outranks
+	// the provider — provider is decoration and is sacrificed FIRST, so the rung order is now
+	// P+full > M+full > M+tokensCtx > M+ctx > M+none. Consequences: the full metric (incl. CH%) already
+	// fits at w45 on the model-only left, the provider re-joins only from w57, and w44 keeps the token
+	// metric instead of the provider. Narrow rungs keep the Property 6 badge breath gap. Recorded in
+	// docs/TEST_MATRIX.md, not a regression.
 	const ladder = {
 		100: " HIGH  anthropic \u00b7 claude-sonnet-4                                             84k/200k 42% \u00b7 CH 91%",
 		80: " HIGH  anthropic \u00b7 claude-sonnet-4                         84k/200k 42% \u00b7 CH 91%",
 		60: " HIGH  anthropic \u00b7 claude-sonnet-4     84k/200k 42% \u00b7 CH 91%",
-		44: " HIGH  anthropic \u00b7 claude-sonnet-4       42%",
+		57: " HIGH  anthropic \u00b7 claude-sonnet-4  84k/200k 42% \u00b7 CH 91%",
+		56: " HIGH  claude-sonnet-4             84k/200k 42% \u00b7 CH 91%",
+		45: " HIGH  claude-sonnet-4  84k/200k 42% \u00b7 CH 91%",
+		44: " HIGH  claude-sonnet-4          84k/200k 42%",
 		32: " HIGH  claude-sonnet-4       42%",
 	};
 	for (const [width, expected] of Object.entries(ladder)) {
@@ -700,6 +705,24 @@ async function runNvimStatuslineSmoke() {
 		// The plain row (above) proves text content; also prove the RAW row carries no reset.
 		assertLineIntegrity(b.raw, Number(width), `ladder width ${width}`);
 	}
+
+	// Post-2.12.0 tuning: the context metric cluster is muted (the same tier as the model id — the user
+	// reads it constantly), while the extension status stays dim. Pinned on RAW with the suite's own
+	// tone source; a mutation back to dim-for-chrome must turn this red.
+	const chromeMuted = bar(60);
+	assert(
+		chromeMuted.raw.includes(`${COLOR_ANSI.muted}84k/200k 42% \u00b7 CH 91%`),
+		`the context metric cluster should carry the muted tone, got ${JSON.stringify(chromeMuted.raw)}`,
+	);
+	const statusDim = bar(100, { footer: () => "MCP OK" });
+	assert(
+		statusDim.raw.includes(`${COLOR_ANSI.dim}MCP OK`),
+		`the extension status should stay dim while the chrome is muted, got ${JSON.stringify(statusDim.raw)}`,
+	);
+	assert(
+		statusDim.raw.includes(`${COLOR_ANSI.muted}84k/200k 42% \u00b7 CH 91%`),
+		"the chrome cluster should stay muted when a status is present on the same row",
+	);
 
 	// Autocomplete: prove the bar-location oracle survives extra rows appended after it, using a real
 	// slash-autocomplete session (not merely a positional assumption). This populates the exact fields

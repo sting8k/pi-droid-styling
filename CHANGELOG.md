@@ -8,6 +8,7 @@
 ### Changed
 - nvim statusline no longer renders the `⎇ branch` segment — it moved to the top rule, and the freed width flows to other extensions' status text.
 - The branch badge formatter is now a single shared source (`buildBranchBadge`) with per-caller tone and bracket/bare style parameters; the droid and gemini badges render byte-identically to before.
+- nvim statusline: the context metric outranks the provider in the width ladder — the provider (decoration) is sacrificed first, so the full `tokens ctx% · CH%` cluster survives down to width 45 and the provider re-joins only from width 57; the metric cluster is rendered `muted` (the same tier as the model id) instead of dim, while the extension status stays dim.
 
 ## 2.11.0 - 2026-08-25
 

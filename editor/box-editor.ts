@@ -878,13 +878,15 @@ export class BoxEditor extends CustomEditor {
 		// tokens/ctx/CH only -- a value must never appear twice in the user zone. The freed columns flow
 		// to the extension status through the same candidate scoring as before.
 		const chromeFullPlain = [tokensCtx, chPercent ? `CH ${chPercent}` : ""].filter(Boolean).join(" · ");
-		const chromeDropChPlain = ctxPercent;
-		const chromeCtxOnlyPlain = ctxPercent;
 
+		// Rung order pins the priority the user actually reads by: the context metric outranks the
+		// provider (decoration, sacrificed FIRST), and within the metric CH% drops before the token
+		// count. So the ladder degrades provider → CH% → tokens → ctx%, never the reverse.
 		const candidates = [
 			{ leftPlain: leftWithProviderPlain, left: leftWithProviderRendered, chromePlain: chromeFullPlain },
-			{ leftPlain: leftWithProviderPlain, left: leftWithProviderRendered, chromePlain: chromeDropChPlain },
-			{ leftPlain: leftModelOnlyPlain, left: leftModelOnlyRendered, chromePlain: chromeCtxOnlyPlain },
+			{ leftPlain: leftModelOnlyPlain, left: leftModelOnlyRendered, chromePlain: chromeFullPlain },
+			{ leftPlain: leftModelOnlyPlain, left: leftModelOnlyRendered, chromePlain: tokensCtx },
+			{ leftPlain: leftModelOnlyPlain, left: leftModelOnlyRendered, chromePlain: ctxPercent },
 			{ leftPlain: leftModelOnlyPlain, left: leftModelOnlyRendered, chromePlain: "" },
 		];
 
@@ -933,7 +935,11 @@ export class BoxEditor extends CustomEditor {
 
 		// Assemble on plain widths and colour last; the final row is never truncated, so no full
 		// \x1b[0m reset can appear anywhere in the bar at any width, model length, or status.
-		const right = rightPlain ? this.tone("dim", rightPlain) : "";
+		// The context metric is muted (the same tier as the model id — it is a value the user reads
+		// constantly, not decoration); the extension status stays dim.
+		const chromeRendered = chosen.chromePlain ? this.tone("muted", chosen.chromePlain) : "";
+		const statusRendered = statusShown ? this.tone("dim", statusShown) : "";
+		const right = [chromeRendered, statusRendered].filter(Boolean).join("  ");
 		const middle = rightPlain ? Math.max(2, width - safeVisibleWidth(leftPlain) - rightWidth) : 0;
 		const rowBody = `${leftRendered}${" ".repeat(middle)}${right}`;
 		const row = `${rowBody}${" ".repeat(Math.max(0, width - safeVisibleWidth(rowBody)))}`;
