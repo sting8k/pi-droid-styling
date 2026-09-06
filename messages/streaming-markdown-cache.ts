@@ -1,6 +1,7 @@
 import { Markdown } from "@earendil-works/pi-tui";
 
 import { profileCount, profileDuration, profileNow, profileSample } from "../performance/profiler.js";
+import { getAssistantContentRuns } from "./assistant-content-runs.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.streaming-markdown-cache.patched");
 const STATE_KEY = Symbol("streaming-markdown-cache-state");
@@ -72,26 +73,6 @@ function getConfigFingerprint(config: MarkdownConfig): string {
 		`style:${getDefaultStyleFingerprint(config.defaultTextStyle)}`,
 		`options:${stableJson(config.options)}`,
 	].join("|");
-}
-
-function isVisibleTextBlock(contentBlock: any): boolean {
-	return (
-		contentBlock?.type === "text" &&
-		typeof contentBlock.text === "string" &&
-		contentBlock.text.trim().length > 0
-	);
-}
-
-function isVisibleThinkingBlock(contentBlock: any): boolean {
-	return (
-		contentBlock?.type === "thinking" &&
-		typeof contentBlock.thinking === "string" &&
-		contentBlock.thinking.trim().length > 0
-	);
-}
-
-function hasVisibleAssistantContent(contentBlocks: any[]): boolean {
-	return contentBlocks.some((contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock));
 }
 
 function isMarkdownChild(child: any): boolean {
@@ -296,27 +277,12 @@ function replaceMarkdownChild(component: any, childIndex: number, blockKey: stri
 
 function replaceStreamingMarkdownChildren(component: any, message: any): void {
 	if (!message || !Array.isArray(message.content)) return;
-	const contentBlocks = message.content as any[];
 	const states = getStableStates(component);
 	const seen = new Set<string>();
-	const hasVisibleContent = hasVisibleAssistantContent(contentBlocks);
-	let childIndex = hasVisibleContent ? 1 : 0;
 
-	for (let i = 0; i < contentBlocks.length; i++) {
-		const contentBlock = contentBlocks[i];
-		if (isVisibleTextBlock(contentBlock)) {
-			replaceMarkdownChild(component, childIndex, `${i}:text`, contentBlock.text.trim(), seen);
-			childIndex += 1;
-		} else if (isVisibleThinkingBlock(contentBlock)) {
-			if (!component?.hideThinkingBlock) {
-				replaceMarkdownChild(component, childIndex, `${i}:thinking`, contentBlock.thinking.trim(), seen);
-			}
-			childIndex += 1;
-			const hasVisibleContentAfter = contentBlocks
-				.slice(i + 1)
-				.some((nextBlock) => isVisibleTextBlock(nextBlock) || isVisibleThinkingBlock(nextBlock));
-			if (hasVisibleContentAfter) childIndex += 1;
-		}
+	for (const run of getAssistantContentRuns(component, message)) {
+		if (run.kind === "thinking" && component?.hideThinkingBlock) continue;
+		replaceMarkdownChild(component, run.childIndex, `${run.blockIndex}:${run.kind}`, run.text, seen);
 	}
 
 	for (const key of states.keys()) {
