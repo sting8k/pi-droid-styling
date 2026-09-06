@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.12.1 - 2026-09-06
+
+### Fixed
+- Consecutive thinking blocks no longer cause the final assistant response to inherit muted, italic thinking styling. Assistant child lookup now follows the host Pi version's rendered-run layout for both presentation styling and streaming Markdown caching.
+
 ## 2.12.0 - 2026-08-25
 
 ### Added

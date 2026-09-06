@@ -4,6 +4,11 @@ import { getPresentationDesign } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import {
+	type AssistantContentRun,
+	getAssistantContentRuns,
+	hasVisibleAssistantContent,
+} from "./assistant-content-runs.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
@@ -33,32 +38,12 @@ function composePrefixedLine(line: string): string {
 	return startsWithVisibleSpace(line) ? `${prefix} ${line}` : `${prefix}  ${line}`;
 }
 
-function isVisibleTextBlock(contentBlock: any): boolean {
-	return (
-		contentBlock?.type === "text" &&
-		typeof contentBlock.text === "string" &&
-		contentBlock.text.trim().length > 0
-	);
-}
-
-function isVisibleThinkingBlock(contentBlock: any): boolean {
-	return (
-		contentBlock?.type === "thinking" &&
-		typeof contentBlock.thinking === "string" &&
-		contentBlock.thinking.trim().length > 0
-	);
-}
-
 function compactReasonixLines(lines: string[]): string[] {
 	let first = 0;
 	while (first < lines.length && stripAnsi(lines[first] ?? "").trim() === "") first++;
 	let last = lines.length - 1;
 	while (last >= first && stripAnsi(lines[last] ?? "").trim() === "") last--;
 	return first <= last ? [...lines.slice(first, last + 1), ""] : [];
-}
-
-function hasVisibleAssistantContent(contentBlocks: any[]): boolean {
-	return contentBlocks.some((contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock));
 }
 
 function stripItalicAnsi(text: string): string {
@@ -99,26 +84,16 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix")
 	};
 }
 
-function patchThinkingChildren(component: any, contentBlocks: any[]): void {
-	const hasVisibleContent = hasVisibleAssistantContent(contentBlocks);
-	let childIndex = hasVisibleContent ? 1 : 0; // leading Spacer(1)
+function patchThinkingChildren(component: any, runs: AssistantContentRun[]): void {
 	let turnMarkerUsed = false;
 
-	for (let i = 0; i < contentBlocks.length; i++) {
-		const contentBlock = contentBlocks[i];
-		if (isVisibleTextBlock(contentBlock)) {
-			childIndex += 1;
-		} else if (isVisibleThinkingBlock(contentBlock)) {
-			const hasTextAfter = contentBlocks.slice(i + 1).some((nextBlock) => isVisibleTextBlock(nextBlock));
-			const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
-			makeThinkingChildPlain(component?.contentContainer?.children?.[childIndex], mode);
-			if (mode === "prefix") turnMarkerUsed = true;
-			childIndex += 1;
-			const hasVisibleContentAfter = contentBlocks
-				.slice(i + 1)
-				.some((nextBlock) => isVisibleTextBlock(nextBlock) || isVisibleThinkingBlock(nextBlock));
-			if (hasVisibleContentAfter) childIndex += 1; // inter-block Spacer(1)
-		}
+	for (let i = 0; i < runs.length; i++) {
+		const run = runs[i];
+		if (run.kind !== "thinking") continue;
+		const hasTextAfter = runs.slice(i + 1).some((nextRun) => nextRun.kind === "text");
+		const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
+		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode);
+		if (mode === "prefix") turnMarkerUsed = true;
 	}
 }
 
@@ -183,39 +158,17 @@ export function installAssistantMessagePrefix(theme: any): void {
 
 			if (!message || !Array.isArray(message.content)) return;
 
-			const contentBlocks = message.content as Array<any>;
-			patchThinkingChildren(this, contentBlocks);
-			const firstTextIndex = contentBlocks.findIndex((contentBlock) => isVisibleTextBlock(contentBlock));
-			if (firstTextIndex === -1) return;
+			const runs = getAssistantContentRuns(this, message);
+			patchThinkingChildren(this, runs);
 
-			const hasThinkingBeforeText = contentBlocks
-				.slice(0, firstTextIndex)
-				.some((contentBlock) => isVisibleThinkingBlock(contentBlock));
+			const firstTextRunIndex = runs.findIndex((run) => run.kind === "text");
+			if (firstTextRunIndex === -1) return;
+
+			const hasThinkingBeforeText = runs.slice(0, firstTextRunIndex).some((run) => run.kind === "thinking");
 			if (!hasThinkingBeforeText) return;
 			this.__assistantResponsePrefixChildMode = true;
 
-			const hasVisibleContent = contentBlocks.some(
-				(contentBlock) => isVisibleTextBlock(contentBlock) || isVisibleThinkingBlock(contentBlock),
-			);
-			let childIndex = hasVisibleContent ? 1 : 0; // leading Spacer(1)
-			let targetChild: any = undefined;
-
-			for (let i = 0; i < contentBlocks.length; i++) {
-				const contentBlock = contentBlocks[i];
-				if (isVisibleTextBlock(contentBlock)) {
-					if (i === firstTextIndex) {
-						targetChild = this?.contentContainer?.children?.[childIndex];
-						break;
-					}
-					childIndex += 1;
-				} else if (isVisibleThinkingBlock(contentBlock)) {
-					childIndex += 1; // thinking component
-					const hasVisibleContentAfter = contentBlocks
-						.slice(i + 1)
-						.some((nextBlock) => isVisibleTextBlock(nextBlock) || isVisibleThinkingBlock(nextBlock));
-					if (hasVisibleContentAfter) childIndex += 1; // inter-block Spacer(1)
-				}
-			}
+			const targetChild = this?.contentContainer?.children?.[runs[firstTextRunIndex].childIndex];
 
 			if (!targetChild || typeof targetChild.render !== "function") return;
 
