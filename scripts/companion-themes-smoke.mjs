@@ -49,13 +49,19 @@ await import("node:fs/promises").then(({ cp }) => cp(join(repoRoot, "node_module
 const { registerCompanionThemes } = await import(pathToFileURL(join(buildDir, "theme", "companion-themes.js")).href);
 class InteractiveModeStub {
 	async bindCurrentSessionExtensions() { this.bindCount = (this.bindCount ?? 0) + 1; }
+	async init() {
+		this.themeController.showError(`Failed to load theme "${this.startupTheme}": Theme not found: ${this.startupTheme}\nFell back to dark theme.`);
+		this.themeController.showError("Unrelated startup error");
+	}
 }
 let handler;
 const pi = { on(event, nextHandler) { if (event === "resources_discover") handler = nextHandler; } };
 registerCompanionThemes(pi, InteractiveModeStub);
 const firstWrapper = InteractiveModeStub.prototype.bindCurrentSessionExtensions;
+const firstInitWrapper = InteractiveModeStub.prototype.init;
 registerCompanionThemes(pi, InteractiveModeStub);
 assert(InteractiveModeStub.prototype.bindCurrentSessionExtensions === firstWrapper, "reload must not stack the lifecycle wrapper");
+assert(InteractiveModeStub.prototype.init === firstInitWrapper, "reload must not stack the init wrapper");
 assert(typeof handler === "function", "resources_discover handler should be registered");
 
 const call = (existingNames) => handler({ type: "resources_discover", cwd: repoRoot, reason: "startup" }, {
@@ -84,8 +90,21 @@ assert(partial.every((path) => !names.slice(0, 7).includes(JSON.parse(readFileSy
 await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 2, "partial fallback should re-apply after missing themes are added");
 
+const shownErrors = [];
+const originalShowError = (message) => shownErrors.push(message);
+const startup = new InteractiveModeStub();
+startup.startupTheme = "amber-pyre";
+startup.themeController = { showError: originalShowError };
+await startup.init();
+assert(shownErrors.length === 1 && shownErrors[0] === "Unrelated startup error", `init must hide only the bundled theme load error, got ${JSON.stringify(shownErrors)}`);
+assert(startup.themeController.showError === originalShowError, "init must restore showError after startup");
+shownErrors.length = 0;
+startup.startupTheme = "not-bundled";
+await startup.init();
+assert(shownErrors.length === 2, "init must not hide load errors for non-bundled themes");
+
 const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 assert(manifest.pi?.themes === undefined, "package manifest must not register bundled themes statically");
 assert(manifest.bundledDependencies?.includes("pi-themes"), "pi-themes must remain bundled");
-console.log("companion themes smoke ok: fresh=26 standalone=0 partial=19 reapply=2 reload-safe");
+console.log("companion themes smoke ok: fresh=26 standalone=0 partial=19 reapply=2 startup-error-suppressed reload-safe");
 rmSync(workDir, { recursive: true, force: true });
