@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.13.0 - 2026-09-10
+
+### Added
+- Collapsed thinking rows (`Ctrl+T`) now show a live peek at the end of the last thinking line instead of a static label: `Thinking... ▸ …tail` while the model is thinking, `·` once the run settles. One row, fills the terminal width, left-truncated, marker and tail in the new `collapsedThinkingTailColor` theme extra (default `muted`) and never italic; the label stays Pi's own `hiddenThinkingLabel`. New config `collapsedThinking: "tail" | "label"` (default `tail`); `label` restores the previous static row byte-for-byte.
+
+### Fixed
+- The 33 ms streaming presentation buffer never engaged during real assistant streams, because Pi's partial messages already carry `stopReason: "stop"`. Streaming is now tracked by the extension itself, so large deltas are drip-fed as designed and the finished-render cache stays out of the way while a message streams.
+
 ## 2.12.1 - 2026-09-06
 
 ### Fixed
