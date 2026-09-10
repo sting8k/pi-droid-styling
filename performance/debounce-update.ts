@@ -7,13 +7,15 @@
  * token bursts can both over-render and appear chunky to the eye.
  *
  * Strategy:
- * - When the message is mid-stream (`stopReason === undefined`), keep the
- *   latest source message but reveal it through a 33ms presentation buffer.
+ * - While the component is receiving the live assistant stream (tracked by
+ *   `messages/assistant-streaming-state.ts`), keep the latest source message
+ *   but reveal it through a 33ms presentation buffer. `message.stopReason` is not
+ *   a signal: pi-ai partials already carry `stopReason: "stop"`.
  * - Small chunks catch up immediately; large chunks are drip-fed over several
  *   ticks so they do not appear as one giant visual jump.
- * - When the message is finalized (`stopReason` present: end/aborted/error),
- *   flush the full final message immediately. This keeps `message_end`
- *   correctness intact.
+ * - Every other update (final message after `message_end`, history components,
+ *   resize/theme/Ctrl+T re-renders, aborted/error finals) flushes the full
+ *   message immediately and cancels any pending tick.
  * - Toggle paths (`invalidate`, `setHideThinkingBlock`, `setHiddenThinkingLabel`)
  *   re-call updateContent with `this.lastMessage`; while streaming that source
  *   re-enters the buffer, and after final it flushes immediately.
@@ -23,6 +25,7 @@
  * the outermost wrapper and prevents the inner chain from running on every delta.
  */
 
+import { attachComponentToStream } from "../messages/assistant-streaming-state.js";
 import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.debounce-update-content.patched");
@@ -306,10 +309,10 @@ export function installAssistantUpdateDebounce(AssistantMessageClass: any): void
 
 	proto.updateContent = function patchedUpdateContent(message: any) {
 		profileCount("assistant.updateContent.calls");
-		const stopReason = message?.stopReason;
 
-		// Final/non-streaming message — flush immediately, cancel any pending.
-		if (stopReason !== undefined && stopReason !== null) {
+		// Only the component receiving the live assistant stream is buffered; final messages,
+		// history components and resize/theme/Ctrl+T re-renders flush immediately and cancel any pending tick.
+		if (!attachComponentToStream(this, message)) {
 			profileCount("assistant.updateContent.final");
 			clearPresentationState(this);
 			recordPresentationMetrics(this, message, "immediate");

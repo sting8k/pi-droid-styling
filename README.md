@@ -34,7 +34,7 @@ pi install git:github.com/sting8k/pi-themes
 
 ### Look and feel
 
-- **A cleaner Pi, instantly.** Compact startup, a focused input editor, tidier conversations, collapsed tool output, and a footer that tracks your session.
+- **A cleaner Pi, instantly.** Compact startup, a focused input editor, tidier conversations, collapsed tool output that still peeks at the live thinking tail, and a footer that tracks your session.
 - **Make it yours.** Two conversation layouts, three prompt styles, multiple input frames, and 25 themes included.
 
 ### Built for the terminal
@@ -65,6 +65,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
     "style": "auto"
   },
   "tasksWidgetStyle": "compact",
+  "collapsedThinking": "tail",
   "forceOSC11": false,
   "visibleChatTail": 30
 }
@@ -80,6 +81,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `userZoneStyle` | `gemini`, `droid`, `cli-dock`, `nvim` | `gemini` | Choose the look of the prompt, status rows, and footer. `nvim` is a Neovim-style dock: a lined input plus one statusline bar (thinking-level badge, model, branch, tokens, context %, cache-hit %). |
 | `inputBox.style` | `auto`, `halfblock`, `line`, `solid` | `auto` | Choose the input-box frame. `auto` uses the best match for the selected user-zone style. Some presets always resolve to a frame outside this list regardless of the setting: `cli-dock` always renders `outline`, and `droid` collapses an explicit `line` to `none`. |
 | `tasksWidgetStyle` | `compact`, `default` | `compact` | Use the one-line tasks widget, or leave the original `pi-tasks` widget unchanged. |
+| `collapsedThinking` | `tail`, `label` | `tail` | While thinking is hidden (`Ctrl+T`), each collapsed thinking row shows the end of the thinking text with a `▸` live marker (`·` once the run is done). `label` restores the static label. |
 | `forceOSC11` | `true`, `false` | `false` | Force terminal background sync on Windows/WSL. Usually leave this off. |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
 

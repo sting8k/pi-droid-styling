@@ -1,3 +1,4 @@
+import { isComponentOnActiveStream } from "../messages/assistant-streaming-state.js";
 import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
 
 const ASSISTANT_PATCHED = Symbol.for("pi-droid-styling.finished-render-cache.assistant.patched");
@@ -87,8 +88,9 @@ function getCachedSignature(component: any, source: any, build: () => string): s
 }
 
 function getAssistantFinishedKey(component: any): string | undefined {
+	if (isComponentOnActiveStream(component)) return undefined;
 	const message = component?.lastMessage;
-	if (!message || message.stopReason === undefined || message.stopReason === null) return undefined;
+	if (!message) return undefined;
 	const signature = getCachedSignature(component, message, () => [
 		"assistant",
 		getObjectId(message),

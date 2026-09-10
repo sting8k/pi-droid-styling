@@ -1,6 +1,6 @@
 {
   "name": "@sting8k/pi-droid-styling",
-  "version": "2.12.2",
+  "version": "2.13.0",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",
@@ -23,7 +23,7 @@
     "dev:link": "npm install",
     "dev:clean": "rm -rf node_modules",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck --noImplicitAny false index.ts",
-    "test": "npm run test:working-message && npm run test:startup-resources && npm run test:theme-extras && npm run test:companion-themes && npm run test:user-zone-style && npm run test:nvim-user-zone && npm run test:core-message-blocks && npm run test:tasks-widget-compact && npm run test:reasonix-conversation && npm run test:session-resume-styling && npm run test:tui-proxy",
+    "test": "npm run test:working-message && npm run test:startup-resources && npm run test:theme-extras && npm run test:companion-themes && npm run test:user-zone-style && npm run test:nvim-user-zone && npm run test:core-message-blocks && npm run test:tasks-widget-compact && npm run test:reasonix-conversation && npm run test:collapsed-thinking && npm run test:presentation-buffer && npm run test:session-resume-styling && npm run test:tui-proxy",
     "check": "npm run typecheck && npm test && npm pack --dry-run",
     "profile:render": "node scripts/render-profile-bench.mjs",
     "trace:pi": "node scripts/pi-trace.mjs",
@@ -37,6 +37,8 @@
     "test:core-message-blocks": "node scripts/core-message-blocks-smoke.mjs",
     "test:tasks-widget-compact": "node scripts/tasks-widget-compact-smoke.mjs",
     "test:reasonix-conversation": "node scripts/reasonix-conversation-smoke.mjs",
+    "test:collapsed-thinking": "node scripts/collapsed-thinking-smoke.mjs",
+    "test:presentation-buffer": "node scripts/presentation-buffer-smoke.mjs",
     "test:session-resume-styling": "node scripts/session-resume-styling-smoke.mjs",
     "test:tui-proxy": "node scripts/tui-proxy-recursion-smoke.mjs"
   },

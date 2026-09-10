@@ -13,6 +13,7 @@ import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 import { installInteractiveChatVirtualization } from "./performance/virtualize-chat.js";
 import { registerCompanionThemes } from "./theme/companion-themes.js";
+import { beginAssistantStream, endAssistantStream, trackAssistantStreamMessage } from "./messages/assistant-streaming-state.js";
 
 type SessionModules = typeof import("./session-modules.js");
 type AssistantSpeedTracker = ReturnType<SessionModules["createAssistantSpeedTracker"]>;
@@ -97,6 +98,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_start", (event) => {
+		if (event.message.role === "assistant") beginAssistantStream(event.message);
 		assistantSpeedTracker?.handleMessageStart(event.message);
 		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
 			workingLoaderController?.setState(workingStateForAssistantMessageForCurrentSession?.(event.message) ?? "answering");
@@ -104,6 +106,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_update", (event) => {
+		if (event.message.role === "assistant") trackAssistantStreamMessage(event.message);
 		assistantSpeedTracker?.handleMessageUpdate(event.message);
 		if (event.message.role === "assistant" && runningToolCalls.size === 0) {
 			workingLoaderController?.setState(workingStateForAssistantMessageForCurrentSession?.(event.message) ?? "answering");
@@ -115,6 +118,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", (event) => {
+		endAssistantStream();
 		assistantSpeedTracker?.handleMessageEnd(event.message);
 	});
 
@@ -130,11 +134,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", () => {
+		endAssistantStream();
 		runningToolCalls.clear();
 		workingLoaderController?.stop();
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		endAssistantStream();
 		sessionRunSerial++;
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");

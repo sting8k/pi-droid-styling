@@ -181,7 +181,11 @@ for (const thoughts of [["alpha"], ["alpha", "beta"], ["alpha", "beta", "gamma"]
 		assert(!isItalic(finalRow), `${label}: final response must not inherit thinking italics`);
 		assert(stripAnsi(finalRow).indexOf("FINALANSWER") === 2, `${label}: final response should keep the shared body gutter`);
 		if (hideThinking) {
-			assert(isItalic(rowWith(raw, "Thinking...")), `${label}: hidden thinking label should stay italic`);
+			// US-024: the collapsed row is `Thinking ▸/· …tail` with a bold upright label; it must be the thinking child, not the answer.
+			const hiddenRow = rowWith(raw, "Thinking");
+			assert(hiddenRow !== undefined, `${label}: hidden thinking row should render`);
+			assert(hiddenRow.includes("\x1b[1m") && !isItalic(hiddenRow), `${label}: hidden thinking label should be bold and upright`);
+			assert(!finalRow.includes("\x1b[1m"), `${label}: final response must not inherit the collapsed label bold`);
 		} else {
 			for (const thought of thoughts) {
 				assert(isItalic(rowWith(raw, thought)), `${label}: thinking "${thought}" should stay italic`);
