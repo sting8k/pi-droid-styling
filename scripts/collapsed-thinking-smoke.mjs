@@ -158,6 +158,7 @@ const activeTheme = {
 	sourcePath: themeFile,
 	fg: (color, text) => `\x1b[38;5;7m${text}\x1b[39m`,
 	italic: (text) => `\x1b[3m${text}\x1b[23m`,
+	bold: (text) => `\x1b[1m${text}\x1b[22m`,
 	getColorMode: () => "truecolor",
 };
 themeExtras.setFullTheme(activeTheme, true);
@@ -273,7 +274,7 @@ const liveMessage = hiddenOnly(LIVE_TAIL);
 check("P1 real core (0.78 per-block) live tail", () => {
 	const message = hiddenOnly(LIVE_TAIL);
 	const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(120));
-	const row = rowWith(raw, "Thinking...");
+	const row = rowWith(raw, "Thinking");
 	assert(row !== undefined, `collapsed row missing: ${JSON.stringify(raw.map(stripAnsi))}`);
 	assert(stripAnsi(row).includes("▸"), `live marker missing: ${JSON.stringify(stripAnsi(row))}`);
 	assert(stripAnsi(row).includes(LIVE_TAIL), `whole tail line should fit at width 120: ${JSON.stringify(stripAnsi(row))}`);
@@ -286,7 +287,7 @@ check("P1 grouped layout live tail (1/2/3 blocks)", () => {
 		const message = { role: "assistant", stopReason: "stop", content: thoughts.map((thinking) => ({ type: "thinking", thinking })) };
 		const { childAt } = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking..." }));
 		const plain = childAt(0).render(60).map(stripAnsi).join("\n");
-		assert(plain.includes("Thinking..."), `grouped ${thoughts.length}: label missing: ${plain}`);
+		assert(plain.includes("Thinking ▸"), `grouped ${thoughts.length}: trimmed label missing: ${plain}`);
 		assert(plain.includes("▸"), `grouped ${thoughts.length}: live marker missing: ${plain}`);
 		assert(plain.includes(`▸ ${thoughts[thoughts.length - 1]}`), `grouped ${thoughts.length}: tail should come from the last block: ${plain}`);
 	}
@@ -296,9 +297,9 @@ check("P2a settled after the stream ends", () => {
 	for (const stopReason of ["stop", "aborted", "error"]) {
 		const partial = hiddenOnly(LIVE_TAIL);
 		const component = withActiveStream(partial, () => new AssistantMessageComponent(partial, true));
-		assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("▸"), `${stopReason}: partial should start live`);
+		assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("▸"), `${stopReason}: partial should start live`);
 		component.updateContent({ ...partial, stopReason });
-		const row = stripAnsi(rowWith(component.render(120), "Thinking..."));
+		const row = stripAnsi(rowWith(component.render(120), "Thinking"));
 		assert(row.includes("·") && !row.includes("▸"), `${stopReason}: settled marker missing: ${JSON.stringify(row)}`);
 		assert(row.includes(LIVE_TAIL), `${stopReason}: tail missing`);
 	}
@@ -306,7 +307,7 @@ check("P2a settled after the stream ends", () => {
 
 check("P2b stopReason is not the liveness signal", () => {
 	const component = new AssistantMessageComponent({ role: "assistant", content: [{ type: "thinking", thinking: LIVE_TAIL }] }, true);
-	const row = stripAnsi(rowWith(component.render(120), "Thinking..."));
+	const row = stripAnsi(rowWith(component.render(120), "Thinking"));
 	assert(row.includes("·") && !row.includes("▸"), `undefined stopReason with no stream must be settled: ${JSON.stringify(row)}`);
 });
 
@@ -315,22 +316,22 @@ check("P2c begin live -> end settled on one component", () => {
 	const component = new AssistantMessageComponent(undefined, true);
 	streamingState.beginAssistantStream(partial);
 	component.updateContent(partial);
-	assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("▸"), "live while the stream is active");
+	assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("▸"), "live while the stream is active");
 	streamingState.endAssistantStream();
 	component.updateContent(hiddenOnly("alpha"));
-	assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("·"), "settled once the stream ends");
+	assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("·"), "settled once the stream ends");
 });
 
 check("P2d an older component does not adopt a newer stream", () => {
 	const first = hiddenOnly("alpha");
 	const older = withActiveStream(first, () => new AssistantMessageComponent(first, true));
-	assert(stripAnsi(rowWith(older.render(120), "Thinking...")).includes("▸"), "older component is live in its own stream");
+	assert(stripAnsi(rowWith(older.render(120), "Thinking")).includes("▸"), "older component is live in its own stream");
 	const newerMessage = hiddenOnly("beta");
 	withActiveStream(newerMessage, () => {
 		const newer = new AssistantMessageComponent(newerMessage, true);
-		assert(stripAnsi(rowWith(newer.render(120), "Thinking...")).includes("▸"), "newer component is live in the new stream");
+		assert(stripAnsi(rowWith(newer.render(120), "Thinking")).includes("▸"), "newer component is live in the new stream");
 		older.updateContent(older.lastMessage);
-		const row = stripAnsi(rowWith(older.render(120), "Thinking..."));
+		const row = stripAnsi(rowWith(older.render(120), "Thinking"));
 		assert(row.includes("·") && !row.includes("▸"), `older component must stay settled during a newer stream: ${JSON.stringify(row)}`);
 	});
 });
@@ -340,7 +341,7 @@ check("P2e a history component rebuilt mid-stream stays settled", () => {
 	const historyMessage = hiddenOnly("history-thought");
 	withActiveStream(streamMessage, () => {
 		const history = new AssistantMessageComponent(historyMessage, true);
-		const row = stripAnsi(rowWith(history.render(120), "Thinking..."));
+		const row = stripAnsi(rowWith(history.render(120), "Thinking"));
 		assert(row.includes("·") && !row.includes("▸"), `history component must stay settled: ${JSON.stringify(row)}`);
 	});
 });
@@ -350,9 +351,9 @@ check("P2f the streaming component tolerates a clone of the tracked message", ()
 	streamingState.beginAssistantStream(tracked);
 	try {
 		const fresh = new AssistantMessageComponent(tracked, true);
-		assert(stripAnsi(rowWith(fresh.render(120), "Thinking...")).includes("▸"), "streaming component is live");
+		assert(stripAnsi(rowWith(fresh.render(120), "Thinking")).includes("▸"), "streaming component is live");
 		fresh.updateContent({ ...tracked, content: [{ type: "thinking", thinking: "alpha beta" }] });
-		assert(stripAnsi(rowWith(fresh.render(120), "Thinking...")).includes("▸"), "a structural clone must still read the tag made from the tracked message");
+		assert(stripAnsi(rowWith(fresh.render(120), "Thinking")).includes("▸"), "a structural clone must still read the tag made from the tracked message");
 	} finally {
 		streamingState.endAssistantStream();
 	}
@@ -361,10 +362,10 @@ check("P2f the streaming component tolerates a clone of the tracked message", ()
 check("P2g a new stream does not revive the previous component", () => {
 	const first = hiddenOnly("alpha");
 	const component = withActiveStream(first, () => new AssistantMessageComponent(first, true));
-	assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("▸"), "component is live in its own stream");
+	assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("▸"), "component is live in its own stream");
 	withActiveStream(hiddenOnly("beta"), () => {
 		component.updateContent(component.lastMessage);
-		const row = stripAnsi(rowWith(component.render(120), "Thinking..."));
+		const row = stripAnsi(rowWith(component.render(120), "Thinking"));
 		assert(row.includes("·") && !row.includes("▸"), `previous component must stay settled: ${JSON.stringify(row)}`);
 	});
 });
@@ -373,7 +374,7 @@ check("P3 answer/tool-call follows settles the row", () => {
 	for (const follower of [{ type: "text", text: "streaming answer" }, { type: "toolCall", id: "1", name: "read", arguments: {} }]) {
 		const message = { role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "alpha" }, follower] };
 		const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(60));
-		const row = stripAnsi(rowWith(raw, "Thinking..."));
+		const row = stripAnsi(rowWith(raw, "Thinking"));
 		assert(row.includes("·") && !row.includes("▸"), `follower ${follower.type}: thinking row should be settled: ${JSON.stringify(row)}`);
 	}
 });
@@ -383,7 +384,7 @@ check("P4 truncation is left-anchored and monotonic", () => {
 	for (const width of [40, 80, 160]) {
 		const message = hiddenOnly(LONG_ASCII);
 		const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(width));
-		const row = stripAnsi(rowWith(raw, "Thinking..."));
+		const row = stripAnsi(rowWith(raw, "Thinking"));
 		assert(row.includes("…"), `width ${width}: truncated tail should start with an ellipsis: ${JSON.stringify(row)}`);
 		const tail = row.slice(row.indexOf("…") + 1);
 		assert(LONG_ASCII.endsWith(tail), `width ${width}: tail must be the end of the line: ${JSON.stringify(tail.slice(0, 12))}`);
@@ -398,7 +399,7 @@ check("P4 wide graphemes are dropped whole", () => {
 		for (const width of [40, 80, 161]) {
 			const message = hiddenOnly(source);
 			const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(width));
-			const row = stripAnsi(rowWith(raw, "Thinking...")).trimEnd();
+			const row = stripAnsi(rowWith(raw, "Thinking")).trimEnd();
 			const tail = row.slice(row.indexOf("…") + 1);
 			assert(isGraphemeSuffix(source, tail), `width ${width}: tail split a grapheme: ${JSON.stringify(tail.slice(0, 6))}`);
 			assert(budget.safeVisibleWidth(row) <= width, `width ${width}: wide grapheme row overflows`);
@@ -407,21 +408,24 @@ check("P4 wide graphemes are dropped whole", () => {
 });
 
 check("P4 whitespace right after the ellipsis is trimmed", () => {
-	// At width 40 the tail budget keeps the last 21 columns; this line puts a space exactly at that cut.
-	const text = `${"z".repeat(50)} ${"y".repeat(20)}`;
+	// At width 40 (reasonix body 37, label "Thinking" = 8) the tail budget is 25 → the last 24 columns are kept;
+	// 23 y's plus the space before them land the cut exactly on that space.
+	const text = `${"z".repeat(50)} ${"y".repeat(23)}`;
 	const message = hiddenOnly(text);
 	const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(40));
-	const row = stripAnsi(rowWith(raw, "Thinking...")).trimEnd();
+	const row = stripAnsi(rowWith(raw, "Thinking")).trimEnd();
 	const tail = row.slice(row.indexOf("…") + 1);
-	assert(tail === "y".repeat(20), `cut on whitespace must drop the space after the ellipsis: ${JSON.stringify(tail)}`);
+	assert(tail === "y".repeat(23), `cut on whitespace must drop the space after the ellipsis: ${JSON.stringify(tail)}`);
 });
 
-check("P8 label verbatim + no hardcoded label", () => {
+check("P8 label from hiddenThinkingLabel (trailing progress dots trimmed) + no hardcoded label", () => {
 	const label = "Reasoning…";
 	const raw = withActiveStream(liveMessage, () => new AssistantMessageComponent(liveMessage, true, undefined, label).render(60));
-	assert(rowWith(raw, label) !== undefined, "component.hiddenThinkingLabel must render verbatim");
-	assert(stripAnsi(rowWith(raw, label)).includes("▸"), "custom label row should still carry the marker");
-	assert(!raw.some((line) => stripAnsi(line).includes("Thinking...")), "module must not fall back to a hardcoded label");
+	const row = rowWith(raw, "Reasoning");
+	assert(row !== undefined, "component.hiddenThinkingLabel must be the label source");
+	assert(stripAnsi(row).includes("Reasoning ▸"), `trailing dots must be trimmed so the marker carries the state: ${JSON.stringify(stripAnsi(row))}`);
+	assert(!stripAnsi(row).includes("Reasoning…"), "label's own ellipsis must not survive in tail mode");
+	assert(!raw.some((line) => stripAnsi(line).includes("Thinking")), "module must not fall back to a hardcoded label");
 	const source = readFileSync(join(repoRoot, "messages", "assistant-prefix.ts"), "utf8");
 	assert(!source.includes("Thinking..."), "assistant-prefix.ts must not contain the literal label");
 });
@@ -439,11 +443,12 @@ check("P7 visibility overrides (0.85) + no-map fallthrough (0.78)", () => {
 	const overridden = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking...", overrides: new Map([[0, false]]) }));
 	const visibleRow = stripAnsi(overridden.childAt(0).render(60).join("\n"));
 	const hiddenRow = stripAnsi(overridden.childAt(2).render(60).join("\n"));
-	assert(visibleRow.includes("visible-thought") && !visibleRow.includes("Thinking..."), `override run 0 should use the visible path: ${visibleRow}`);
-	assert(hiddenRow.includes("Thinking...") && hiddenRow.includes("hidden-thought"), `override run 1 should use the tail row: ${hiddenRow}`);
+	assert(visibleRow.includes("visible-thought") && !visibleRow.includes("Thinking"), `override run 0 should use the visible path: ${visibleRow}`);
+	assert(hiddenRow.includes("Thinking ▸") && hiddenRow.includes("hidden-thought"), `override run 1 should use the tail row: ${hiddenRow}`);
 
 	const noMap = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking..." }));
-	assert(stripAnsi(noMap.childAt(0).render(60).join("\n")).includes("Thinking..."), "a host with no override map must collapse every run");
+	// run 0 is followed by text, so its collapsed row is settled (·) even while the stream is live
+	assert(stripAnsi(noMap.childAt(0).render(60).join("\n")).includes("Thinking ·"), "a host with no override map must collapse every run");
 });
 
 check("P9 updateContent is the only source", () => {
@@ -451,9 +456,9 @@ check("P9 updateContent is the only source", () => {
 	streamingState.beginAssistantStream(first);
 	try {
 		const component = new AssistantMessageComponent(first, true);
-		assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("▸ beta"), "first update should tail beta");
+		assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("▸ beta"), "first update should tail beta");
 		component.updateContent(hiddenOnly("alpha\nbeta gamma"));
-		assert(stripAnsi(rowWith(component.render(120), "Thinking...")).includes("▸ beta gamma"), "second update should advance the tail");
+		assert(stripAnsi(rowWith(component.render(120), "Thinking")).includes("▸ beta gamma"), "second update should advance the tail");
 		const before = component.render(120);
 		assert(JSON.stringify(before) === JSON.stringify(component.render(120)), "rendering twice without an update must be stable");
 	} finally {
@@ -467,18 +472,16 @@ check("P10 style split", () => {
 	for (const style of ["reasonix", "droid"]) {
 		state.setPresentationStyle(style);
 		const raw = withActiveStream(liveMessage, () => new AssistantMessageComponent(liveMessage, true).render(80));
-		const row = rowWith(raw, "Thinking...");
+		const row = rowWith(raw, "Thinking");
 		const tailStart = row.indexOf("\x1b[38;2;108;112;134m");
 		assert(tailStart > 0, `${style}: tail/marker must use the resolved muted escape: ${JSON.stringify(row)}`);
 		const labelSegment = row.slice(0, tailStart);
 		const tailSegment = row.slice(tailStart);
 		assert(tailSegment.includes("▸"), `${style}: marker must live in the styled tail segment`);
-		if (style === "reasonix") {
-			assert(labelSegment.includes("\x1b[3m"), "reasonix label must stay italic");
-			assert(labelSegment.includes("\x1b[38;5;7m"), "reasonix label must use thinkingText");
-		} else {
-			assert(!labelSegment.includes("\x1b[3m"), "droid label must have italics stripped");
-		}
+		assert(labelSegment.includes("\x1b[1m"), `${style}: label must be bold`);
+		assert(labelSegment.includes("\x1b[38;5;7m"), `${style}: label must use thinkingText`);
+		assert(!labelSegment.includes("\x1b[3m"), `${style}: label must be upright (never italic)`);
+		assert(!tailSegment.includes("\x1b[1m"), `${style}: bold must not leak into the tail`);
 		assert(!tailSegment.includes("\x1b[3m"), `${style}: tail/marker must never be italic`);
 	}
 });
@@ -489,7 +492,7 @@ check("P10 theme extra recolours only the tail", () => {
 	themeExtras.setFullTheme(redTheme, true);
 	prefixModule.installAssistantMessagePrefix(redTheme);
 	const raw = withActiveStream(liveMessage, () => new AssistantMessageComponent(liveMessage, true).render(80));
-	const row = rowWith(raw, "Thinking...");
+	const row = rowWith(raw, "Thinking");
 	const redStart = row.indexOf("\x1b[38;2;255;0;0m");
 	assert(redStart > 0 && row.slice(redStart).includes("▸"), "explicit tail colour must apply to the marker/tail");
 	assert(!row.slice(0, redStart).includes("\x1b[38;2;255;0;0m"), "explicit tail colour must not leak into the label");
@@ -529,7 +532,7 @@ check("P11 interleaved runs keep prefix/gutter placement", () => {
 	};
 	const gutterRaw = withActiveStream(gutter, () => new AssistantMessageComponent(gutter, true).render(80));
 	const gutterRow = stripAnsi(gutterRaw.find((line) => stripAnsi(line).includes("secondthought")));
-	assert(gutterRow.startsWith("  Thinking..."), `gutter run should keep its indent: ${JSON.stringify(gutterRow)}`);
+	assert(gutterRow.startsWith("  Thinking ·"), `gutter run should keep its indent: ${JSON.stringify(gutterRow)}`);
 	assert(gutterRow.includes("·") && !gutterRow.includes("▸"), "the gutter run is followed by text, so it settled");
 });
 
@@ -560,7 +563,8 @@ check(`P6 label mode + visible thinking stay byte-identical to base ${coreVersio
 
 check("P5 narrow widths fall back to the label row", () => {
 	state.setPresentationStyle("reasonix");
-	for (const width of [20, 26, 30, 33]) {
+	// label "Thinking" = 8 cols → the tail needs body ≥ 28, i.e. width ≥ 31 under reasonix; everything below is label-only.
+	for (const width of [20, 26, 28, 30]) {
 		setConfig({ collapsedThinking: "label" });
 		const label = renderFixture({ name: "n", content: [{ type: "thinking", thinking: "alpha" }] }, true, width);
 		setConfig({ collapsedThinking: "tail" });

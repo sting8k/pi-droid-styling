@@ -97,6 +97,18 @@ function trimTailWhitespaceAfterEllipsis(tail: string): string {
 	return `…${tail.slice(1).replace(/^\s+/, "")}`;
 }
 
+/** The marker carries the progress state now, so a label's own trailing progress dots would contradict `·`. */
+function trimLabelProgressDots(label: string): string {
+	return label.replace(/[.…\s]+$/u, "");
+}
+
+/** The collapsed label is a short upright tag: bold `thinkingText`, never italic, the same under every preset. */
+function styleCollapsedLabel(label: string): string {
+	if (typeof activeTheme?.fg !== "function") return label;
+	const colored = activeTheme.fg("thinkingText", label);
+	return typeof activeTheme.bold === "function" ? activeTheme.bold(colored) : `\x1b[1m${colored}\x1b[22m`;
+}
+
 /** One collapsed row: `<label> <marker> <tail>` at `bodyWidth`, or null when the tail budget is too small. */
 function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live: boolean, bodyWidth: number): string | null {
 	// bodyWidth - 1 (Pi core Text left padding) - label - 1 - marker - 1
@@ -105,7 +117,7 @@ function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live
 
 	const marker = live ? THINKING_TAIL_LIVE_MARKER : THINKING_TAIL_SETTLED_MARKER;
 	const tail = trimTailWhitespaceAfterEllipsis(safeTakeTailToWidth(lastThinkingTailLine(run.text), tailBudget));
-	const labelSegment = styleThinkingLine(label);
+	const labelSegment = styleCollapsedLabel(label);
 	const tailColor = getThemeExtra(activeTheme, "collapsedThinkingTailColor");
 	const tailSegment = activeTheme ? fgHex(activeTheme, tailColor, `${marker} ${tail}`) : `${marker} ${tail}`;
 	return ` ${labelSegment} ${tailSegment}`;
@@ -152,7 +164,7 @@ function patchThinkingChildren(component: any, runs: AssistantContentRun[], mess
 	let turnMarkerUsed = false;
 	let thinkingOrdinal = 0;
 	const content = Array.isArray(message?.content) ? message.content : [];
-	const label = typeof component?.hiddenThinkingLabel === "string" ? component.hiddenThinkingLabel : null;
+	const label = typeof component?.hiddenThinkingLabel === "string" ? trimLabelProgressDots(component.hiddenThinkingLabel) : null;
 	const visibilityOverrides = component?.thinkingVisibilityOverrides;
 
 	for (let i = 0; i < runs.length; i++) {
