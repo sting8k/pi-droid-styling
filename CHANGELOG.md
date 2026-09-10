@@ -8,6 +8,11 @@
 ### Fixed
 - The 33 ms streaming presentation buffer never engaged during real assistant streams, because Pi's partial messages already carry `stopReason: "stop"`. Streaming is now tracked by the extension itself, so large deltas are drip-fed as designed and the finished-render cache stays out of the way while a message streams.
 
+## 2.12.2 - 2026-09-08
+
+### Fixed
+- Selecting a bundled companion theme (for example `amber-pyre`) without a standalone `pi-themes` install no longer shows a `Failed to load theme … Fell back to dark theme` banner at startup. Pi applies the settings theme inside `init()` before extensions can answer `resources_discover`; the transient failure for bundled theme names is now silenced during `init()` and the theme is re-applied after discovery as before. Errors for non-bundled themes still surface.
+
 ## 2.12.1 - 2026-09-06
 
 ### Fixed
