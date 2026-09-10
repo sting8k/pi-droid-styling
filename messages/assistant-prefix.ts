@@ -5,6 +5,7 @@ import { getPresentationDesign } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTakeTailToWidth, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { attachComponentToStream } from "./assistant-streaming-state.js";
 import {
 	type AssistantContentRun,
 	getAssistantContentRuns,
@@ -90,6 +91,12 @@ function lastThinkingTailLine(text: string): string {
 	return "";
 }
 
+/** The cut can land on whitespace; drop the space directly after the ellipsis (the row may end one column short). */
+function trimTailWhitespaceAfterEllipsis(tail: string): string {
+	if (!tail.startsWith("…")) return tail;
+	return `…${tail.slice(1).replace(/^\s+/, "")}`;
+}
+
 /** One collapsed row: `<label> <marker> <tail>` at `bodyWidth`, or null when the tail budget is too small. */
 function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live: boolean, bodyWidth: number): string | null {
 	// bodyWidth - 1 (Pi core Text left padding) - label - 1 - marker - 1
@@ -97,7 +104,7 @@ function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live
 	if (tailBudget < COLLAPSED_TAIL_MIN_BUDGET) return null;
 
 	const marker = live ? THINKING_TAIL_LIVE_MARKER : THINKING_TAIL_SETTLED_MARKER;
-	const tail = safeTakeTailToWidth(lastThinkingTailLine(run.text), tailBudget);
+	const tail = trimTailWhitespaceAfterEllipsis(safeTakeTailToWidth(lastThinkingTailLine(run.text), tailBudget));
 	const labelSegment = styleThinkingLine(label);
 	const tailColor = getThemeExtra(activeTheme, "collapsedThinkingTailColor");
 	const tailSegment = activeTheme ? fgHex(activeTheme, tailColor, `${marker} ${tail}`) : `${marker} ${tail}`;
@@ -132,7 +139,7 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix",
 	};
 }
 
-/** A run is live while the message streams and nothing (text, thinking or tool call) follows its last block. */
+/** True when a text, thinking or tool-call block sits after the run's last block, which settles it. */
 function hasBlockAfter(content: any[], endBlockIndex: number): boolean {
 	for (let i = endBlockIndex + 1; i < content.length; i++) {
 		const type = content[i]?.type;
@@ -141,11 +148,10 @@ function hasBlockAfter(content: any[], endBlockIndex: number): boolean {
 	return false;
 }
 
-function patchThinkingChildren(component: any, runs: AssistantContentRun[], message: any): void {
+function patchThinkingChildren(component: any, runs: AssistantContentRun[], message: any, liveStream: boolean): void {
 	let turnMarkerUsed = false;
 	let thinkingOrdinal = 0;
 	const content = Array.isArray(message?.content) ? message.content : [];
-	const stopReason = message?.stopReason;
 	const label = typeof component?.hiddenThinkingLabel === "string" ? component.hiddenThinkingLabel : null;
 	const visibilityOverrides = component?.thinkingVisibilityOverrides;
 
@@ -156,7 +162,7 @@ function patchThinkingChildren(component: any, runs: AssistantContentRun[], mess
 		const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
 		const override = typeof visibilityOverrides?.get === "function" ? visibilityOverrides.get(thinkingOrdinal) : undefined;
 		const hidden = override ?? Boolean(component?.hideThinkingBlock);
-		const live = stopReason === undefined && !hasBlockAfter(content, run.endBlockIndex);
+		const live = liveStream && !hasBlockAfter(content, run.endBlockIndex);
 		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { run, hidden, live, label });
 		if (mode === "prefix") turnMarkerUsed = true;
 		thinkingOrdinal++;
@@ -220,13 +226,15 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 	const baseUpdateContent = proto.updateContent;
 	if (typeof baseUpdateContent === "function") {
 		proto.updateContent = function patchedAssistantUpdateContent(message: any): void {
+			// Tag before the base delegate so this wrapper's message is the identity the tag is built from.
+			const liveStream = attachComponentToStream(this, message);
 			baseUpdateContent.call(this, message);
 			this.__assistantResponsePrefixChildMode = false;
 
 			if (!message || !Array.isArray(message.content)) return;
 
 			const runs = getAssistantContentRuns(this, message);
-			patchThinkingChildren(this, runs, message);
+			patchThinkingChildren(this, runs, message, liveStream);
 
 			const firstTextRunIndex = runs.findIndex((run) => run.kind === "text");
 			if (firstTextRunIndex === -1) return;

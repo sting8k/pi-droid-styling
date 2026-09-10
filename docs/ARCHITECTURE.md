@@ -28,6 +28,9 @@ messages/
   Assistant/user message prefix patches and boxed Pi core special message block styling
   - assistant-prefix.ts owns the collapsed-thinking row (`<label> <marker> <tail>`) on top of the
     rendered-run model from assistant-content-runs.ts and the width-safe tail helper in render-budget.ts
+  - assistant-streaming-state.ts owns the extension-tracked assistant stream token (tagged onto the
+    streaming component by message identity) that drives the row's live marker, because pi-ai
+    partials always carry stopReason "stop"
 
 presentation/
   Presentation preset registry, process-global active presentation state, and Reasonix layout constants
