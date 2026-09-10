@@ -14,6 +14,19 @@ export interface InputBoxConfig {
 
 export type TasksWidgetStyle = "default" | "compact";
 
+export type CollapsedThinkingStyle = "tail" | "label";
+
+const COLLAPSED_THINKING_STYLE_SET: Record<CollapsedThinkingStyle, true> = { tail: true, label: true };
+
+function isCollapsedThinkingStyle(value: unknown): value is CollapsedThinkingStyle {
+	return typeof value === "string" && Object.prototype.hasOwnProperty.call(COLLAPSED_THINKING_STYLE_SET, value);
+}
+
+function normalizeCollapsedThinkingStyle(value: unknown): CollapsedThinkingStyle {
+	if (value === undefined) return DEFAULTS.collapsedThinking;
+	return isCollapsedThinkingStyle(value) ? value : DEFAULTS.collapsedThinking;
+}
+
 const TASKS_WIDGET_STYLE_SET: Record<TasksWidgetStyle, true> = { default: true, compact: true };
 
 function isTasksWidgetStyle(value: unknown): value is TasksWidgetStyle {
@@ -34,6 +47,7 @@ export interface DroidStylingConfig {
 	userZoneStyle: UserZoneStyleName;
 	inputBox: InputBoxConfig;
 	tasksWidgetStyle: TasksWidgetStyle;
+	collapsedThinking: CollapsedThinkingStyle;
 	forceOSC11: boolean;
 	visibleChatTail: number;
 }
@@ -58,6 +72,7 @@ const DEFAULTS: DroidStylingConfig = {
 	userZoneStyle: DEFAULT_USER_ZONE_STYLE,
 	inputBox: DEFAULT_INPUT_BOX,
 	tasksWidgetStyle: "compact",
+	collapsedThinking: "tail",
 	forceOSC11: false,
 	visibleChatTail: 30,
 };
@@ -190,6 +205,17 @@ function backfillTasksWidgetStyle(config: Record<string, unknown>): boolean {
 	return true;
 }
 
+function backfillCollapsedThinking(config: Record<string, unknown>): boolean {
+	const value = config.collapsedThinking;
+	if (value === undefined) {
+		config.collapsedThinking = DEFAULTS.collapsedThinking;
+		return true;
+	}
+	if (isCollapsedThinkingStyle(value)) return false;
+	config.collapsedThinking = DEFAULTS.collapsedThinking;
+	return true;
+}
+
 function normalizeConfig(raw: unknown): DroidStylingConfig {
 	if (!isRecord(raw)) return defaultConfig();
 	const config = raw as Record<string, unknown>;
@@ -202,6 +228,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		userZoneStyle: normalizeUserZoneStyleName(config.userZoneStyle),
 		inputBox: inputBoxOrDefault(config.inputBox),
 		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
+		collapsedThinking: normalizeCollapsedThinkingStyle(config.collapsedThinking),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 		visibleChatTail: visibleChatTailOrDefault(config.visibleChatTail),
 	};
@@ -236,6 +263,7 @@ function backfillMissingDefaults(raw: unknown): void {
 	if (backfillUserZoneStyle(config)) changed = true;
 	if (backfillInputBox(config)) changed = true;
 	if (backfillTasksWidgetStyle(config)) changed = true;
+	if (backfillCollapsedThinking(config)) changed = true;
 	if (!changed) return;
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");

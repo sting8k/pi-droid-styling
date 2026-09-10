@@ -14,6 +14,15 @@ const TRUNCATE_ELLIPSIS = "…";
 const ANSI_RESET = "\x1b[0m";
 const SGR_PREFIX_PATTERN = /^(?:\x1b\[[0-9;]*m)+/;
 const SGR_SUFFIX_PATTERN = /(?:\x1b\[[0-9;]*m)+$/;
+
+const SegmenterCtor = (Intl as any).Segmenter;
+const graphemeSegmenter = typeof SegmenterCtor === "function" ? new SegmenterCtor(undefined, { granularity: "grapheme" }) : undefined;
+
+function splitGraphemes(text: string): string[] {
+	if (graphemeSegmenter) return Array.from(graphemeSegmenter.segment(text), (part: any) => String(part.segment));
+	return Array.from(text);
+}
+
 const KITTY_IMAGE_PREFIX = "\x1b_G";
 const ITERM2_IMAGE_PREFIX = "\x1b]1337;File=";
 
@@ -317,6 +326,31 @@ export function safeTruncateToWidth(text: string, maxWidth: number, ellipsis = "
 
 	profileCount("safeTruncate.fallback");
 	return tuiTruncateToWidth(text, maxWidth, ellipsis, pad);
+}
+
+export function safeTakeTailToWidth(text: string, maxWidth: number, ellipsis = TRUNCATE_ELLIPSIS): string {
+	const width = Math.floor(maxWidth);
+	if (!Number.isFinite(width) || width <= 0) return "";
+	if (text.length === 0) return "";
+	if (safeVisibleWidth(text) <= width) return text;
+
+	const ellipsisWidth = safeVisibleWidth(ellipsis);
+	if (ellipsisWidth >= width) return safeTruncateToWidth(ellipsis, width, "");
+
+	// Walk the tail backwards one grapheme at a time so a double-width cluster is never
+	// split; a cluster that cannot fit whole is dropped and the row ends one column short.
+	const targetWidth = width - ellipsisWidth;
+	const graphemes = splitGraphemes(text);
+	let taken = "";
+	let takenWidth = 0;
+	for (let i = graphemes.length - 1; i >= 0; i--) {
+		const grapheme = graphemes[i] ?? "";
+		const graphemeWidth = safeVisibleWidth(grapheme);
+		if (takenWidth + graphemeWidth > targetWidth) break;
+		taken = grapheme + taken;
+		takenWidth += graphemeWidth;
+	}
+	return `${ellipsis}${taken}`;
 }
 
 export function fastBoxLineContent(content: string, width: number): FastBoxLineContent | null {

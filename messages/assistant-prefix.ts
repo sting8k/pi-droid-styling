@@ -1,9 +1,10 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
+import { loadConfig } from "../config.js";
 import { getPresentationDesign } from "../presentation/state.js";
 import { dropLeadingColumns, fgHex, startsWithVisibleSpace, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
-import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { safeTakeTailToWidth, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import {
 	type AssistantContentRun,
 	getAssistantContentRuns,
@@ -70,30 +71,95 @@ function addAssistantGutter(lines: string[]): string[] {
 	});
 }
 
-function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix"): void {
+const COLLAPSED_TAIL_MIN_BUDGET = 16;
+const THINKING_TAIL_LIVE_MARKER = "▸";
+const THINKING_TAIL_SETTLED_MARKER = "·";
+const THINKING_BLOCK_MARKER_PATTERN = /^(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s?)/;
+
+/** Last non-empty line of a thinking run, cleaned of a leading Markdown block marker and inner runs of whitespace. */
+function cleanThinkingTailLine(text: string): string {
+	return text.replace(/\s+/g, " ").trim().replace(THINKING_BLOCK_MARKER_PATTERN, "").trim();
+}
+
+function lastThinkingTailLine(text: string): string {
+	const lines = text.split("\n");
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const cleaned = cleanThinkingTailLine(lines[i] ?? "");
+		if (cleaned) return cleaned;
+	}
+	return "";
+}
+
+/** One collapsed row: `<label> <marker> <tail>` at `bodyWidth`, or null when the tail budget is too small. */
+function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live: boolean, bodyWidth: number): string | null {
+	// bodyWidth - 1 (Pi core Text left padding) - label - 1 - marker - 1
+	const tailBudget = bodyWidth - safeVisibleWidth(label) - 4;
+	if (tailBudget < COLLAPSED_TAIL_MIN_BUDGET) return null;
+
+	const marker = live ? THINKING_TAIL_LIVE_MARKER : THINKING_TAIL_SETTLED_MARKER;
+	const tail = safeTakeTailToWidth(lastThinkingTailLine(run.text), tailBudget);
+	const labelSegment = styleThinkingLine(label);
+	const tailColor = getThemeExtra(activeTheme, "collapsedThinkingTailColor");
+	const tailSegment = activeTheme ? fgHex(activeTheme, tailColor, `${marker} ${tail}`) : `${marker} ${tail}`;
+	return ` ${labelSegment} ${tailSegment}`;
+}
+
+type ThinkingChildContext = {
+	run: AssistantContentRun;
+	hidden: boolean;
+	live: boolean;
+	label: string | null;
+};
+
+function isCollapsedTailEnabled(context: ThinkingChildContext | undefined): context is ThinkingChildContext & { label: string } {
+	return Boolean(context && context.hidden && context.label !== null && loadConfig().collapsedThinking === "tail");
+}
+
+function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix", context?: ThinkingChildContext): void {
 	if (!child || typeof child.render !== "function" || child.__plainThinkingPatched) return;
 	child.__plainThinkingPatched = true;
 
 	const baseRender = child.render.bind(child);
 	child.render = (width: number): string[] => {
 		const bodyWidth = mode === "plain" ? width : getAssistantBodyWidth(width);
-		const lines = baseRender(bodyWidth).map(styleThinkingLine);
+		const collapsedRow = isCollapsedTailEnabled(context)
+			? buildCollapsedThinkingRow(context.run, context.label, context.live, bodyWidth)
+			: null;
+		const lines = collapsedRow !== null ? [collapsedRow] : baseRender(bodyWidth).map(styleThinkingLine);
 		if (mode === "prefix") return prefixFirstNonEmptyLine(lines, width);
 		if (mode === "gutter") return addAssistantGutter(lines);
 		return lines;
 	};
 }
 
-function patchThinkingChildren(component: any, runs: AssistantContentRun[]): void {
+/** A run is live while the message streams and nothing (text, thinking or tool call) follows its last block. */
+function hasBlockAfter(content: any[], endBlockIndex: number): boolean {
+	for (let i = endBlockIndex + 1; i < content.length; i++) {
+		const type = content[i]?.type;
+		if (type === "text" || type === "thinking" || type === "toolCall") return true;
+	}
+	return false;
+}
+
+function patchThinkingChildren(component: any, runs: AssistantContentRun[], message: any): void {
 	let turnMarkerUsed = false;
+	let thinkingOrdinal = 0;
+	const content = Array.isArray(message?.content) ? message.content : [];
+	const stopReason = message?.stopReason;
+	const label = typeof component?.hiddenThinkingLabel === "string" ? component.hiddenThinkingLabel : null;
+	const visibilityOverrides = component?.thinkingVisibilityOverrides;
 
 	for (let i = 0; i < runs.length; i++) {
 		const run = runs[i];
 		if (run.kind !== "thinking") continue;
 		const hasTextAfter = runs.slice(i + 1).some((nextRun) => nextRun.kind === "text");
 		const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
-		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode);
+		const override = typeof visibilityOverrides?.get === "function" ? visibilityOverrides.get(thinkingOrdinal) : undefined;
+		const hidden = override ?? Boolean(component?.hideThinkingBlock);
+		const live = stopReason === undefined && !hasBlockAfter(content, run.endBlockIndex);
+		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { run, hidden, live, label });
 		if (mode === "prefix") turnMarkerUsed = true;
+		thinkingOrdinal++;
 	}
 }
 
@@ -141,9 +207,10 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 	);
 }
 
-export function installAssistantMessagePrefix(theme: any): void {
+export function installAssistantMessagePrefix(theme: any, componentClass: any = AssistantMessageComponent): void {
 	activeTheme = theme;
-	const proto = AssistantMessageComponent.prototype as any;
+	const proto = componentClass?.prototype as any;
+	if (!proto) return;
 	if (proto[PATCHED] || proto.render?.name === "patchedAssistantMessageRender") {
 		proto[PATCHED] = true;
 		return;
@@ -159,7 +226,7 @@ export function installAssistantMessagePrefix(theme: any): void {
 			if (!message || !Array.isArray(message.content)) return;
 
 			const runs = getAssistantContentRuns(this, message);
-			patchThinkingChildren(this, runs);
+			patchThinkingChildren(this, runs, message);
 
 			const firstTextRunIndex = runs.findIndex((run) => run.kind === "text");
 			if (firstTextRunIndex === -1) return;

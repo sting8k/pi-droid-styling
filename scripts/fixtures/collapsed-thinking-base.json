@@ -1,0 +1,438 @@
+{
+  "0.78.0": {
+    "thinking-only": {
+      "true": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          ""
+        ]
+      }
+    },
+    "thinking-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "two-thoughts-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mbeta                                      \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mbeta                                                                        \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "three-thoughts-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mbeta                                      \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mgamma                                     \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mbeta                                                                        \u001b[39m\u001b[23m",
+          "",
+          "  \u001b[3m\u001b[38;5;7mgamma                                                                       \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "thinking-toolcall": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          ""
+        ]
+      }
+    },
+    "split-runs": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                 ",
+          "  \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                  ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                                                   ",
+          "  \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                                                    ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mfirstthought                              \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                 ",
+          "  \u001b[3m\u001b[38;5;7msecondthought                             \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                  ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mfirstthought                                                                \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                                                   ",
+          "  \u001b[3m\u001b[38;5;7msecondthought                                                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                                                    ",
+          ""
+        ]
+      }
+    },
+    "text-only": {
+      "true": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                            ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                                                              ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                            ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                                                              ",
+          ""
+        ]
+      }
+    }
+  },
+  "0.85.1": {
+    "thinking-only": {
+      "true": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007\u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          ""
+        ]
+      }
+    },
+    "thinking-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "two-thoughts-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "                                           ",
+          "  \u001b[3m\u001b[38;5;7mbeta                                      \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "                                                                             ",
+          "  \u001b[3m\u001b[38;5;7mbeta                                                                        \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "three-thoughts-final": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          "                                           ",
+          "  \u001b[3m\u001b[38;5;7mbeta                                      \u001b[39m\u001b[23m",
+          "                                           ",
+          "  \u001b[3m\u001b[38;5;7mgamma                                     \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                               ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          "                                                                             ",
+          "  \u001b[3m\u001b[38;5;7mbeta                                                                        \u001b[39m\u001b[23m",
+          "                                                                             ",
+          "  \u001b[3m\u001b[38;5;7mgamma                                                                       \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007  FINALANSWER                                                                 ",
+          ""
+        ]
+      }
+    },
+    "thinking-toolcall": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                     \u001b[39m\u001b[23m",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7malpha                                                                       \u001b[39m\u001b[23m",
+          ""
+        ]
+      }
+    },
+    "split-runs": {
+      "true": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                 ",
+          "  \u001b[3m\u001b[38;5;7mThinking...                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                  ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                                                   ",
+          "  \u001b[3m\u001b[38;5;7mThinking...                                                                 \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                                                    ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b[3m\u001b[38;5;7mfirstthought                              \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                 ",
+          "  \u001b[3m\u001b[38;5;7msecondthought                             \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                  ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b[3m\u001b[38;5;7mfirstthought                                                                \u001b[39m\u001b[23m",
+          "",
+          "  MIDANSWER                                                                   ",
+          "  \u001b[3m\u001b[38;5;7msecondthought                                                               \u001b[39m\u001b[23m",
+          "",
+          "\u001b]133;B\u0007\u001b]133;C\u0007 FINALANSWER                                                                    ",
+          ""
+        ]
+      }
+    },
+    "text-only": {
+      "true": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                            ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                                                              ",
+          ""
+        ]
+      },
+      "false": {
+        "46": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                            ",
+          ""
+        ],
+        "80": [
+          "\u2022 \u001b]133;B\u0007\u001b]133;C\u0007just an answer                                                              ",
+          ""
+        ]
+      }
+    }
+  }
+}

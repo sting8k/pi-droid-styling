@@ -17,6 +17,8 @@ export interface AssistantContentRun {
 	text: string;
 	/** position of this run's child inside contentContainer.children */
 	childIndex: number;
+	/** last content-block index feeding this run, used to detect blocks that follow it */
+	endBlockIndex: number;
 }
 
 /** Two consecutive thinking blocks are the shortest message whose layout differs per core. */
@@ -53,23 +55,25 @@ function buildRuns(contentBlocks: any[], groupThinkingRuns: boolean): AssistantC
 	for (let i = 0; i < contentBlocks.length; i++) {
 		const contentBlock = contentBlocks[i];
 		if (isVisibleTextBlock(contentBlock)) {
-			runs.push({ kind: "text", blockIndex: i, text: contentBlock.text.trim(), childIndex: 0 });
+			runs.push({ kind: "text", blockIndex: i, endBlockIndex: i, text: contentBlock.text.trim(), childIndex: 0 });
 			continue;
 		}
 		if (contentBlock?.type !== "thinking") continue;
 
 		const blockIndex = i;
 		const thinking: string[] = [];
+		let endBlockIndex = blockIndex;
 		if (groupThinkingRuns) {
 			// Pi 0.84+ consumes every consecutive thinking block, blank ones included, into one run
 			for (; i < contentBlocks.length && contentBlocks[i]?.type === "thinking"; i++) {
 				if (isVisibleThinkingBlock(contentBlocks[i])) thinking.push(contentBlocks[i].thinking.trim());
 			}
 			i--;
+			endBlockIndex = i;
 		} else if (isVisibleThinkingBlock(contentBlock)) {
 			thinking.push(contentBlock.thinking.trim());
 		}
-		if (thinking.length > 0) runs.push({ kind: "thinking", blockIndex, text: thinking.join("\n\n"), childIndex: 0 });
+		if (thinking.length > 0) runs.push({ kind: "thinking", blockIndex, endBlockIndex, text: thinking.join("\n\n"), childIndex: 0 });
 	}
 
 	let childIndex = runs.length > 0 ? 1 : 0; // leading Spacer(1)

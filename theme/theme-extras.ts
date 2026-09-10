@@ -33,6 +33,7 @@ const HARDCODED_DEFAULTS: Record<string, string> = {
 	userBoxBorderColor: "",
 	gitInsertionColor: "#2ea043",
 	gitDeletionColor: "#f85149",
+	collapsedThinkingTailColor: "muted",
 };
 
 let cachedExtras: Record<string, string | boolean> | null = null;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -98,7 +98,17 @@ async function runThemeExtrasSmoke() {
 	assert(themeExtras.getThemeExtra(theme, "slashHintColor") === "#6c7086", "direct var color extra did not resolve to hex");
 	assert(themeExtras.getThemeExtra(theme, "userPrefixColor") === "#89b4fa", "default color extra token did not resolve to hex");
 	assert(themeExtras.getThemeExtra(theme, "quoteColor") === "missingToken", "unresolved color token was not preserved");
-	console.log("theme extras token smoke ok");
+	// Every bundled companion theme must resolve the default collapsedThinkingTailColor token.
+	const themesDir = join(repoRoot, "node_modules", "pi-themes", "themes");
+	const themeFiles = existsSync(themesDir) ? readdirSync(themesDir).filter((file) => file.endsWith(".json")) : [];
+	assert(themeFiles.length === 26, `expected 26 bundled companion themes, found ${themeFiles.length}`);
+	for (const file of themeFiles) {
+		const bundledTheme = { sourcePath: join(themesDir, file) };
+		themeExtras.setFullTheme(bundledTheme, true);
+		const resolved = themeExtras.getThemeExtra(bundledTheme, "collapsedThinkingTailColor");
+		assert(/^#[0-9a-fA-F]{3,8}$/.test(resolved), `companion theme ${file} did not resolve collapsedThinkingTailColor (got ${resolved})`);
+	}
+	console.log("theme extras token smoke ok (26 companion themes resolve collapsedThinkingTailColor)");
 }
 
 prepareWorkDir();
