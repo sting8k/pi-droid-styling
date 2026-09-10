@@ -13,7 +13,7 @@ The extension provides:
 - Footer stats including assistant token/word speed and compact session context.
 - Active-theme integration without forcing a specific theme; non-Windows hosts may sync terminal background with OSC 11 to cover terminal-owned padding/remainder areas.
 - Explicit root-frame and component-level background painting for the active theme page background, tool boxes, and fixed-zone notices.
-- Render hot-path patches for streaming assistant output and noisy tool output.
+- Render hot-path patches for streaming assistant output and noisy tool output; during a real assistant stream the presentation buffer drip-feeds deltas at the 33 ms cadence and the finished-render cache stays bypassed, both keyed on the extension-tracked stream state rather than `message.stopReason`.
 - Opt-in render profiling for request/render/repaint/update/git metrics without changing UI behavior when disabled.
 - Optional fixed user zone that keeps the status/widgets/editor/footer cluster at the bottom while chat/feed output scrolls above it, including mouse drag selection, double-click word selection, triple-click line selection, fixed-zone-local bottom notice feedback, and OSC 52 clipboard propagation for terminal proxies in the fixed-zone view.
 - Optional fixed user zone right sidebar for session id/name, cwd, current branch, modified files, and Pi version metadata on wide terminals.

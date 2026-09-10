@@ -40,7 +40,7 @@ Contract:
 
 - Change surface: two conditionals plus one small read-only query. Do not restructure the buffer or the cache.
 - `attachComponentToStream` is idempotent and tag-once, so calling it from both `debounce-update` (outermost) and `assistant-prefix` (inner) is correct by construction; whichever runs first tags, the other reads.
-- Base: branch `feat/us-024-collapsed-thinking-tail`, on top of the US-024 round-2 commit. Separate commit so the buffer activation can be reverted independently if the operator's live test dislikes the cadence.
+- Base: branch `feat/thinking-tail-stream-state`, on top of the US-024 round-2 commit. Separate commit so the buffer activation can be reverted independently if the operator's live test dislikes the cadence.
 - No version bump / CHANGELOG here; the release step (2.13.0) covers US-024 + US-025 together.
 
 ## Validation
@@ -66,8 +66,38 @@ Verification contract (red-first where marked):
 
 ## Harness Delta
 
-`test:presentation-buffer` added to `npm test`. Record here if the smoke needed a controllable clock beyond real 33 ms waits.
+`test:presentation-buffer` added to `npm test`. The smoke uses real 33 ms waits (no fake clock); each case uses a fresh component so pending ticks cannot leak between cases, and it runs in ~2.3 s. No harness change beyond the new script.
 
 ## Evidence
 
-Add after validation exists.
+Implementation uncommitted on `feat/thinking-tail-stream-state` (on top of US-024 commit `00ea809`), awaiting review.
+
+**Change surface**: `performance/debounce-update.ts` — `patchedUpdateContent` now branches on `attachComponentToStream(this, message)` (called first, before any clone); `performance/finished-render-cache.ts` — `getAssistantFinishedKey` returns `undefined` when `isComponentOnActiveStream(component)`, and its `stopReason === undefined` test is gone. Reveal parameters, wrapper order, and the cache key are unchanged. `messages/assistant-streaming-state.ts` already shipped `isComponentOnActiveStream` in US-024.
+
+**Unit — `npm run test:presentation-buffer`** (`scripts/presentation-buffer-smoke.mjs`, real Pi 0.78 `AssistantMessageComponent` + a delegate spy, `installAssistantUpdateDebounce` then `installFinishedRenderCache` in index.ts order):
+- B1 drip (red-first): a 600-grapheme `stopReason: "stop"` partial is not delivered synchronously; the first delegate call is a clone with fewer graphemes, later ticks converge to the full source, and the delegate ran more than once. Red under MB1.
+- B2 non-streaming update calls the delegate synchronously with the **same object** and schedules no tick; also for a message with `stopReason` undefined (pins stopReason out of the branch).
+- B3 `endAssistantStream()` + final `updateContent` flushes the original object synchronously and cancels the pending tick (no later delegate call).
+- B4 history components never enter the buffer: (i) constructed while no stream is active, re-updated during a later stream → immediate; (ii) constructed mid-stream with its own message object → immediate. Red under MB4.
+- B5 a delta under `MIN_REVEAL_CHARS` converges on the first tick with no extra tick.
+- B6 finished cache bypass: during the stream two renders separated by an in-place `lastMessage` mutation return different array instances, and the mutation is reflected after the next `updateContent`; after `endAssistantStream()` + final update two renders return the same instance. Red under MB3.
+- B7 disposal: with a tick pending, `setAssistantUpdateRenderRequester(undefined)` neither throws nor calls the requester.
+- Covers all 7 B cases listed in the story Validation (B1–B7; the story's B1–B7 list is exactly these).
+
+**Mutation ritual**:
+| Mutation | Cases that went red |
+| --- | --- |
+| MB1 branch keyed on `stopReason` again (red-first revert) | B1, B2 (+B3/B4/B5/B6/B7 collateral) |
+| MB2 final path does not cancel the pending tick | B3 |
+| MB3 cache bypass removed | B6 |
+| MB4 tag ignores message identity | B4 (mid-stream) |
+
+**Integration**: `npm run check` green (typecheck + all smokes + `npm pack --dry-run`); `npm run profile:render` runs (120 iterations); `npm run test:collapsed-thinking` and the other suites stay green (the collapsed-thinking smoke installs only `assistant-prefix`, so US-024 goldens are unaffected); `srcwalk review`; `git -c core.whitespace=-blank-at-eol diff --check` clean.
+
+**E2E (Pi/TUI 0.85.1 sandbox)** — same throwaway recipe as US-024:
+```text
+node scripts/presentation-buffer-smoke.mjs  -> presentation buffer smoke ok
+node scripts/collapsed-thinking-smoke.mjs   -> collapsed thinking smoke ok
+npm run test:reasonix-conversation          -> reasonix conversation presentation smoke ok
+```
+The E2E smoke drives real Pi/TUI 0.85.1 in a sandbox; it is not a live interactive TUI session. Operator live test of the streaming feel (Anthropic, chunky provider if available) is the product-cadence proof.

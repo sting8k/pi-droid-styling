@@ -98,7 +98,7 @@ None expected. If the smoke grows past what `scripts/reasonix-conversation-smoke
 
 ## Evidence
 
-Round 1 is committed locally as `f9c7e1a`; the round-2/3 liveness rework is uncommitted on `feat/us-024-collapsed-thinking-tail`, awaiting review.
+Round 1 is committed locally as `f9c7e1a`; the round-2/3 liveness rework is uncommitted on `feat/thinking-tail-stream-state`, awaiting review.
 
 **Live-test finding that drove round 2:** `pi-ai` builds every streaming partial with `stopReason: "stop"` from the first delta (`providers/anthropic.js` and every provider), so the original `stopReason === undefined` rule rendered `·` for a whole real stream. Round 3 closes the residual gap round 2 flagged: `lastMessage === undefined` cannot separate the streaming component from a history component rebuilt mid-stream (the core constructor calls `updateContent(message)` while `lastMessage` is still undefined), so the tag discriminator is **message identity**.
 
