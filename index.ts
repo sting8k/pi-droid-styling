@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
+import { recordToolCallTimingEnd, recordToolCallTimingStart } from "./tool-tags/elapsed.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
 import { installInteractiveChatVirtualization } from "./performance/virtualize-chat.js";
 import { registerCompanionThemes } from "./theme/companion-themes.js";
@@ -124,11 +125,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_execution_start", (event) => {
 		runningToolCalls.add(event.toolCallId);
+		recordToolCallTimingStart(event.toolCallId);
 		workingLoaderController?.setState("running");
 	});
 
 	pi.on("tool_execution_end", (event) => {
 		runningToolCalls.delete(event.toolCallId);
+		recordToolCallTimingEnd(event.toolCallId);
 		// Keep the current label until the next live state begins.
 		// For example, a completed tool stays "Cooking" until assistant streaming resumes.
 	});
@@ -173,6 +176,7 @@ export default function (pi: ExtensionAPI) {
 		modules.installCompactToolSpacing();
 		modules.installDefaultBadge();
 		modules.installQuickEditRenderer(ToolExecutionComponent);
+		modules.installBuiltinToolRenderers(ToolExecutionComponent);
 		modules.installResumeToolRefresh(InteractiveMode);
 		modules.installMarkdownCodeBlockRenderer();
 		modules.installFooterStatsPatch();

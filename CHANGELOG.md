@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Builtin tool styling no longer re-registers `read`/`write`/`ls`/`find`/`grep`/`bash` under builtin names (issue #24). Renderers are attached at the ToolExecutionComponent layer by tool name, so same-name tools from other packages (pi-utils shell-bg `bash`, fs-search `grep`, …) are no longer shadowed regardless of package order. `edit` still registers as the pi-ctx-kit enhanced-edit bridge. Tool-call elapsed metrics now come from component/renderer state and `tool_execution_start`/`tool_execution_end` events instead of an execute wrapper.
+
 ## 2.13.0 - 2026-09-10
 
 ### Added

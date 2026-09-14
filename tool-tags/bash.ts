@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import { createBashTool, highlightCode } from "@earendil-works/pi-coding-agent";
+import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
 import { safeTruncateToWidth } from "../render-budget.js";
@@ -7,7 +7,7 @@ import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { getPresentationDesign } from "../presentation/state.js";
 import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
-import { wrapExecuteWithTiming } from "./elapsed.js";
+import { markToolCallExecutionStarted } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
 const MAX_LINE_CHARS = 2000;
@@ -171,7 +171,7 @@ function renderBoxedBashResult(theme: any, inner: Component, result: any, contex
 	return renderBoxedToolResult(theme, inner, {
 		widthKey: bashWidthKey(rawCommand, timeout),
 		referenceLines,
-		footerLines: [formatBoxedFooter(theme, result, [`⏹ ${formatTimeout(context)}`])],
+		footerLines: [formatBoxedFooter(theme, result, [`⏹ ${formatTimeout(context)}`], context)],
 		isError: context?.isError,
 		isPartial: Boolean(context?.isPartial),
 	});
@@ -282,46 +282,35 @@ function createBashResultPreview(
 	};
 }
 
-export function registerBashTool(pi: ExtensionAPI): void {
-	const baseBash = createBashTool(process.cwd());
-	pi.registerTool({
-		name: baseBash.name,
-		label: baseBash.label,
-		description: baseBash.description,
-		parameters: { ...baseBash.parameters },
-		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
-			const tool = createBashTool(ctx.cwd);
-			return tool.execute(toolCallId, params as any, signal, onUpdate);
-		}),
-		renderCall(args: any, theme: any, context: any) {
-			const rawCommand = String(args?.command ?? "...");
-			return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout), context);
-		},
-		renderResult(result, options, theme: any, context: any) {
-			const raw = getTextOutput(result);
-			const outputColor = context?.isError ? "error" : "toolOutput";
+export function renderBashCall(args: any, theme: any, context: any) {
+	markToolCallExecutionStarted(context);
+	const rawCommand = String(args?.command ?? "...");
+	return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout), context);
+}
 
-			if (!isExpanded(options)) {
-				const scanLines = MAX_BASH_PREVIEW_LINES + 10;
-				let nlCount = 0;
-				let tailStart = 0;
-				for (let i = raw.length - 1; i >= 0; i--) {
-					if (raw.charCodeAt(i) === 10) {
-						nlCount++;
-						if (nlCount >= scanLines) {
-							tailStart = i + 1;
-							break;
-						}
-					}
+export function renderBashResult(result, options, theme: any, context: any) {
+	const raw = getTextOutput(result);
+	const outputColor = context?.isError ? "error" : "toolOutput";
+
+	if (!isExpanded(options)) {
+		const scanLines = MAX_BASH_PREVIEW_LINES + 10;
+		let nlCount = 0;
+		let tailStart = 0;
+		for (let i = raw.length - 1; i >= 0; i--) {
+			if (raw.charCodeAt(i) === 10) {
+				nlCount++;
+				if (nlCount >= scanLines) {
+					tailStart = i + 1;
+					break;
 				}
-				const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
-				const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
-				const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore, context?.state);
-				return renderBoxedBashResult(theme, inner, result, context);
 			}
-			const output = stripBashToolNoticeLines(stripAnsi(raw));
-			const inner = createBashResultPreview(theme, output, options, outputColor, 0, context?.state);
-			return renderBoxedBashResult(theme, inner, result, context);
-		},
-	});
+		}
+		const tail = stripBashToolNoticeLines(stripAnsi(raw.slice(tailStart)));
+		const totalLinesBefore = tailStart > 0 ? countNewlines(raw, 0, tailStart) : 0;
+		const inner = createBashResultPreview(theme, tail, options, outputColor, totalLinesBefore, context?.state);
+		return renderBoxedBashResult(theme, inner, result, context);
+	}
+	const output = stripBashToolNoticeLines(stripAnsi(raw));
+	const inner = createBashResultPreview(theme, output, options, outputColor, 0, context?.state);
+	return renderBoxedBashResult(theme, inner, result, context);
 }

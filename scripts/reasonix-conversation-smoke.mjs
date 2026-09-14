@@ -364,13 +364,10 @@ assert(droidAssistant.some((line) => line.includes("•  answer")), "droid assis
 const { formatToolParamLines, renderBoxedToolCall, renderCompactBoxedToolCall, renderCompactBoxedFooter, renderBoxedToolResult, setCompactBoxedFooter } = await importBuilt("tool-tags/common.js");
 const { installQuickEditRenderer } = await importBuilt("tool-tags/quick-edit.js");
 const { installCompactToolSpacing, normalizeReasonixToolLines, setToolSpacingTheme } = await importBuilt("tool-tags/compact-tool-spacing.js");
-const { registerBashTool } = await importBuilt("tool-tags/bash.js");
-
-let bashToolDefinition;
-registerBashTool({ registerTool(definition) { bashToolDefinition = definition; } });
+const { renderBashCall } = await importBuilt("tool-tags/bash.js");
 
 setPresentationStyle("reasonix");
-const reasonixBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+const reasonixBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
 assert(reasonixBashCall[0]?.startsWith("✓ Bash npm test") && !reasonixBashCall[0]?.includes("$"), "reasonix Bash tool call should place the command directly after the tool name");
 
 const realDateNow = Date.now;
@@ -399,7 +396,7 @@ try {
 	Date.now = realDateNow;
 }
 setPresentationStyle("droid");
-const droidBashCall = bashToolDefinition.renderCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+const droidBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
 assert(droidBashCall.some((line) => line.includes("$ npm test")), "droid Bash tool call should retain its shell prompt");
 setPresentationStyle("reasonix");
 const toolState = {};

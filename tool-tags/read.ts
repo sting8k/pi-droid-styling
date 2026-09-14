@@ -1,11 +1,10 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadTool, getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
 
 import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
-import { wrapExecuteWithTiming } from "./elapsed.js";
+import { markToolCallExecutionStarted } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
 const MAX_HIGHLIGHT_OUTPUT_LINES = 300;
@@ -41,174 +40,163 @@ function parseReadOutput(text: string): ParsedReadOutput {
 	return { fileHash: fileHashMatch?.[1], body };
 }
 
-export function registerReadTool(pi: ExtensionAPI): void {
-	const baseRead = createReadTool(process.cwd());
-	pi.registerTool({
-		name: baseRead.name,
-		label: baseRead.label,
-		description: baseRead.description,
-		parameters: { ...baseRead.parameters },
-		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, _onUpdate, ctx) => {
-			const tool = createReadTool(ctx.cwd);
-			return tool.execute(toolCallId, params as any, signal);
-		}),
-		renderCall(args: any, theme: any, context: any) {
-			const rawPath = String(args?.path ?? args?.file_path ?? "");
-			const path = shortenPath(rawPath);
-			const offset = args?.offset;
-			const limit = args?.limit;
+export function renderReadCall(args: any, theme: any, context: any) {
+	markToolCallExecutionStarted(context);
+	const rawPath = String(args?.path ?? args?.file_path ?? "");
+	const path = shortenPath(rawPath);
+	const offset = args?.offset;
+	const limit = args?.limit;
 
-			let range = "";
-			if (offset !== undefined || limit !== undefined) {
-				const start = offset ?? 1;
-				const end = limit !== undefined ? start + limit - 1 : "";
-				range = `:${start}${end ? `-${end}` : ""}`;
-			}
+	let range = "";
+	if (offset !== undefined || limit !== undefined) {
+		const start = offset ?? 1;
+		const end = limit !== undefined ? start + limit - 1 : "";
+		range = `:${start}${end ? `-${end}` : ""}`;
+	}
 
-			const detail = path ? `${path}${range}` : "(unknown)";
-			return renderCompactBoxedToolCall(theme, "Read", `${theme.fg("dim", "Path: ")}${detail}`, {
-				widthKey: boxedToolWidthKey("Read", detail),
-				state: context?.state,
-				isError: Boolean(context?.isError),
-				isPartial: Boolean(context?.isPartial),
-				isPending: Boolean(context?.isPartial && !context?.hasResult),
-			});
+	const detail = path ? `${path}${range}` : "(unknown)";
+	return renderCompactBoxedToolCall(theme, "Read", `${theme.fg("dim", "Path: ")}${detail}`, {
+		widthKey: boxedToolWidthKey("Read", detail),
+		state: context?.state,
+		isError: Boolean(context?.isError),
+		isPartial: Boolean(context?.isPartial),
+		isPending: Boolean(context?.isPartial && !context?.hasResult),
+	});
+}
+
+export function renderReadResult(result: any, options, theme: any, context: any) {
+	clearCompactBoxedFooter(context?.state);
+	const output = stripAnsi(getTextOutput(result)).trimEnd();
+	const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+	const path = shortenPath(rawPath);
+	const offset = context?.args?.offset;
+	const limit = context?.args?.limit;
+	let range = "";
+	if (offset !== undefined || limit !== undefined) {
+		const start = offset ?? 1;
+		const end = limit !== undefined ? start + limit - 1 : "";
+		range = `:${start}${end ? `-${end}` : ""}`;
+	}
+	const detail = path ? `${path}${range}` : "(unknown)";
+	const widthKey = boxedToolWidthKey("Read", detail);
+	const referenceLines = [`Path: ${detail}`];
+
+	if (result.isError) {
+		return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
+			widthKey,
+			referenceLines,
+			footerLines: [formatBoxedFooter(theme, result, [], context)],
+			isError: true,
+		});
+	}
+
+	const imageCount = Array.isArray(result.content)
+		? result.content.filter((contentBlock: any) => contentBlock?.type === "image").length
+		: 0;
+	if (imageCount > 0) {
+		if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial), toolCallId: context?.toolCallId });
+		const summary = `↳ Read ${imageCount} ${imageCount === 1 ? "image" : "images"}.`;
+		return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
+			widthKey,
+			referenceLines,
+			footerLines: [formatBoxedFooter(theme, result, [], context)],
+		});
+	}
+
+	const stripped = stripTrailingNotice(output);
+	const parsed = parseReadOutput(stripped);
+	const truncationNotice = extractTrailingNotice(output);
+	const linesRead =
+		typeof result.details?.truncation?.outputLines === "number"
+			? result.details.truncation.outputLines
+			: parsed.numberedLines?.length ?? countLines(parsed.body);
+
+	const summary = theme.fg("dim", `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`);
+
+	if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial), toolCallId: context?.toolCallId });
+
+	// Expanded: show syntax-highlighted content
+	const filePath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+	const lang = getLanguageFromPath(filePath);
+	let cacheKey = "";
+	let cacheLines: string[] | null = null;
+	const body = {
+		invalidate() {
+			cacheKey = "";
+			cacheLines = null;
 		},
-		renderResult(result: any, options, theme: any, context: any) {
-			clearCompactBoxedFooter(context?.state);
-			const output = stripAnsi(getTextOutput(result)).trimEnd();
-			const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
-			const path = shortenPath(rawPath);
-			const offset = context?.args?.offset;
-			const limit = context?.args?.limit;
-			let range = "";
-			if (offset !== undefined || limit !== undefined) {
-				const start = offset ?? 1;
-				const end = limit !== undefined ? start + limit - 1 : "";
-				range = `:${start}${end ? `-${end}` : ""}`;
-			}
-			const detail = path ? `${path}${range}` : "(unknown)";
-			const widthKey = boxedToolWidthKey("Read", detail);
-			const referenceLines = [`Path: ${detail}`];
+		render(width: number): string[] {
+			const renderWidth = Math.max(1, width);
+			const cfg = loadConfig();
+			const maxLines = cfg.maxExpandedLines;
+			const expanded = isExpanded(options);
+			const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${maxLines}|${cfg.dimToolOutput ? 1 : 0}`;
+			if (cacheLines && cacheKey === cacheId) return cacheLines;
 
-			if (result.isError) {
-				return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
-					widthKey,
-					referenceLines,
-					footerLines: [formatBoxedFooter(theme, result)],
-					isError: true,
-				});
-			}
-
-			const imageCount = Array.isArray(result.content)
-				? result.content.filter((contentBlock: any) => contentBlock?.type === "image").length
-				: 0;
-			if (imageCount > 0) {
-				if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
-				const summary = `↳ Read ${imageCount} ${imageCount === 1 ? "image" : "images"}.`;
-				return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
-					widthKey,
-					referenceLines,
-					footerLines: [formatBoxedFooter(theme, result)],
-				});
-			}
-
-			const stripped = stripTrailingNotice(output);
-			const parsed = parseReadOutput(stripped);
-			const truncationNotice = extractTrailingNotice(output);
-			const linesRead =
-				typeof result.details?.truncation?.outputLines === "number"
-					? result.details.truncation.outputLines
-					: parsed.numberedLines?.length ?? countLines(parsed.body);
-
-			const summary = theme.fg("dim", `↳ Read ${linesRead} ${linesRead === 1 ? "line" : "lines"}.`);
-
-			if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial) });
-
-			// Expanded: show syntax-highlighted content
-			const filePath = String(context?.args?.path ?? context?.args?.file_path ?? "");
-			const lang = getLanguageFromPath(filePath);
-			let cacheKey = "";
-			let cacheLines: string[] | null = null;
-			const body = {
-				invalidate() {
-					cacheKey = "";
-					cacheLines = null;
-				},
-				render(width: number): string[] {
-					const renderWidth = Math.max(1, width);
-					const cfg = loadConfig();
-					const maxLines = cfg.maxExpandedLines;
-					const expanded = isExpanded(options);
-					const cacheId = `${renderWidth}|${expanded ? 1 : 0}|${maxLines}|${cfg.dimToolOutput ? 1 : 0}`;
-					if (cacheLines && cacheKey === cacheId) return cacheLines;
-
-					const footer: string[] = [];
-					if (truncationNotice) footer.push(theme.fg("warning", truncationNotice));
-					footer.push("", summary);
-					const budget = maxLines > 0 ? maxLines - footer.length : 0;
-					const renderPlain = (text: string): string[] => {
-						const out: string[] = [];
-						for (const line of text.split("\n")) {
-							out.push(safeTruncateToWidth(theme.fg("toolOutput", line), renderWidth, "…"));
-						}
-						return out;
-					};
-					const lineCount = parsed.numberedLines?.length ?? countLines(parsed.body);
-					const shouldHighlight =
-						expanded &&
-						Boolean(lang) &&
-						parsed.body.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
-						lineCount <= MAX_HIGHLIGHT_OUTPUT_LINES;
-
-					const renderBody = (): string[] => {
-						if (!parsed.numberedLines) return renderPlain(parsed.fileHash ? `fileHash: ${parsed.fileHash}\n\n${parsed.body}` : parsed.body);
-
-						let bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
-						if (shouldHighlight && lang) {
-							try {
-								bodyLines = highlightCode(parsed.body, lang);
-							} catch {
-								bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
-							}
-						}
-
-						const out: string[] = [];
-						if (parsed.fileHash) out.push(theme.fg("muted", `fileHash: ${parsed.fileHash}`), "");
-
-						const numberWidth = Math.max(...parsed.numberedLines.map((line) => line.lineNumber.length));
-						const gutterWidth = numberWidth + 3;
-						const contentWidth = Math.max(1, renderWidth - gutterWidth);
-						for (let i = 0; i < parsed.numberedLines.length; i++) {
-							const numberedLine = parsed.numberedLines[i]!;
-							const bodyLine = safeTruncateToWidth(bodyLines[i] ?? "", contentWidth, "…");
-							const gutter = theme.fg("dim", `${numberedLine.lineNumber.padStart(numberWidth)} │ `);
-							out.push(`${gutter}${bodyLine}`);
-						}
-						return out;
-					};
-
-					const highlighted = renderBody();
-					if (maxLines > 0 && highlighted.length > budget) {
-						const truncated = highlighted.slice(0, budget);
-						const remaining = highlighted.length - budget;
-						truncated.push(theme.fg("dim", `… ${remaining} more lines`));
-						truncated.push(...footer);
-						cacheKey = cacheId;
-						cacheLines = truncated;
-						return cacheLines;
-					}
-					highlighted.push(...footer);
-					cacheKey = cacheId;
-					cacheLines = highlighted;
-					return cacheLines;
-				},
+			const footer: string[] = [];
+			if (truncationNotice) footer.push(theme.fg("warning", truncationNotice));
+			footer.push("", summary);
+			const budget = maxLines > 0 ? maxLines - footer.length : 0;
+			const renderPlain = (text: string): string[] => {
+				const out: string[] = [];
+				for (const line of text.split("\n")) {
+					out.push(safeTruncateToWidth(theme.fg("toolOutput", line), renderWidth, "…"));
+				}
+				return out;
 			};
-			return renderBoxedToolResult(theme, body, {
-				widthKey,
-				referenceLines,
-				footerLines: [formatBoxedFooter(theme, result)],
-			});
+			const lineCount = parsed.numberedLines?.length ?? countLines(parsed.body);
+			const shouldHighlight =
+				expanded &&
+				Boolean(lang) &&
+				parsed.body.length <= MAX_HIGHLIGHT_OUTPUT_CHARS &&
+				lineCount <= MAX_HIGHLIGHT_OUTPUT_LINES;
+
+			const renderBody = (): string[] => {
+				if (!parsed.numberedLines) return renderPlain(parsed.fileHash ? `fileHash: ${parsed.fileHash}\n\n${parsed.body}` : parsed.body);
+
+				let bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
+				if (shouldHighlight && lang) {
+					try {
+						bodyLines = highlightCode(parsed.body, lang);
+					} catch {
+						bodyLines = parsed.body.split("\n").map((line) => theme.fg("toolOutput", line));
+					}
+				}
+
+				const out: string[] = [];
+				if (parsed.fileHash) out.push(theme.fg("muted", `fileHash: ${parsed.fileHash}`), "");
+
+				const numberWidth = Math.max(...parsed.numberedLines.map((line) => line.lineNumber.length));
+				const gutterWidth = numberWidth + 3;
+				const contentWidth = Math.max(1, renderWidth - gutterWidth);
+				for (let i = 0; i < parsed.numberedLines.length; i++) {
+					const numberedLine = parsed.numberedLines[i]!;
+					const bodyLine = safeTruncateToWidth(bodyLines[i] ?? "", contentWidth, "…");
+					const gutter = theme.fg("dim", `${numberedLine.lineNumber.padStart(numberWidth)} │ `);
+					out.push(`${gutter}${bodyLine}`);
+				}
+				return out;
+			};
+
+			const highlighted = renderBody();
+			if (maxLines > 0 && highlighted.length > budget) {
+				const truncated = highlighted.slice(0, budget);
+				const remaining = highlighted.length - budget;
+				truncated.push(theme.fg("dim", `… ${remaining} more lines`));
+				truncated.push(...footer);
+				cacheKey = cacheId;
+				cacheLines = truncated;
+				return cacheLines;
+			}
+			highlighted.push(...footer);
+			cacheKey = cacheId;
+			cacheLines = highlighted;
+			return cacheLines;
 		},
+	};
+	return renderBoxedToolResult(theme, body, {
+		widthKey,
+		referenceLines,
+		footerLines: [formatBoxedFooter(theme, result, [], context)],
 	});
 }
