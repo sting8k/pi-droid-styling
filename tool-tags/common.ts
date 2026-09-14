@@ -9,7 +9,7 @@ import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLin
 import { profileCount } from "../performance/profiler.js";
 import { RESET_BACKGROUND, bgHexAnsi, fgHex, isHexColor, stripAnsi, wrapAnsiBackground } from "../theme/ansi.js";
 import { getThemeExtra, getThemePageBackground, getThemeVarBackground } from "../theme/theme-extras.js";
-import { formatToolMetrics, getElapsedMs } from "./elapsed.js";
+import { formatToolMetrics, getElapsedMs, resolveToolCallElapsedMs } from "./elapsed.js";
 
 export function isExpanded(options: ToolRenderResultOptions): boolean {
 	return typeof options?.expanded === "boolean" ? options.expanded : false;
@@ -753,17 +753,18 @@ export function formatBoxedFooterFromValues(theme: any, elapsedMs: number | unde
 	return parts.join(theme.fg("dim", " · "));
 }
 
-function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false): string {
-	return formatBoxedFooterFromValues(theme, getElapsedMs(result), getTextOutput(result), extraParts, fixedColumns);
+function formatBoxedFooterParts(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], fixedColumns = false, context?: { state?: Record<string, unknown>; toolCallId?: string }): string {
+	return formatBoxedFooterFromValues(theme, resolveToolCallElapsedMs(context, result), getTextOutput(result), extraParts, fixedColumns);
 }
 
-export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = []): string {
-	return formatBoxedFooterParts(theme, result, extraParts);
+export function formatBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, extraParts: string[] = [], context?: { state?: Record<string, unknown>; toolCallId?: string }): string {
+	return formatBoxedFooterParts(theme, result, extraParts, false, context);
 }
 
-export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, options: { state?: any; isError?: boolean; isPartial?: boolean } = {}): Component {
+export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any> | undefined, options: { state?: any; isError?: boolean; isPartial?: boolean; toolCallId?: string } = {}): Component {
+	const elapsedContext = { state: options.state, toolCallId: options.toolCallId };
 	if (options.state && typeof options.state === "object") {
-		setCompactBoxedFooter(options.state, formatBoxedFooterParts(theme, result, [], true), options);
+		setCompactBoxedFooter(options.state, formatBoxedFooterParts(theme, result, [], true, elapsedContext), options);
 		return { invalidate() {}, render: () => [] };
 	}
 
@@ -772,7 +773,7 @@ export function renderCompactBoxedFooter(theme: any, result: AgentToolResult<any
 		render(width: number): string[] {
 			const renderedWidth = boxWidth(width);
 			return boxBgLines(theme, [
-				boxLine(theme, formatBoxedFooterParts(theme, result), renderedWidth),
+				boxLine(theme, formatBoxedFooterParts(theme, result, [], false, elapsedContext), renderedWidth),
 				boxBorder(theme, "└", "┘", renderedWidth),
 			], boxedToolBgName(options.isError, options.isPartial));
 		},

@@ -22,6 +22,8 @@ export { setFullTheme } from "./theme/theme-extras.js";
 export { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
 export { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 export { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
+export { installBuiltinToolRenderers } from "./tool-tags/builtin-tool-renderers.js";
+export { recordToolCallTimingStart, recordToolCallTimingEnd } from "./tool-tags/elapsed.js";
 export { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
 export { installResumeToolRefresh } from "./tool-tags/resume-tool-refresh.js";
 export { createWorkingLoaderController, workingStateForAssistantMessage } from "./tool-tags/loader-accent.js";

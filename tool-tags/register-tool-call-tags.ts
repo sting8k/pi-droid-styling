@@ -10,15 +10,11 @@ async function loadRegistrar(specifier: string, exportName: string): Promise<Too
 	return register;
 }
 
+/**
+ * Registers the enhanced-edit bridge tool only. Builtin tool styling is
+ * attached by installBuiltinToolRenderers.
+ */
 export async function registerToolCallTags(pi: ExtensionAPI): Promise<void> {
-	const registers = await Promise.all([
-		loadRegistrar("./read.js", "registerReadTool"),
-		loadRegistrar("./write.js", "registerWriteTool"),
-		loadRegistrar("./edit.js", "registerEditTool"),
-		loadRegistrar("./ls.js", "registerLsTool"),
-		loadRegistrar("./find.js", "registerFindTool"),
-		loadRegistrar("./grep.js", "registerGrepTool"),
-		loadRegistrar("./bash.js", "registerBashTool"),
-	]);
-	await Promise.all(registers.map((register) => register(pi)));
+	const register = await loadRegistrar("./edit.js", "registerEditTool");
+	await register(pi);
 }
