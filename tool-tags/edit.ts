@@ -54,13 +54,37 @@ async function loadEditCore(): Promise<EditCoreModule | undefined> {
 	return undefined;
 }
 
+/** Script-mode edit (pi-utils US-003): args.paths is the declared file list. */
+function scriptModePaths(args: any): string[] | null {
+	const paths = args?.paths;
+	return Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : null;
+}
+
+/** Strip unified-patch headers (---/+++/@@/diff/index) — parseDiffLine would misread them as +/- lines. */
+function stripPatchHeaders(patch: string): string {
+	return patch
+		.split("\n")
+		.filter((l) => !/^(diff |index |---|\+\+\+|@@|new file|deleted file)/.test(l))
+		.join("\n");
+}
+
 export function renderEditCall(args: any, theme: any, context: any) {
 	markToolCallExecutionStarted(context);
-	const rawPath = String(args?.path ?? args?.file_path ?? "");
 	const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
-	const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
-	const detail = relPath || "(unknown)";
-	return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", "Path: ")}${detail}`], {
+	const paths = scriptModePaths(args);
+	let label = "Path: ";
+	let detail: string;
+	if (paths && paths.length > 0) {
+		label = "Paths: ";
+		const shown = paths.length > 2 ? `${paths.length} paths` : paths.map((p) => resolveRelativePath(p, cwd) || p).join(", ");
+		const lang = typeof args?.lang === "string" && args.lang ? ` (${args.lang})` : "";
+		detail = shown + lang;
+	} else {
+		const rawPath = String(args?.path ?? args?.file_path ?? "");
+		const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
+		detail = relPath || "(unknown)";
+	}
+	return renderBoxedToolCall(theme, "Edit", [`${theme.fg("dim", label)}${detail}`], {
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
 		isPending: Boolean(context?.isPartial && !context?.hasResult),
@@ -82,9 +106,12 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 		});
 	}
 
-	// Extract diff from result details
-	const details = result.details as { diff?: string; path?: string } | undefined;
-	const diff = details?.diff as string | undefined;
+	// Extract diff from result details. Script-mode edit carries a unified
+	// patch; default edit keeps its native `diff` format untouched.
+	const scriptMode = scriptModePaths(context?.args) !== null;
+	const details = result.details as { diff?: string; patch?: string; path?: string } | undefined;
+	const rawDiff = scriptMode ? (details?.patch ?? details?.diff) : details?.diff;
+	const diff = rawDiff && scriptMode ? stripPatchHeaders(rawDiff) : rawDiff;
 
 	if (!diff) {
 		const output = stripAnsi(getTextOutput(result)).trim();
@@ -96,7 +123,7 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 
 	// Resolve language for syntax highlighting
 	const message = firstText(result.content);
-	const argPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
+	const argPath = String(context?.args?.path ?? context?.args?.file_path ?? (scriptMode ? (context?.args?.paths?.[0] ?? "") : ""));
 	const sourcePath = details?.path ?? (argPath || extractEditedPath(message));
 	const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
