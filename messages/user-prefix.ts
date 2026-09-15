@@ -1,6 +1,7 @@
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 
 import { getPresentationDesign } from "../presentation/state.js";
+import { loadConfig } from "../config.js";
 import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
@@ -24,12 +25,12 @@ function colorUserPrefix(text: string): string {
 	}
 }
 
-function buildPrefixSegment(): string {
+function buildPrefixSegment(stripBg: boolean): string {
 	const configuredChar = getThemeExtra(activeTheme, "userPrefix");
 	const char = usesLegacyQuotePrefix() ? "❯" : configuredChar;
 	const prefix = colorUserPrefix(char);
 	const design = getPresentationDesign();
-	if (!design.stripsBackground && typeof activeTheme?.bg === "function") {
+	if (!stripBg && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
 	return `${prefix}${design.markerGap}`;
@@ -50,18 +51,18 @@ function stripEmphasisAnsi(text: string): string {
 	return text.replace(/\x1b\[(?:(?:1|3|22|23);)*(?:1|3|22|23)m/g, "");
 }
 
-function buildContinuationSegment(): string {
+function buildContinuationSegment(stripBg: boolean): string {
 	const char = getThemeExtra(activeTheme, "quoteChar") || "┆";
 	const prefix = colorUserPrefix(char);
 	const design = getPresentationDesign();
-	if (!design.stripsBackground && typeof activeTheme?.bg === "function") {
+	if (!stripBg && typeof activeTheme?.bg === "function") {
 		return activeTheme.bg("userMessageBg", `${prefix}  `);
 	}
 	return `${prefix}${design.markerGap}`;
 }
 
-function alignContinuationLines(lines: string[], targetIndex: number): void {
-	const continuationSegment = buildContinuationSegment();
+function alignContinuationLines(lines: string[], targetIndex: number, stripBg: boolean): void {
+	const continuationSegment = buildContinuationSegment(stripBg);
 	for (let i = targetIndex + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		const clean = stripAnsi(line);
@@ -98,6 +99,7 @@ export function installUserMessagePrefix(theme: any): void {
 
 		const output = [...trimmed];
 		const design = getPresentationDesign();
+		const stripBg = design.stripsBackground || loadConfig().transparentBackground;
 
 		// Find first non-empty line to inject prefix
 		let targetIndex = 0;
@@ -109,15 +111,15 @@ export function installUserMessagePrefix(theme: any): void {
 			}
 		}
 
-		const prefixSegment = buildPrefixSegment();
+		const prefixSegment = buildPrefixSegment(stripBg);
 		const line = output[targetIndex] ?? "";
-		const presentationLine = design.stripsBackground ? stripBackgroundAnsi(line) : line;
+		const presentationLine = stripBg ? stripBackgroundAnsi(line) : line;
 		const remainder = stripEmphasisAnsi(dropLeadingColumns(presentationLine, 1));
 		output[targetIndex] = `${prefixSegment}${remainder}`;
-		alignContinuationLines(output, targetIndex);
+		alignContinuationLines(output, targetIndex, stripBg);
 
 		const result = output.map((renderedLine) => {
-			const presentationLine = design.stripsBackground ? stripBackgroundAnsi(renderedLine) : renderedLine;
+			const presentationLine = stripBg ? stripBackgroundAnsi(renderedLine) : renderedLine;
 			const plainLine = stripEmphasisAnsi(presentationLine);
 			return safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
 		});

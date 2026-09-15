@@ -67,6 +67,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "tasksWidgetStyle": "compact",
   "collapsedThinking": "tail",
   "forceOSC11": false,
+  "transparentBackground": false,
   "visibleChatTail": 30
 }
 ```
@@ -83,6 +84,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `tasksWidgetStyle` | `compact`, `default` | `compact` | Use the one-line tasks widget, or leave the original `pi-tasks` widget unchanged. |
 | `collapsedThinking` | `tail`, `label` | `tail` | While thinking is hidden (`Ctrl+T`), each collapsed thinking row shows the end of the thinking text with a `▸` live marker (`·` once the run is done). `label` restores the static label. |
 | `forceOSC11` | `true`, `false` | `false` | Force terminal background sync on Windows/WSL. Usually leave this off. |
+| `transparentBackground` | `true`, `false` | `false` | Stop painting the page/frame background, tool boxes, user messages, and the input box, and reset OSC 11, so the terminal's own background (wallpaper, blur) shows through. Selections and diff accents stay opaque. Dim/blur is tuned on the terminal side (Ghostty `background-image`, kitty `background_image`, WezTerm `window_background_image`). |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
 
 ## Profiling
@@ -110,6 +112,7 @@ The synthetic bench exercises footer/editor rendering, render throttle, assistan
 ## Notes
 
 - Works with the active Pi theme; it paints TUI cells explicitly and uses OSC 11 terminal background sync on non-Windows hosts to cover terminal-owned padding/remainder areas. Windows/WSL/Windows Terminal skip OSC 11 unless `forceOSC11` is enabled.
+- `transparentBackground: true` skips page/frame background painting, tool boxes, boxed core message blocks, user-message backgrounds, and input-box bg fills (all presets), and resets OSC 11 so the terminal's own default background (wallpaper, blur) shows through. Real selections and diff accents stay opaque for readability; half-block ▄▀ frame edges blank out to plain rows (row count and width preserved), so only `outline`/`line` frames keep a visible edge.
 
 - `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
 - Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.

@@ -266,7 +266,13 @@ export default function (pi: ExtensionAPI) {
 		sessionUi.setEditorComponent((tui, theme, kb) => {
 			const uiTheme = (sessionUi.theme ?? theme) as any;
 			restoreTerminalBackgroundForCurrentSession?.();
-			restoreTerminalBackgroundForCurrentSession = modules.applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
+			restoreTerminalBackgroundForCurrentSession = undefined;
+			if (config.transparentBackground) {
+				// Transparent mode: never claim OSC 11; reset any residue left by a previous session.
+				modules.clearTerminalPageBackgroundOsc111((tui as any).terminal as any);
+			} else {
+				restoreTerminalBackgroundForCurrentSession = modules.applyTerminalPageBackgroundOsc11(uiTheme, (tui as any).terminal as any, { force: config.forceOSC11 });
+			}
 			modules.installRenderThrottle(tui as any);
 			modules.setAssistantUpdateRenderRequester(() => tui.requestRender());
 			modules.virtualizeChatContainer(tui as any, config.visibleChatTail);

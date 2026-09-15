@@ -50,11 +50,15 @@ function prepareWorkDir() {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
 	export const readFileSync: (path: string, encoding: string) => string;
+	export const statSync: any;
+	export const writeFileSync: any;
 }
 declare module "node:fs" {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
 	export const readFileSync: (path: string, encoding: string) => string;
+	export const statSync: any;
+	export const writeFileSync: any;
 }
 declare module "path" {
 	export const dirname: (path: string) => string;
@@ -418,8 +422,19 @@ async function runPatchedComponentSmoke() {
 	console.log("patched skill expanded smoke ok");
 }
 
+function isolateHomeConfig() {
+	// Config-touching modules (tool-tags/common.ts reads loadConfig) must not see
+	// the developer's real ~/.pi/agent/pi-droid-styling.json; pin a default config.
+	const homeDir = join(workDir, "home-default");
+	mkdirSync(join(homeDir, ".pi", "agent"), { recursive: true });
+	writeFileSync(join(homeDir, ".pi", "agent", "pi-droid-styling.json"), `${JSON.stringify({ transparentBackground: false }, null, 2)}\n`, "utf8");
+	process.env.HOME = homeDir;
+	process.env.USERPROFILE = homeDir;
+}
+
 async function main() {
 	prepareWorkDir();
+	isolateHomeConfig();
 	compileChangedSurface();
 	await runBoxedMessageBlockSmoke();
 	await runInstallerSmoke();

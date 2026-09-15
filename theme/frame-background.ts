@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { loadConfig } from "../config.js";
 import { ERASE_LINE, RESET_BACKGROUND, bgHexAnsi, keepAnsiBackgroundAcrossResets, wrapAnsiBackground } from "./ansi.js";
 import { safeVisibleWidth } from "../render-budget.js";
 import { getThemePageBackground } from "./theme-extras.js";
@@ -14,6 +15,7 @@ function isImageRenderLine(line: string): boolean {
 }
 
 export function resolveFrameBackgroundAnsi(theme: any): string {
+	if (loadConfig().transparentBackground) return "";
 	const pageBg = getThemePageBackground(theme);
 	const result = pageBg ? bgHexAnsi(theme, pageBg) : "";
 	if (isFrameBackgroundDebugEnabled()) {

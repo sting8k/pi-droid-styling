@@ -38,6 +38,15 @@ export function resetTerminalBackgroundOsc111(): string {
 	return OSC111_RESET_BACKGROUND;
 }
 
+export function clearTerminalPageBackgroundOsc111(terminal: TerminalLike): void {
+	if (typeof terminal?.write !== "function") return;
+	try {
+		terminal.write(resetTerminalBackgroundOsc111());
+	} catch {
+		// Best effort only; the reset is harmless on terminals without OSC 111 support.
+	}
+}
+
 export function applyTerminalPageBackgroundOsc11(theme: any, terminal: TerminalLike, options: TerminalBackgroundOscOptions = {}): (() => void) | undefined {
 	if (!shouldApplyTerminalBackgroundOsc11(options)) return undefined;
 	const pageBg = getThemePageBackground(theme);

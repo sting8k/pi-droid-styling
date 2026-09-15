@@ -3,6 +3,7 @@ import type { Component } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 
+import { loadConfig } from "../config.js";
 import { getPresentationDesign } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
 import { DEFAULT_COLLAPSED_RENDER_LINES, boxedResultRenderBudget, clampRenderLine, fastBoxLineContent, safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth, toSingleRenderLine, trimTrailingRenderPadding } from "../render-budget.js";
@@ -244,6 +245,8 @@ export function formatToolParamLines(args: unknown, theme?: any): string[] {
 const RESET_INTENSITY = "\x1b[22m";
 
 function themeBg(theme: any, bgName: string, text: string): string {
+	// Transparent mode: leave tool boxes unpainted so the terminal background shows through.
+	if (loadConfig().transparentBackground) return text;
 	// Tool boxes sit on the page surface; status is carried by border/title colors.
 	// Prefer pageBg so boxed tool calls do not create a second card-colored slab.
 	const pageBg = getThemePageBackground(theme);

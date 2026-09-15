@@ -42,7 +42,8 @@ Current options:
   },
   "collapsedThinking": "tail",
   "fixedUserZone": false,
-  "forceOSC11": false
+  "forceOSC11": false,
+  "transparentBackground": false
 }
 ```
 
@@ -55,10 +56,12 @@ Legacy `customWorkingMessage: true` or `false` values are normalized back to the
 `inputBox.style` accepts `auto`, `halfblock`, `line`, or `solid`; `auto` keeps each preset default. The `cli-dock` preset always keeps its outline frame so an existing `inputBox.style: "line"` setting cannot collapse the box into top/bottom-only lines.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 `forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
+`transparentBackground` is off by default; enabling it stops page/frame background painting, tool-box backgrounds (frame background resolvers return empty and the shared tool bg funnel returns unpainted text, which also covers boxed core message blocks), and user-message backgrounds (the user message render strips `userMessageBg` ANSI from core output and leaves the prefix/continuation segments unwrapped), and input-box bg fills (input rows, the solid-frame bottom row, the nvim status row, and the half-block edge rows paint no `inputBackgroundColor`; the half-block edges blank out to plain rows with identical row count and width, while the nvim rule stays as thin fg-colored chrome) and resets OSC 11 instead of claiming it, so the terminal's own default background - a wallpaper set by Ghostty `background-image`, kitty `background_image`, or WezTerm `window_background_image` - shows through. Real selections (autocomplete/tree `selectedBg`, the nvim reverse-video mode badge) and split-diff semantic diff backgrounds stay opaque for readability; dim/blur is tuned on the terminal side.
 
 ## Compatibility Expectations
 
 - The extension should use explicit frame/component rendering for terminal cells and keep OSC 11 disabled on Windows/WSL/Windows Terminal unless `forceOSC11` is enabled.
+- `transparentBackground` should skip page/frame background painting, tool boxes, boxed core message blocks (they share the theme bg funnel), user-message backgrounds, and input-zone bg fills gated at their call sites (never by color name, since `inputBackgroundColor` aliases `selectedBg`); real selections and split-diff semantic diff backgrounds stay opaque.
 - Patch installers should be reload/session safe and avoid stacked patches.
 - Performance patches should preserve final message/tool correctness while coalescing partial updates.
 - Profiling should be opt-in and should emit aggregate JSONL summaries rather than per-render logs.
