@@ -49,6 +49,7 @@ export interface DroidStylingConfig {
 	tasksWidgetStyle: TasksWidgetStyle;
 	collapsedThinking: CollapsedThinkingStyle;
 	forceOSC11: boolean;
+	transparentBackground: boolean;
 	visibleChatTail: number;
 }
 
@@ -74,6 +75,7 @@ const DEFAULTS: DroidStylingConfig = {
 	tasksWidgetStyle: "compact",
 	collapsedThinking: "tail",
 	forceOSC11: false,
+	transparentBackground: false,
 	visibleChatTail: 30,
 };
 
@@ -230,6 +232,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		tasksWidgetStyle: normalizeTasksWidgetStyle(config.tasksWidgetStyle),
 		collapsedThinking: normalizeCollapsedThinkingStyle(config.collapsedThinking),
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
+		transparentBackground: booleanOrDefault(config.transparentBackground, DEFAULTS.transparentBackground),
 		visibleChatTail: visibleChatTailOrDefault(config.visibleChatTail),
 	};
 }

@@ -19,7 +19,7 @@ export { installRenderThrottle, requestRenderWithFrameMs } from "./performance/r
 export { installRenderWidthGuard } from "./performance/render-width-guard.js";
 export { installInteractiveChatVirtualization, virtualizeChatContainer, virtualizeChatContainerInstance } from "./performance/virtualize-chat.js";
 export { setFullTheme } from "./theme/theme-extras.js";
-export { applyTerminalPageBackgroundOsc11 } from "./theme/terminal-background.js";
+export { applyTerminalPageBackgroundOsc11, clearTerminalPageBackgroundOsc111 } from "./theme/terminal-background.js";
 export { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
 export { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 export { installBuiltinToolRenderers } from "./tool-tags/builtin-tool-renderers.js";
