@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.14.0 - 2026-09-15
+
+### Added
+- New `transparentBackground` config (default `false`). When enabled the extension stops painting the page/frame background and no longer claims OSC 11 — it emits an OSC 111 reset instead — so the terminal's own default background (Ghostty `background-image`, kitty `background_image`, WezTerm `window_background_image`, acrylic/blur) shows through. Tool boxes, sent user messages, boxed core message blocks, and the editor input box (including halfblock `▄▀` edge bars, blanked while preserving row count and width) render without fills on every `userZoneStyle` preset. Real selections and diff accents stay opaque. The flag hot-reloads from `~/.pi/agent/pi-droid-styling.json`; turning it back off needs a session restart for OSC 11 to be re-applied. Dim/blur is tuned on the terminal side.
+
 ## 2.13.1 - 2026-09-15
 
 ### Fixed
