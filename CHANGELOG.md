@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.14.1 - 2026-09-15
+
+### Fixed
+- The `edit` tool tag now renders script-mode edit calls (pi-utils US-003), which send `paths` + optional `lang` instead of a single `path`: the label shows `Paths: a.ts, b.ts` (or `N paths`) with the language hint instead of `(unknown)`. Script-mode results carry a unified `details.patch`, whose `---`/`+++`/`@@` headers are stripped before diff parsing so they are no longer misread as changed lines. Default (core) edit rendering is unchanged.
+
+
 ## 2.14.0 - 2026-09-15
 
 ### Added
