@@ -6,7 +6,7 @@ import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
-import type { InputBoxStyle } from "../config.js";
+import { loadConfig, type InputBoxStyle } from "../config.js";
 
 /** Outline border plus the prompt gap, so the cli-dock status row lines up with the input text. */
 const CLI_DOCK_STATUS_INSET = 2;
@@ -706,10 +706,16 @@ export class BoxEditor extends CustomEditor {
 			];
 		}
 
-		const renderLine = (line: string) => this.bg(style.inputBackgroundColor, this.pad(line, width));
+		// Transparent mode paints no input-zone bg fill; padding/frames stay (fg chrome only).
+		const inputTransparent = loadConfig().transparentBackground;
+		const renderLine = (line: string) => inputTransparent
+			? this.pad(line, width)
+			: this.bg(style.inputBackgroundColor, this.pad(line, width));
 		const inputRows = inputLines.map(renderLine);
 		if (inputFrame === "solid") {
-			const bottomPadding = this.bg(style.inputBackgroundColor, " ".repeat(Math.max(1, width)));
+			const bottomPadding = inputTransparent
+				? " ".repeat(Math.max(1, width))
+				: this.bg(style.inputBackgroundColor, " ".repeat(Math.max(1, width)));
 			return [...inputRows, bottomPadding];
 		}
 
@@ -943,7 +949,7 @@ export class BoxEditor extends CustomEditor {
 		const middle = rightPlain ? Math.max(2, width - safeVisibleWidth(leftPlain) - rightWidth) : 0;
 		const rowBody = `${leftRendered}${" ".repeat(middle)}${right}`;
 		const row = `${rowBody}${" ".repeat(Math.max(0, width - safeVisibleWidth(rowBody)))}`;
-		return this.bg(this.userZoneStyle.editor.inputBackgroundColor, row);
+		return loadConfig().transparentBackground ? row : this.bg(this.userZoneStyle.editor.inputBackgroundColor, row);
 	}
 
 	// Width-based truncation of a PLAIN string is not guaranteed to return plain output: pi-tui's
