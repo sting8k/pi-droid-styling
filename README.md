@@ -112,7 +112,7 @@ The synthetic bench exercises footer/editor rendering, render throttle, assistan
 ## Notes
 
 - Works with the active Pi theme; it paints TUI cells explicitly and uses OSC 11 terminal background sync on non-Windows hosts to cover terminal-owned padding/remainder areas. Windows/WSL/Windows Terminal skip OSC 11 unless `forceOSC11` is enabled.
-- `transparentBackground: true` skips page/frame background painting, tool boxes, boxed core message blocks, user-message backgrounds, and input-box bg fills (all presets), and resets OSC 11 so the terminal's own default background (wallpaper, blur) shows through. Real selections and diff accents stay opaque for readability; input frames keep their thin fg-colored edge.
+- `transparentBackground: true` skips page/frame background painting, tool boxes, boxed core message blocks, user-message backgrounds, and input-box bg fills (all presets), and resets OSC 11 so the terminal's own default background (wallpaper, blur) shows through. Real selections and diff accents stay opaque for readability; half-block ▄▀ frame edges blank out to plain rows (row count and width preserved), so only `outline`/`line` frames keep a visible edge.
 
 - `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
 - Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.

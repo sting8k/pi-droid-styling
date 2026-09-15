@@ -719,8 +719,12 @@ export class BoxEditor extends CustomEditor {
 			return [...inputRows, bottomPadding];
 		}
 
-		const topPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
-		const bottomPadding = this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));
+		const topPadding = inputTransparent
+			? " ".repeat(Math.max(1, width))
+			: this.styleBackgroundAsFg(style.inputBackgroundColor, "▄".repeat(Math.max(1, width)));
+		const bottomPadding = inputTransparent
+			? " ".repeat(Math.max(1, width))
+			: this.styleBackgroundAsFg(style.inputBackgroundColor, "▀".repeat(Math.max(1, width)));
 		return [topPadding, ...inputRows, bottomPadding];
 	}
 
