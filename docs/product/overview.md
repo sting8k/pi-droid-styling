@@ -56,12 +56,12 @@ Legacy `customWorkingMessage: true` or `false` values are normalized back to the
 `inputBox.style` accepts `auto`, `halfblock`, `line`, or `solid`; `auto` keeps each preset default. The `cli-dock` preset always keeps its outline frame so an existing `inputBox.style: "line"` setting cannot collapse the box into top/bottom-only lines.
 `fixedUserZone` is off by default; enabling it activates terminal scroll isolation for the user zone rather than a cosmetic-only layout change.
 `forceOSC11` keeps OSC 11 disabled on Windows/WSL/Windows Terminal unless explicitly enabled for user testing.
-`transparentBackground` is off by default; enabling it stops page/frame background painting (frame background resolvers return empty) and resets OSC 11 instead of claiming it, so the terminal's own default background - a wallpaper set by Ghostty `background-image`, kitty `background_image`, or WezTerm `window_background_image` - shows through. Tool boxes, the editor input, and selection highlights stay opaque for readability; dim/blur is tuned on the terminal side.
+`transparentBackground` is off by default; enabling it stops page/frame background painting and tool-box backgrounds (frame background resolvers return empty and the shared tool bg funnel returns unpainted text, which also covers boxed core message blocks) and resets OSC 11 instead of claiming it, so the terminal's own default background - a wallpaper set by Ghostty `background-image`, kitty `background_image`, or WezTerm `window_background_image` - shows through. The editor input, selection highlights, and split-diff semantic diff backgrounds stay opaque for readability; dim/blur is tuned on the terminal side.
 
 ## Compatibility Expectations
 
 - The extension should use explicit frame/component rendering for terminal cells and keep OSC 11 disabled on Windows/WSL/Windows Terminal unless `forceOSC11` is enabled.
-- `transparentBackground` should skip only page/frame background painting and the OSC 11 claim; element-level backgrounds (tool boxes, editor input, selection) stay opaque for readability.
+- `transparentBackground` should skip page/frame background painting, tool boxes, and boxed core message blocks (they share the theme bg funnel), plus the OSC 11 claim; the editor input, selection, and split-diff semantic diff backgrounds stay opaque.
 - Patch installers should be reload/session safe and avoid stacked patches.
 - Performance patches should preserve final message/tool correctness while coalescing partial updates.
 - Profiling should be opt-in and should emit aggregate JSONL summaries rather than per-render logs.
