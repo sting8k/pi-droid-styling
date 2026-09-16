@@ -60,11 +60,11 @@ function scriptModePaths(args: any): string[] | null {
 	return Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string") : null;
 }
 
-/** Strip unified-patch headers (---/+++/@@/diff/index) — parseDiffLine would misread them as +/- lines. */
+/** Strip unified-patch file headers (---/+++/diff/index) — parseDiffLine would misread them as +/- lines. @@ hunks stay: they seed split-diff line numbers. */
 function stripPatchHeaders(patch: string): string {
 	return patch
 		.split("\n")
-		.filter((l) => !/^(diff |index |---|\+\+\+|@@|new file|deleted file)/.test(l))
+		.filter((l) => !/^(diff |index |--- |\+\+\+ |new file|deleted file)/.test(l))
 		.join("\n");
 }
 
