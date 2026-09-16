@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.14.2 - 2026-09-15
+
+### Fixed
+- Script-mode `edit` results now render line numbers in the split-diff gutter. `buildSplitRows` seeds its old/new line cursors from `@@ -a,b +c,d @@` hunk headers — which `stripPatchHeaders` no longer removes — so multi-hunk and multi-file unified patches number every hunk correctly. Unified-mode lines also skip inline-gutter parsing, so added lines starting with digits keep their content, and `---`/`+++` header stripping now requires the trailing space real file headers have. Core edit and quick-edit diffs are unchanged.
+
 ## 2.14.1 - 2026-09-15
 
 ### Fixed
