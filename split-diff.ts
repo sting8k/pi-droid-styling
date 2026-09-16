@@ -276,13 +276,15 @@ function makeDiffLine(prefix: "+" | "-" | " ", lineNumber: string | number | und
 	};
 }
 
-function parseDiffLine(rawLine: string): DiffLine | undefined {
-	const match = rawLine.match(/^([+\- ])\s?(.*)$/);
+function parseDiffLine(rawLine: string, parseGutter = true): DiffLine | undefined {
+	// Unified hunks have no gutter column — the char after the prefix is
+	// content, so a leading "NN " there must not be eaten as a line number.
+	const match = rawLine.match(parseGutter ? /^([+\- ])\s?(.*)$/ : /^([+\- ])(.*)$/);
 	if (!match) return undefined;
 	const [, prefix, rest = ""] = match;
 	if (prefix !== "+" && prefix !== "-" && prefix !== " ") return undefined;
 
-	const gutterMatch = rest.match(/^(\d+)\s(.*)$/);
+	const gutterMatch = parseGutter ? rest.match(/^(\d+)\s(.*)$/) : null;
 	const lineNumber = gutterMatch?.[1] ?? "";
 	const line = gutterMatch?.[2] ?? rest;
 	const cleanLineNumber = sanitizeSingleLineText(lineNumber);
@@ -327,8 +329,20 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 		}
 	};
 
+	// Unified-patch mode: @@ hunk headers seed the line-number cursors.
+	let unifiedHunks = false;
+
 	for (const rawLine of diff.split("\n")) {
-		const parsed = parseDiffLine(rawLine);
+		const hunk = rawLine.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+		if (hunk) {
+			flushPending();
+			oldCursor = Number.parseInt(hunk[1], 10);
+			newCursor = Number.parseInt(hunk[2], 10);
+			unifiedHunks = true;
+			continue;
+		}
+
+		const parsed = parseDiffLine(rawLine, !unifiedHunks);
 		if (!parsed) continue;
 
 		const parsedNum = parseLineNumber(parsed.lineNumber);
