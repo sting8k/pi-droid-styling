@@ -18,9 +18,11 @@ type DiffLine = {
 };
 
 type SplitDiffRow = {
-	kind: "context" | "changed" | "added" | "removed";
+	kind: "context" | "changed" | "added" | "removed" | "gap";
 	left?: DiffLine;
 	right?: DiffLine;
+	/** For kind "gap": number of unmodified lines folded away. */
+	count?: number;
 };
 
 type CellLineKind = "add" | "remove" | "context";
@@ -44,6 +46,9 @@ const ADD_ROW_BACKGROUND_MIX_RATIO = 0.24;
 const REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.12;
 const ADD_INLINE_EMPHASIS_MIX_RATIO = 0.44;
 const REMOVE_INLINE_EMPHASIS_MIX_RATIO = 0.26;
+
+/** Minimum shared-character ratio before a removed/added line pair gets word-level emphasis. */
+export const WORD_DIFF_MIN_SIMILARITY = 0.35;
 
 // ── ANSI color utilities (diff-specific) ───────────────────────────
 
@@ -305,6 +310,14 @@ function computeInlineDiffSpans(leftLine: string, rightLine: string): { left: Di
 		rightEnd--;
 	}
 
+	// Similarity floor: when a removed/added pair shares little more than
+	// coincidence, word-level emphasis would just tint most of both lines.
+	// Treat such pairs as full rewrites and skip the emphasis (same idea as
+	// deepagents' word-diff similarity floor).
+	const unchanged = start + (leftLine.length - leftEnd);
+	const similarity = unchanged / Math.max(leftLine.length, rightLine.length, 1);
+	if (similarity < WORD_DIFF_MIN_SIMILARITY) return { left: [], right: [] };
+
 	const leftSpan = leftEnd > start ? [{ start, end: leftEnd }] : [];
 	const rightSpan = rightEnd > start ? [{ start, end: rightEnd }] : [];
 	return { left: leftSpan, right: rightSpan };
@@ -336,7 +349,13 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 		const hunk = rawLine.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
 		if (hunk) {
 			flushPending();
-			oldCursor = Number.parseInt(hunk[1], 10);
+			const hunkOldStart = Number.parseInt(hunk[1], 10);
+			// Folded context between hunks: emit a gap row so disjoint
+			// changes are not mistaken for adjacent lines.
+			if (oldCursor !== undefined && hunkOldStart > oldCursor) {
+				rows.push({ kind: "gap", count: hunkOldStart - oldCursor });
+			}
+			oldCursor = hunkOldStart;
 			newCursor = Number.parseInt(hunk[2], 10);
 			unifiedHunks = true;
 			continue;
@@ -363,6 +382,11 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 
 		const oldNum = parsedNum ?? oldCursor;
 		const newNum = newCursor ?? oldNum;
+		// Gutter-numbered diffs without @@ headers: detect folded context
+		// from line-number jumps on context lines.
+		if (!unifiedHunks && parsedNum !== undefined && oldCursor !== undefined && parsedNum > oldCursor) {
+			rows.push({ kind: "gap", count: parsedNum - oldCursor });
+		}
 		if (oldNum !== undefined) oldCursor = oldNum + 1;
 		if (newNum !== undefined) newCursor = newNum + 1;
 
@@ -647,6 +671,11 @@ export class SplitDiffComponent implements Component {
 		lines.push(padRenderedLineWidth(formatHeaderCell("old", leftWidth) + columnSeparator + formatHeaderCell("new", rightWidth), safeWidth));
 
 		for (const row of this.rows.slice(0, this.maxRows)) {
+			if (row.kind === "gap") {
+				const label = ` ··· ${row.count ?? 0} unmodified lines ···`;
+				lines.push(padRenderedLineWidth(this.theme.fg("muted", label), safeWidth));
+				continue;
+			}
 			const leftCellLines = this.formatCellLines(row.kind, "left", row.left, leftWidth);
 			const rightCellLines = this.formatCellLines(row.kind, "right", row.right, rightWidth);
 			const rowHeight = Math.max(leftCellLines.length, rightCellLines.length);
@@ -666,6 +695,186 @@ export class SplitDiffComponent implements Component {
 		}
 
 		lines.push(padRenderedLineWidth(formatBorderCell(leftWidth, "┴") + this.theme.fg("borderMuted", "─┴─") + formatBorderCell(rightWidth, "┴"), safeWidth));
+		this.cacheWidth = width;
+		this.cacheLines = lines;
+		return lines;
+	}
+
+	invalidate(): void {
+		this.cacheWidth = undefined;
+		this.cacheLines = undefined;
+		this.highlightCache.clear();
+	}
+}
+
+// ── Diff render mode (split / unified / auto) ──────────────────────
+
+/** Minimum terminal width for the side-by-side split view in "auto" mode. */
+export const SPLIT_MODE_MIN_WIDTH = 140;
+
+export type DiffRenderMode = "split" | "unified";
+
+/** Resolve the configured diff mode ("split" | "unified" | "auto") to a concrete render mode for the given width. */
+export function resolveDiffRenderMode(mode: "split" | "unified" | "auto", width: number): DiffRenderMode {
+	if (mode === "split") return "split";
+	if (mode === "unified") return "unified";
+	return width >= SPLIT_MODE_MIN_WIDTH ? "split" : "unified";
+}
+
+// ── UnifiedDiffComponent ───────────────────────────────────────────
+// Single-column (unified) diff view sharing the split view's palette,
+// syntax highlighting, and word-level emphasis. Removed lines render
+// before their added counterparts, like a classic unified diff.
+
+export class UnifiedDiffComponent implements Component {
+	private cacheWidth?: number;
+	private cacheLines?: string[];
+	private readonly lineNumberWidth: number;
+	private readonly highlightCache = new Map<string, string>();
+	private readonly inlineHighlights = new WeakMap<DiffLine, DiffSpan[]>();
+	private readonly palette: DiffPalette;
+	private readonly containerBgAnsi: string;
+
+	constructor(
+		private readonly theme: Theme,
+		private readonly rows: SplitDiffRow[],
+		private readonly maxRows: number,
+		private readonly language?: string,
+	) {
+		let maxDigits = 3;
+		for (const row of rows) {
+			const leftDigits = row.left?.lineNumber.trim().length ?? 0;
+			const rightDigits = row.right?.lineNumber.trim().length ?? 0;
+			maxDigits = Math.max(maxDigits, leftDigits, rightDigits);
+
+			if (row.kind === "changed" && row.left && row.right) {
+				const spans = computeInlineDiffSpans(row.left.line, row.right.line);
+				if (spans.left.length > 0) this.inlineHighlights.set(row.left, spans.left);
+				if (spans.right.length > 0) this.inlineHighlights.set(row.right, spans.right);
+			}
+		}
+		this.lineNumberWidth = maxDigits;
+		this.palette = resolveDiffPalette(theme);
+		this.containerBgAnsi = theme.getBgAnsi("toolSuccessBg");
+	}
+
+	private syntaxHighlight(line: string): string {
+		if (!this.language) return stripInlineBreaksPreserveAnsi(line);
+		const safeLine = sanitizeSingleLineText(line);
+		const key = `${this.language}\n${safeLine}`;
+		const cached = this.highlightCache.get(key);
+		if (cached) return cached;
+
+		let highlighted = safeLine;
+		try {
+			highlighted = highlightCode(safeLine, this.language)[0] ?? safeLine;
+			highlighted = stripInlineBreaksPreserveAnsi(highlighted).replace(BG_ANSI_PATTERN, "");
+		} catch {
+			highlighted = safeLine;
+		}
+		this.highlightCache.set(key, highlighted);
+		return highlighted;
+	}
+
+	private formatLine(kind: CellLineKind, line: DiffLine, width: number): string[] {
+		const markerChar = kind === "add" || kind === "remove" ? "▌" : " ";
+		const markerColor = kind === "add" ? "toolDiffAdded" : kind === "remove" ? "toolDiffRemoved" : "borderMuted";
+		const numberColor = kind === "add" ? "toolDiffAdded" : kind === "remove" ? "toolDiffRemoved" : "dim";
+		const lineNumber = line.lineNumber.trim().padStart(this.lineNumberWidth, " ");
+
+		const firstPrefixAnsi =
+			this.theme.fg(markerColor, markerChar) +
+			" " +
+			this.theme.fg(numberColor, lineNumber) +
+			this.theme.fg("borderMuted", " │ ");
+		const firstPrefixPlain = `${markerChar} ${lineNumber} │ `;
+
+		const contPrefixAnsi =
+			this.theme.fg(markerColor, markerChar) +
+			" " +
+			this.theme.fg("dim", " ".repeat(this.lineNumberWidth)) +
+			this.theme.fg("borderMuted", " │ ");
+
+		const codeWidth = Math.max(1, width - safeVisibleWidth(firstPrefixPlain));
+		const rowBg = kind === "add" ? this.palette.addRowBgAnsi : kind === "remove" ? this.palette.removeRowBgAnsi : undefined;
+		const emphasisBg = kind === "add" ? this.palette.addEmphasisBgAnsi : kind === "remove" ? this.palette.removeEmphasisBgAnsi : undefined;
+
+		const plainSegments = wrapPlainText(line.line, codeWidth);
+		const lines: string[] = [];
+		const spans = this.inlineHighlights.get(line) ?? [];
+
+		let consumed = 0;
+		for (let i = 0; i < plainSegments.length; i++) {
+			const prefixAnsi = i === 0 ? firstPrefixAnsi : contPrefixAnsi;
+			const plainSegment = plainSegments[i] ?? "";
+			let segment = this.syntaxHighlight(plainSegment);
+
+			if (spans.length > 0 && emphasisBg) {
+				const segmentStart = consumed;
+				for (let si = spans.length - 1; si >= 0; si--) {
+					const span = spans[si];
+					if (!span) continue;
+					const localStart = Math.max(0, span.start - segmentStart);
+					const localEnd = Math.min(plainSegment.length, span.end - segmentStart);
+					if (localEnd > localStart) {
+						segment = applyBackgroundToVisibleRange(segment, localStart, localEnd, emphasisBg, rowBg ?? this.containerBgAnsi);
+					}
+				}
+			}
+
+			segment = fitToWidth(segment, codeWidth);
+			let rendered = prefixAnsi + segment;
+
+			const expectedWidth = safeVisibleWidth(firstPrefixPlain) + codeWidth;
+			const currentWidth = safeVisibleWidth(stripAnsi(rendered));
+			if (currentWidth < expectedWidth) {
+				rendered += " ".repeat(expectedWidth - currentWidth);
+			}
+
+			if (rowBg) {
+				rendered = `${rowBg}${keepBackgroundAcrossResets(rendered, rowBg)}${this.containerBgAnsi}`;
+			}
+			lines.push(padRenderedLineWidth(rendered, width));
+			consumed += plainSegment.length;
+		}
+
+		return lines;
+	}
+
+	render(width: number): string[] {
+		if (this.cacheWidth === width && this.cacheLines) return this.cacheLines;
+
+		const safeWidth = Math.max(20, width);
+		const lines: string[] = [];
+
+		for (const row of this.rows.slice(0, this.maxRows)) {
+			switch (row.kind) {
+				case "gap": {
+					const label = ` ··· ${row.count ?? 0} unmodified lines ···`;
+					lines.push(padRenderedLineWidth(this.theme.fg("muted", label), safeWidth));
+					break;
+				}
+				case "changed":
+					if (row.left) lines.push(...this.formatLine("remove", row.left, safeWidth));
+					if (row.right) lines.push(...this.formatLine("add", row.right, safeWidth));
+					break;
+				case "removed":
+					if (row.left) lines.push(...this.formatLine("remove", row.left, safeWidth));
+					break;
+				case "added":
+					if (row.right) lines.push(...this.formatLine("add", row.right, safeWidth));
+					break;
+				default:
+					if (row.right) lines.push(...this.formatLine("context", row.right, safeWidth));
+					else if (row.left) lines.push(...this.formatLine("context", row.left, safeWidth));
+					break;
+			}
+		}
+
+		if (this.rows.length > this.maxRows) {
+			lines.push(this.theme.fg("muted", `... ${this.rows.length - this.maxRows} more rows`));
+		}
+
 		this.cacheWidth = width;
 		this.cacheLines = lines;
 		return lines;

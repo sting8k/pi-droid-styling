@@ -6,14 +6,17 @@ import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-c
 import { createEditToolDefinition, getAgentDir, getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
+import { loadConfig } from "../config.js";
 import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
+	UnifiedDiffComponent,
 	buildSplitRows,
 	countDiffStats,
 	extractEditedPath,
 	firstText,
 	renderDiffMeter,
+	resolveDiffRenderMode,
 } from "../split-diff.js";
 import { formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
 import { markToolCallExecutionStarted, wrapExecuteWithTiming } from "./elapsed.js";
@@ -138,25 +141,32 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 	// Build summary header with diff stats and meter
 	const { additions, removals } = countDiffStats(diff);
 	const meter = renderDiffMeter(theme, additions, removals);
-	const summary =
+	const buildSummary = (modeLabel: string) =>
 		`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 		` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 		` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
-		` ${theme.fg("muted", "split")}` +
+		` ${theme.fg("muted", modeLabel)}` +
 		(meter ? ` ${meter}` : "");
 
-	// Render split-diff with syntax colors for small outputs.
+	// Render the diff with syntax colors for small outputs. The diffMode
+	// config ("split" | "unified" | "auto") picks the renderer; "auto"
+	// falls back to unified below SPLIT_MODE_MIN_WIDTH columns.
+	const diffMode = loadConfig().diffMode;
 	const maxRows = expanded ? 160 : 36;
 	const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
+	const unified = diffMode === "split" ? undefined : new UnifiedDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 
 	return renderBoxedToolResult(theme, {
 		render(width: number): string[] {
 			const safeWidth = Math.max(20, width);
-			const headerLines = new Text(summary, 0, 0).render(safeWidth);
-			return [...headerLines, ...split.render(safeWidth)];
+			const mode = resolveDiffRenderMode(diffMode, safeWidth);
+			const headerLines = new Text(buildSummary(mode), 0, 0).render(safeWidth);
+			const body = mode === "split" ? split.render(safeWidth) : (unified ?? split).render(safeWidth);
+			return [...headerLines, ...body];
 		},
 		invalidate(): void {
 			split.invalidate();
+			unified?.invalidate();
 		},
 	}, {
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
