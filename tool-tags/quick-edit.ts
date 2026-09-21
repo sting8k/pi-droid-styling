@@ -2,13 +2,16 @@ import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
+import { loadConfig } from "../config.js";
 import { getPresentationDesign } from "../presentation/state.js";
 import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
+	UnifiedDiffComponent,
 	buildSplitRows,
 	countDiffStats,
 	renderDiffMeter,
+	resolveDiffRenderMode,
 } from "../split-diff.js";
 import { clearCompactBoxedFooter, formatBoxedFooterFromValues, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath, setCompactBoxedFooter } from "./common.js";
 
@@ -193,12 +196,14 @@ function renderQuickEditResult(
 
 	const { additions, removals } = countDiffStats(diff);
 	const meter = renderDiffMeter(theme, additions, removals);
-	const summary =
+	const buildSummary = (modeLabel: string) =>
 		`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 		` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 		` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
-		` ${theme.fg("muted", "split")}` +
+		` ${theme.fg("muted", modeLabel)}` +
 		(meter ? ` ${meter}` : "");
+	const diffMode = loadConfig().diffMode;
+	const summary = buildSummary(diffMode === "unified" ? "unified" : "split");
 
 	if (reasonixCollapsed) {
 		setCompactBoxedFooter(context.state, `${summary} ${theme.fg("dim", "·")} ${formatQuickEditFooter(theme, context, output)}`);
@@ -207,15 +212,19 @@ function renderQuickEditResult(
 
 	const maxRows = expanded ? 160 : 36;
 	const split = new SplitDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
+	const unified = diffMode === "split" ? undefined : new UnifiedDiffComponent(theme, rows, maxRows, shouldHighlight ? language : undefined);
 
 	return renderBoxedToolResult(theme, {
 		render(width: number): string[] {
 			const safeWidth = Math.max(20, width);
-			const headerLines = new Text(summary, 0, 0).render(safeWidth);
-			return [...headerLines, ...split.render(safeWidth)];
+			const mode = resolveDiffRenderMode(diffMode, safeWidth);
+			const headerLines = new Text(buildSummary(mode), 0, 0).render(safeWidth);
+			const body = mode === "split" ? split.render(safeWidth) : (unified ?? split).render(safeWidth);
+			return [...headerLines, ...body];
 		},
 		invalidate(): void {
 			split.invalidate();
+			unified?.invalidate();
 		},
 	}, {
 		footerLines: [formatQuickEditFooter(theme, context, output)],
