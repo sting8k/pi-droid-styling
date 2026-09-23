@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.14.3 - 2026-09-23
+
+### Fixed
+- `edit` error and no-change results render one row per output line. Multi-line output used to go into the box as a single row: the embedded newlines broke the box border and hid the cause (e.g. the stderr line of a failed script edit), even when expanded. Applies to both the boxed and reasonix presentations.
+- Multi-file script-mode `edit` diffs render one split-diff per file under a `▸ path` title, highlighted with each file's own language, instead of one merged, unattributed table. Single-file diffs look the same as before.
+- Script-mode `edit` diff stats count parsed rows, so content lines starting with `+++`/`---` (e.g. an added YAML `---`) are no longer skipped as file headers. Core edit stats are unchanged.
+
 ## 2.14.2 - 2026-09-15
 
 ### Fixed
