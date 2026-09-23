@@ -61,9 +61,9 @@ export const getAgentDir = () => "/nonexistent-agent-dir";
 	mkdirSync(stubTuiPkgDir, { recursive: true });
 	writeFileSync(join(stubTuiPkgDir, "package.json"), "{\"name\":\"@earendil-works/pi-tui\",\"version\":\"0.0.0-stub\",\"type\":\"module\",\"main\":\"index.js\"}\n", "utf8");
 	writeFileSync(join(stubTuiPkgDir, "index.js"), `export class Text {
-	constructor() {}
+	constructor(text) { this.text = String(text ?? ""); }
 	invalidate() {}
-	render() { return []; }
+	render() { return this.text ? this.text.split("\\n") : []; }
 }
 export const truncateToWidth = (text) => text;
 export const visibleWidth = (text) => String(text ?? "").length;
@@ -205,7 +205,49 @@ async function runBuiltinToolRenderersSmoke() {
 	await registerToolCallTags(fakePi);
 	assert(JSON.stringify(registeredNames) === JSON.stringify(["edit"]), `registerToolCallTags registered ${JSON.stringify(registeredNames)} instead of ["edit"]`);
 
-	console.log("builtin tool renderers smoke ok (7-name resolution, timing precedence, edit-only registration)");
+	// --- 4. Script-mode edit results render line by line and per file ---
+	const diffTheme = { ...theme, getBgAnsi: () => "", getFgAnsi: () => "" };
+	const scriptContext = (isError = false) => ({ args: { paths: ["src/a.ts", "b.md"], code: "x" }, isError, cwd: "/repo" });
+	const renderEdit = (result, isError) =>
+		toolModules.edit.renderEditResult(result, { expanded: false, isPartial: false }, diffTheme, scriptContext(isError)).render(90);
+
+	const errorLines = renderEdit({
+		isError: true,
+		content: [{ type: "text", text: "script edit failed (exit 1) — rolled back to snapshot.\nstderr:\nreplaceOnce: expected 1 match(es) of \"missing\" in n.txt, found 0" }],
+		details: { diff: "", patch: "" },
+	}, true);
+	assert(errorLines.every((line) => !line.includes("\n")), "edit error output embedded a newline inside a box row");
+	assert(errorLines.some((line) => line.includes("found 0")), "edit error output hid the stderr cause");
+
+	const noopLines = renderEdit({ content: [{ type: "text", text: "WARNING: no declared file changed.\nstdout:\n0 matches for foo" }], details: { diff: "", patch: "" } });
+	assert(noopLines.some((line) => line.includes("0 matches for foo")), "edit no-change output hid the script stdout");
+
+	const multiLines = renderEdit({
+		content: [{ type: "text", text: "x" }],
+		details: { patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,1 +1,1 @@\n-one\n+ONE\n--- a/b.md\n+++ b/b.md\n@@ -0,0 +1,1 @@\n+---" },
+	});
+	assert(multiLines.some((line) => line.includes("▸ src/a.ts")) && multiLines.some((line) => line.includes("▸ b.md")), "multi-file edit diff lost its file titles");
+	assert(multiLines.some((line) => line.includes("+2") && line.includes("-1")), "script-mode diff stats skipped a '+---' content line");
+
+	// Same guarantees under the reasonix (compact) presentation.
+	const presentation = await import(pathToFileURL(join(buildDir, "presentation", "state.js")).href);
+	const previousStyle = presentation.getPresentationStyle();
+	presentation.setPresentationStyle("reasonix");
+	try {
+		const reasonixError = renderEdit({
+			isError: true,
+			content: [{ type: "text", text: "script edit failed (exit 1).\nstderr:\nreplace_once: expected 1 match(es), found 0" }],
+			details: { diff: "", patch: "" },
+		}, true);
+		assert(reasonixError[0]?.includes("└─"), "reasonix presentation was not active for the edit result");
+		assert(reasonixError.every((line) => !line.includes("\n")) && reasonixError.some((line) => line.includes("found 0")), "reasonix edit error hid or broke the stderr cause");
+		const reasonixMulti = renderEdit({ content: [{ type: "text", text: "x" }], details: { patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,1 +1,1 @@\n-one\n+ONE\n--- a/b.md\n+++ b/b.md\n@@ -0,0 +1,1 @@\n+new" } });
+		assert(reasonixMulti.some((line) => line.includes("▸ b.md")), "reasonix multi-file edit diff lost its file titles");
+	} finally {
+		presentation.setPresentationStyle(previousStyle);
+	}
+
+	console.log("builtin tool renderers smoke ok (7-name resolution, timing precedence, edit-only registration, script-mode edit rendering)");
 }
 
 prepareWorkDir();
