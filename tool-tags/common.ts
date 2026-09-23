@@ -538,15 +538,15 @@ function renderReasonixToolRow(
 	detail: string,
 	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean; detailRows?: string[]; maxRows?: number } = {},
 ): Component {
-	return {
-		invalidate() {},
-		render(width: number): string[] {
-			const compactFooter = typeof options.state?.[COMPACT_FOOTER_KEY] === "string"
-				? options.state[COMPACT_FOOTER_KEY]
-				: "";
-			const isError = Boolean(options.isError || options.state?.[COMPACT_FOOTER_ERROR_KEY]);
-			const isPartial = Boolean(options.isPartial || options.state?.[COMPACT_FOOTER_PARTIAL_KEY]);
-			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
+	// Completed rows are memoized by width+footer; pending/partial rows stay uncached so
+	// the Date.now()-driven spinner frame keeps animating on every host redraw.
+	// The footer text is part of the cache key because setCompactBoxedFooter mutates
+	// the shared state object without necessarily invalidating this component.
+	// Return a defensive copy: consumers may mutate the array in place.
+	let cache: { key: string; lines: string[] } | null = null;
+	const needsLiveFrame = (isPartial: boolean) => Boolean(options.isPending || isPartial);
+	const renderUncached = (width: number, compactFooter: string, isError: boolean, isPartial: boolean): string[] => {
+		const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
 			const marker = isError ? "✗" : options.isPending || isPartial ? reasonixPendingMarker() : "✓";
@@ -569,7 +569,21 @@ function renderReasonixToolRow(
 			const footerText = toSingleRenderLine(compactFooter);
 			const footer = `  ${theme.fg("dim", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
 			return [...rows, footer];
-		}
+		};
+	return {
+		invalidate() { cache = null; },
+		render(width: number): string[] {
+			const compactFooter = typeof options.state?.[COMPACT_FOOTER_KEY] === "string"
+				? options.state[COMPACT_FOOTER_KEY]
+				: "";
+			const isError = Boolean(options.isError || options.state?.[COMPACT_FOOTER_ERROR_KEY]);
+			const isPartial = Boolean(options.isPartial || options.state?.[COMPACT_FOOTER_PARTIAL_KEY]);
+			const key = `${width}|${isError ? 1 : 0}|${compactFooter}`;
+			if (!needsLiveFrame(isPartial) && cache?.key === key) return cache.lines.slice();
+			const rows = renderUncached(width, compactFooter, isError, isPartial);
+			if (!needsLiveFrame(isPartial)) cache = { key, lines: rows };
+			return rows.slice();
+		},
 	};
 }
 
