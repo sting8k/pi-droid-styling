@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.14.4 - 2026-09-24
+
+### Fixed
+- The render self-heal repaint skips screen rows covered by terminal images (kitty/iTerm2), which stops Pi from lagging after the agent reads an image. It used to re-send the whole image payload on almost every frame whenever the image was in the viewport, measured at about 6.7MB over 30 frames for a 400KB image, down to 93KB now. pi-tui still draws and removes the image; it is sent once.
+
 ## 2.14.3 - 2026-09-23
 
 ### Fixed
