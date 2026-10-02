@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.16.0 - 2026-10-02
 
 ### Added
 - New `diffMode` config option for `edit` and quick-edit diffs ([#31](https://github.com/sting8k/pi-droid-styling/pull/31), thanks @trireg). `split` is the existing side-by-side view, and `unified` shows one column with removed lines above added ones. The default, `auto`, uses split when the terminal is at least 140 columns wide and unified below that, and switches as soon as the terminal is resized. Narrow terminals get unified diffs after updating. Set `"diffMode": "split"` to keep the old layout.
