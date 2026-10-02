@@ -21,7 +21,7 @@ type SplitDiffRow = {
 	kind: "context" | "changed" | "added" | "removed" | "gap";
 	left?: DiffLine;
 	right?: DiffLine;
-	/** For kind "gap": number of unmodified lines folded away. */
+	/** For kind "gap": number of unmodified lines folded away, when known. */
 	count?: number;
 };
 
@@ -325,6 +325,10 @@ function computeInlineDiffSpans(leftLine: string, rightLine: string): { left: Di
 
 // ── Exported helpers ───────────────────────────────────────────────
 
+function formatGapLabel(count: number | undefined): string {
+	return count === undefined ? " ··· unmodified lines ···" : ` ··· ${count} unmodified lines ···`;
+}
+
 export function buildSplitRows(diff: string): SplitDiffRow[] {
 	const rows: SplitDiffRow[] = [];
 	let pendingLeft: DiffLine[] = [];
@@ -344,6 +348,8 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 
 	// Unified-patch mode: @@ hunk headers seed the line-number cursors.
 	let unifiedHunks = false;
+	// Gap row from Pi's "..." skip marker; its count comes from the next numbered context line.
+	let openGap: SplitDiffRow | undefined;
 
 	for (const rawLine of diff.split("\n")) {
 		const hunk = rawLine.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -364,6 +370,14 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 		const parsed = parseDiffLine(rawLine, !unifiedHunks);
 		if (!parsed) continue;
 
+		// Pi's gutter diffs mark folded context with an unnumbered "..." line.
+		if (!unifiedHunks && parsed.prefix === " " && !parsed.lineNumber && parsed.line.trim() === "...") {
+			flushPending();
+			openGap = { kind: "gap" };
+			rows.push(openGap);
+			continue;
+		}
+
 		const parsedNum = parseLineNumber(parsed.lineNumber);
 		if (parsed.prefix === "-") {
 			const oldNum = parsedNum ?? oldCursor;
@@ -380,13 +394,18 @@ export function buildSplitRows(diff: string): SplitDiffRow[] {
 
 		flushPending();
 
+		// Gutter-numbered diffs without @@ headers: detect folded context
+		// from line-number jumps on context lines. Folded lines are unchanged,
+		// so the new-side cursor skips the same count.
+		if (!unifiedHunks && parsedNum !== undefined && oldCursor !== undefined && parsedNum > oldCursor) {
+			const count = parsedNum - oldCursor;
+			if (openGap) openGap.count = count;
+			else rows.push({ kind: "gap", count });
+			if (newCursor !== undefined) newCursor += count;
+		}
+		openGap = undefined;
 		const oldNum = parsedNum ?? oldCursor;
 		const newNum = newCursor ?? oldNum;
-		// Gutter-numbered diffs without @@ headers: detect folded context
-		// from line-number jumps on context lines.
-		if (!unifiedHunks && parsedNum !== undefined && oldCursor !== undefined && parsedNum > oldCursor) {
-			rows.push({ kind: "gap", count: parsedNum - oldCursor });
-		}
 		if (oldNum !== undefined) oldCursor = oldNum + 1;
 		if (newNum !== undefined) newCursor = newNum + 1;
 
@@ -672,7 +691,7 @@ export class SplitDiffComponent implements Component {
 
 		for (const row of this.rows.slice(0, this.maxRows)) {
 			if (row.kind === "gap") {
-				const label = ` ··· ${row.count ?? 0} unmodified lines ···`;
+				const label = formatGapLabel(row.count);
 				lines.push(padRenderedLineWidth(this.theme.fg("muted", label), safeWidth));
 				continue;
 			}
@@ -850,7 +869,7 @@ export class UnifiedDiffComponent implements Component {
 		for (const row of this.rows.slice(0, this.maxRows)) {
 			switch (row.kind) {
 				case "gap": {
-					const label = ` ··· ${row.count ?? 0} unmodified lines ···`;
+					const label = formatGapLabel(row.count);
 					lines.push(padRenderedLineWidth(this.theme.fg("muted", label), safeWidth));
 					break;
 				}

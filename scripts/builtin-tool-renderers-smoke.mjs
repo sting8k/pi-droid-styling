@@ -12,6 +12,8 @@ const workDir = mkdtempSync(join(repoRoot, ".pi", "builtin-tool-renderers-smoke-
 const buildDir = join(workDir, "build");
 const stubPath = join(workDir, "node-stubs.d.ts");
 const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
+// edit reads diffMode from ~/.pi/agent/pi-droid-styling.json: keep the user's real config out of the run.
+process.env.HOME = workDir;
 
 function assert(condition, message) {
 	if (!condition) throw new Error(message);
@@ -243,6 +245,26 @@ async function runBuiltinToolRenderersSmoke() {
 	assert(multiLines.some((line) => line.includes("▸ src/a.ts")) && multiLines.some((line) => line.includes("▸ b.md")), "multi-file edit diff lost its file titles");
 	assert(multiLines.some((line) => line.includes("+2") && line.includes("-1")), "script-mode diff stats skipped a '+---' content line");
 
+	// --- 5. diffMode "auto" (default): unified below 140 columns, split from 140 ---
+	const twoHunks = { content: [{ type: "text", text: "x" }], details: { patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -2,1 +2,1 @@\n-two\n+TWO\n@@ -10,1 +10,1 @@\n-ten\n+TEN" } };
+	const editAt = (result, width) => toolModules.edit.renderEditResult(result, { expanded: false, isPartial: false }, diffTheme, { args: { paths: ["src/a.ts"], code: "x" }, cwd: "/repo" }).render(width);
+	const narrow = editAt(twoHunks, 90);
+	const wide = editAt(twoHunks, 160);
+	assert(narrow.some((line) => line.includes("unified")) && !narrow.some((line) => line.includes("split")), "auto diffMode did not pick unified below 140 columns");
+	assert(wide.some((line) => line.includes("split")), "auto diffMode did not pick split at 140+ columns");
+	for (const lines of [narrow, wide]) {
+		assert(lines.some((line) => line.includes("··· 7 unmodified lines ···")), "hunk gap between @@ -3 and @@ -10 was not marked");
+	}
+
+	// Pi's builtin gutter diff folds context with an unnumbered "..." line: one gap, counted from the next line.
+	const splitDiff = await import(pathToFileURL(join(buildDir, "split-diff.js")).href);
+	const piRows = splitDiff.buildSplitRows(["  7 line 7", "    ...", " 27 line 27", "-28 old", "+28 new", " 29 line 29", "    ..."].join("\n"));
+	const piGaps = piRows.filter((row) => row.kind === "gap");
+	assert(piGaps.length === 2 && piGaps[0].count === 19 && piGaps[1].count === undefined, `Pi "..." markers should become gap rows (19, unknown), got ${JSON.stringify(piGaps)}`);
+	assert(!piRows.some((row) => row.left?.line.trim() === "..."), "Pi \"...\" marker still rendered as a code line");
+	const afterGap = piRows.find((row) => row.left?.line === "line 27");
+	assert(afterGap?.right?.lineNumber.trim() === "27", `new-side numbering did not skip the folded lines, got ${afterGap?.right?.lineNumber}`);
+
 	// Same guarantees under the reasonix (compact) presentation.
 	const presentation = await import(pathToFileURL(join(buildDir, "presentation", "state.js")).href);
 	const previousStyle = presentation.getPresentationStyle();
@@ -261,7 +283,7 @@ async function runBuiltinToolRenderersSmoke() {
 		presentation.setPresentationStyle(previousStyle);
 	}
 
-	console.log("builtin tool renderers smoke ok (7-name resolution, timing precedence, edit-only registration, script-mode edit rendering)");
+	console.log("builtin tool renderers smoke ok (7-name resolution, timing precedence, edit-only registration, script-mode edit rendering, diffMode auto + gaps)");
 }
 
 prepareWorkDir();
