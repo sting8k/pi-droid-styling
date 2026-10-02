@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.15.1 - 2026-10-02
+
+### Changed
+- Typing no longer lags in long sessions under the reasonix layout ([#32](https://github.com/sting8k/pi-droid-styling/pull/32), thanks @trireg). Finished tool rows keep their rendered lines and only re-render when the width, error state or footer changes. Rows still running are redrawn every frame so the spinner keeps moving.
+
+### Fixed
+- Bundled companion themes no longer fail on every other `/new` or `/resume` with "Theme not found" and a fall back to `dark` ([#30](https://github.com/sting8k/pi-droid-styling/issues/30)). Pi rebuilds its theme registry for each session, but the extension skipped any theme name it saw in the previous session's registry, including the ones it had registered itself. It now skips a bundled theme only when the same name comes from another file, such as a standalone `pi-themes` install.
+- Without `pi-ctx-kit`, the extension no longer registers its own copy of the `edit` tool ([#26](https://github.com/sting8k/pi-droid-styling/issues/26)). The copy behaved the same as Pi's but lost the `builtin` source, so tools that look for builtins, such as pi-subagents, dropped `edit` from child agents. Pi's own `edit` is kept and still gets the droid renderer. With `pi-ctx-kit` installed, the enhanced edit is registered as before.
+
 ## 2.15.0 - 2026-10-02
 
 ### Added

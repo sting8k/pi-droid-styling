@@ -53,7 +53,6 @@ declare const process: any;
 	writeFileSync(join(stubAgentPkgDir, "package.json"), "{\"name\":\"@earendil-works/pi-coding-agent\",\"version\":\"0.0.0-stub\",\"type\":\"module\",\"main\":\"index.js\"}\n", "utf8");
 	writeFileSync(join(stubAgentPkgDir, "index.js"), `export const getLanguageFromPath = () => undefined;
 export const highlightCode = () => [];
-export const createEditToolDefinition = () => ({ name: "edit", label: "edit", description: "stub", parameters: {} });
 export const getAgentDir = () => "/nonexistent-agent-dir";
 `, "utf8");
 
@@ -198,12 +197,27 @@ async function runBuiltinToolRenderersSmoke() {
 	const footerWithValue = common.formatBoxedFooterFromValues(theme, 1500, "output");
 	assert(!footerWithValue.includes("--") && footerWithValue.includes("1.50s"), "footer did not render the resolved elapsed value");
 
-	// --- 3. registerToolCallTags registers ONLY edit ---
+	// --- 3. registerToolCallTags registers edit only when pi-ctx-kit is present (issue #26) ---
 	const { registerToolCallTags } = await import(buildToolTags("register-tool-call-tags.js"));
-	const registeredNames = [];
-	const fakePi = { registerTool(definition) { registeredNames.push(definition?.name); } };
-	await registerToolCallTags(fakePi);
-	assert(JSON.stringify(registeredNames) === JSON.stringify(["edit"]), `registerToolCallTags registered ${JSON.stringify(registeredNames)} instead of ["edit"]`);
+	const registerWith = async () => {
+		const registered = [];
+		const previousCwd = process.cwd();
+		process.chdir(buildDir); // keep the cwd-relative pi-ctx-kit probes off the developer checkout
+		try {
+			await registerToolCallTags({ registerTool(definition) { registered.push(definition); } });
+		} finally {
+			process.chdir(previousCwd);
+		}
+		return registered;
+	};
+	const withoutKit = await registerWith();
+	assert(withoutKit.length === 0, `without pi-ctx-kit nothing may override builtin edit, got ${JSON.stringify(withoutKit.map((d) => d?.name))}`);
+	const kitDir = join(buildDir, "node_modules", "pi-ctx-kit");
+	mkdirSync(kitDir, { recursive: true });
+	writeFileSync(join(kitDir, "package.json"), "{\"name\":\"pi-ctx-kit\",\"type\":\"module\",\"exports\":{\"./edit-core\":\"./edit-core.js\"}}\n", "utf8");
+	writeFileSync(join(kitDir, "edit-core.js"), "export const EDIT_TOOL_DESCRIPTION = \"kit edit\";\nexport const EditArgsSchema = {};\nexport const executeEnhancedEdit = async () => ({ content: [] });\n", "utf8");
+	const withKit = await registerWith();
+	assert(withKit.length === 1 && withKit[0].name === "edit" && withKit[0].description === "kit edit", `with pi-ctx-kit only the enhanced edit should register, got ${JSON.stringify(withKit.map((d) => d?.name))}`);
 
 	// --- 4. Script-mode edit results render line by line and per file ---
 	const diffTheme = { ...theme, getBgAnsi: () => "", getFgAnsi: () => "" };
