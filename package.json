@@ -1,9 +1,23 @@
 {
   "name": "@sting8k/pi-droid-styling",
-  "version": "2.14.4",
+  "version": "2.15.0",
   "description": "Custom UI styling for Pi: compact startup UI, boxed editor, tool badges, message prefixes, and footer stats.",
   "type": "module",
   "main": "index.ts",
+  "files": [
+    "*.ts",
+    "core/",
+    "editor/",
+    "fixed-zone/",
+    "messages/",
+    "performance/",
+    "presentation/",
+    "theme/",
+    "tool-tags/",
+    "user-zone/",
+    "widgets/",
+    "CHANGELOG.md"
+  ],
   "keywords": [
     "pi-package",
     "pi-coding-agent",
@@ -50,8 +64,8 @@
     "image": "https://raw.githubusercontent.com/sting8k/pi-droid-styling/main/screenshots/image.png"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.78.0 <1.0.0",
-    "@earendil-works/pi-tui": ">=0.78.0 <1.0.0"
+    "@earendil-works/pi-coding-agent": ">=0.78.0 <2.0.0",
+    "@earendil-works/pi-tui": ">=0.78.0 <2.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.0",

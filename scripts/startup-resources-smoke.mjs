@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, VERSION } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 const repoRoot = process.cwd();
@@ -74,6 +74,7 @@ function renderStartupResources({ installStartupUiPatch, setCompactStartupHeader
 	process.env.HOME = join(workDir, "home");
 	mkdirSync(process.env.HOME, { recursive: true });
 	setCompactStartupHeader({
+		theme,
 		setHeader(factory) {
 			header = factory(null, theme);
 		},
@@ -157,6 +158,12 @@ function assertStartupResources({ calls, lines }) {
 }
 
 function assertStartupHeader({ header }) {
+	const [major, minor] = VERSION.split(".").map((part) => Number.parseInt(part, 10) || 0);
+	if (major > 0 || minor >= 99) {
+		assert(!header, `Pi ${VERSION} has its own logo header; the extension must not replace it`);
+		console.log(`startup header smoke ok (Pi ${VERSION} logo header kept)`);
+		return;
+	}
 	assert(header, "startup header component was not installed");
 	const wideLines = header.render(96);
 	const wideOutput = wideLines.join("\n");
