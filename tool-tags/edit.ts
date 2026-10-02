@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import { createEditToolDefinition, getAgentDir, getLanguageFromPath } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 import { safeTruncateToWidth } from "../render-budget.js";
@@ -226,21 +226,22 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 	});
 }
 
+/**
+ * Registers `edit` only when pi-ctx-kit supplies the enhanced edit core. Without
+ * it the builtin tool stays registered (keeping its builtin source) and gets the
+ * droid renderers from installBuiltinToolRenderers.
+ */
 export async function registerEditTool(pi: ExtensionAPI): Promise<void> {
 	const editCore = await loadEditCore();
-	const baseEdit = createEditToolDefinition(process.cwd());
+	if (!editCore) return;
 
 	pi.registerTool({
 		name: "edit",
 		label: "edit",
-		description: editCore?.EDIT_TOOL_DESCRIPTION ?? baseEdit.description,
-		parameters: (editCore?.EditArgsSchema ?? baseEdit.parameters) as any,
-		prepareArguments: editCore ? undefined : baseEdit.prepareArguments,
-		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) => {
-			if (editCore) return editCore.executeEnhancedEdit(toolCallId, params, signal, onUpdate, ctx);
-			const tool = createEditToolDefinition(ctx.cwd);
-			return tool.execute(toolCallId, params as any, signal, onUpdate, ctx);
-		}),
+		description: editCore.EDIT_TOOL_DESCRIPTION,
+		parameters: editCore.EditArgsSchema as any,
+		execute: wrapExecuteWithTiming(async (toolCallId, params, signal, onUpdate, ctx) =>
+			editCore.executeEnhancedEdit(toolCallId, params, signal, onUpdate, ctx)),
 		renderCall: renderEditCall,
 		renderResult: renderEditResult,
 	});

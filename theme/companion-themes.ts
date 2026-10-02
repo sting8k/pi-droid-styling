@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -99,6 +99,17 @@ function installStartupThemeErrorSuppression(InteractiveMode: unknown, state: Co
 	prototype.init = wrapped;
 }
 
+function samePath(a: string, b: string): boolean {
+	const canonical = (path: string) => {
+		try {
+			return realpathSync(path);
+		} catch {
+			return resolve(path);
+		}
+	};
+	return canonical(a) === canonical(b);
+}
+
 export function isBundledThemeLoadError(message: string, bundledNames: ReadonlySet<string>): boolean {
 	const match = /^Failed to load theme "([^"]+)"/.exec(message);
 	return match !== null && bundledNames.has(match[1]);
@@ -113,9 +124,16 @@ export function registerCompanionThemes(pi: ExtensionAPI, InteractiveMode: unkno
 	installThemeReapplyPatch(InteractiveMode, state);
 	installStartupThemeErrorSuppression(InteractiveMode, state);
 	pi.on("resources_discover", (_event, ctx) => {
-		const existingNames = new Set(ctx.ui.getAllThemes().map((theme) => theme.name));
-		const themePaths = bundledThemes.filter((theme) => !existingNames.has(theme.name)).map((theme) => theme.path);
-		state.pendingThemeReapply = themePaths.length > 0;
-		return { themePaths };
+		// Pi rebuilds the theme registry from each session's resource loader, so a
+		// name registered by this extension last session must be returned again.
+		// Only a same-named theme from another file (standalone pi-themes) wins.
+		const registered = new Map<string, string | undefined>(ctx.ui.getAllThemes().map((theme) => [theme.name, theme.path]));
+		const themes = bundledThemes.filter((theme) => {
+			if (!registered.has(theme.name)) return true;
+			const current = registered.get(theme.name);
+			return current !== undefined && samePath(current, theme.path);
+		});
+		state.pendingThemeReapply = themes.some((theme) => !registered.has(theme.name));
+		return { themePaths: themes.map((theme) => theme.path) };
 	});
 }
