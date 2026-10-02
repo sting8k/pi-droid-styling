@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.16.0 - 2026-10-02
+
+### Added
+- New `diffMode` config option for `edit` and quick-edit diffs ([#31](https://github.com/sting8k/pi-droid-styling/pull/31), thanks @trireg). `split` is the existing side-by-side view, and `unified` shows one column with removed lines above added ones. The default, `auto`, uses split when the terminal is at least 140 columns wide and unified below that, and switches as soon as the terminal is resized. Narrow terminals get unified diffs after updating. Set `"diffMode": "split"` to keep the old layout.
+
+### Changed
+- Diffs mark skipped context with a `··· N unmodified lines ···` row, so two changes far apart in a file no longer look adjacent. The `...` line in Pi's own edit diff becomes this row too, instead of showing as a numbered code line.
+- A removed/added line pair that shares less than 35% of its text is shown as a full rewrite, without word-level highlights.
+
+### Fixed
+- In Pi's own edit diff, line numbers on the new side no longer restart from the wrong number after skipped context.
+
 ## 2.15.1 - 2026-10-02
 
 ### Changed

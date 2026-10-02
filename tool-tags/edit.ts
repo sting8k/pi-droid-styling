@@ -6,15 +6,18 @@ import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-c
 import { getAgentDir, getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
+import { loadConfig } from "../config.js";
 import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import {
 	SplitDiffComponent,
+	UnifiedDiffComponent,
 	buildSplitRows,
 	countDiffStats,
 	extractEditedPath,
 	firstText,
 	renderDiffMeter,
+	resolveDiffRenderMode,
 } from "../split-diff.js";
 import { formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, resolveRelativePath } from "./common.js";
 import { markToolCallExecutionStarted, wrapExecuteWithTiming } from "./elapsed.js";
@@ -174,7 +177,10 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 	const sourcePath = details?.path ?? (argPath || extractEditedPath(message));
 	const language = sourcePath ? getLanguageFromPath(sourcePath) : undefined;
 
-	// Build split-diff rows: one component per file, titled when several.
+	// Build diff rows: one component per file, titled when several. The
+	// diffMode config ("split" | "unified" | "auto") picks the renderer at
+	// render time; "auto" falls back to unified below SPLIT_MODE_MIN_WIDTH.
+	const diffMode = loadConfig().diffMode;
 	const expanded = isExpanded(options);
 	const maxRows = expanded ? 160 : 36;
 	const titled = sections.length > 1;
@@ -187,13 +193,11 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 			section.body.length <= MAX_HIGHLIGHT_DIFF_CHARS &&
 			rows.length <= MAX_HIGHLIGHT_DIFF_ROWS;
 		const title = titled && section.path ? `▸ ${resolveRelativePath(section.path, cwd) || section.path}` : undefined;
-		const split = new SplitDiffComponent(
-			theme,
-			rows,
-			titled ? Math.max(6, Math.floor(maxRows / sections.length)) : maxRows,
-			shouldHighlight ? sectionLanguage : undefined,
-		);
-		return { title, split, rows };
+		const partMaxRows = titled ? Math.max(6, Math.floor(maxRows / sections.length)) : maxRows;
+		const partLanguage = shouldHighlight ? sectionLanguage : undefined;
+		const split = new SplitDiffComponent(theme, rows, partMaxRows, partLanguage);
+		const unified = diffMode === "split" ? undefined : new UnifiedDiffComponent(theme, rows, partMaxRows, partLanguage);
+		return { title, split, unified, rows };
 	});
 
 	// Build summary header with diff stats and meter
@@ -201,25 +205,29 @@ export function renderEditResult(result: any, options: ToolRenderResultOptions, 
 	// content line like "+---" must count, not be skipped as a header.
 	const { additions, removals } = scriptMode ? countRowStats(parts.flatMap((part) => part.rows)) : countDiffStats(diff);
 	const meter = renderDiffMeter(theme, additions, removals);
-	const summary =
+	const buildSummary = (modeLabel: string) =>
 		`${theme.fg("dim", "↳")} ${theme.fg("muted", "diff")}` +
 		` ${theme.fg("toolDiffAdded", `+${additions}`)}` +
 		` ${theme.fg("toolDiffRemoved", `-${removals}`)}` +
-		` ${theme.fg("muted", "split")}` +
+		` ${theme.fg("muted", modeLabel)}` +
 		(meter ? ` ${meter}` : "");
 
 	return renderBoxedToolResult(theme, {
 		render(width: number): string[] {
 			const safeWidth = Math.max(20, width);
-			const headerLines = new Text(summary, 0, 0).render(safeWidth);
-			const body = parts.flatMap(({ title, split }) => [
+			const mode = resolveDiffRenderMode(diffMode, safeWidth);
+			const headerLines = new Text(buildSummary(mode), 0, 0).render(safeWidth);
+			const body = parts.flatMap(({ title, split, unified }) => [
 				...(title ? [safeTruncateToWidth(theme.fg("muted", title), safeWidth, "…")] : []),
-				...split.render(safeWidth),
+				...(mode === "unified" && unified ? unified : split).render(safeWidth),
 			]);
 			return [...headerLines, ...body];
 		},
 		invalidate(): void {
-			for (const { split } of parts) split.invalidate();
+			for (const { split, unified } of parts) {
+				split.invalidate();
+				unified?.invalidate();
+			}
 		},
 	}, {
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
