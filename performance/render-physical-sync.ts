@@ -1,3 +1,4 @@
+import { isImageRenderLine } from "../render-budget.js";
 import { profileCount } from "./profiler.js";
 import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./tui-proxy-original.js";
 
@@ -304,10 +305,12 @@ function buildBandRepaint(lines: readonly string[], state: ViewportVisualState, 
 	const mergedRanges = mergeRanges(ranges, state.height);
 	if (mergedRanges.length === 0) return "";
 
+	const imageRows = collectImageScreenRows(lines, state);
 	let rowCount = 0;
 	let output = DISABLE_AUTOWRAP + SAVE_CURSOR + BEGIN_SYNC;
 	for (const range of mergedRanges) {
 		for (let row = range.start; row <= range.end; row++) {
+			if (imageRows.has(row)) continue;
 			output += `\x1b[${row};1H\x1b[2K${lines[state.viewportTop + row - 1] ?? ""}`;
 			rowCount++;
 		}
@@ -349,12 +352,41 @@ function readViewportHeight(tui: AnyTui): number {
 }
 
 function buildFullViewportRepaint(lines: readonly string[], state: ViewportVisualState): string {
+	const imageRows = collectImageScreenRows(lines, state);
 	let output = DISABLE_AUTOWRAP + SAVE_CURSOR + BEGIN_SYNC;
 	for (let row = 1; row <= state.height; row++) {
+		if (imageRows.has(row)) continue;
 		output += `\x1b[${row};1H\x1b[2K${lines[state.viewportTop + row - 1] ?? ""}`;
 	}
 	profileCount("render.physicalSync.fullViewportRepaint");
 	return output + END_SYNC + RESTORE_CURSOR + ENABLE_AUTOWRAP;
+}
+
+/**
+ * Screen rows covered by terminal images. Self-heal must not touch them:
+ * re-emitting an image line re-transmits the whole base64 payload (kitty a=T /
+ * iTerm2 File=) every frame, and clearing covered rows can erase iTerm2 image
+ * cells. pi-tui's own diff already owns image placement and deletion.
+ */
+function collectImageScreenRows(lines: readonly string[], state: ViewportVisualState): Set<number> {
+	const rows = new Set<number>();
+	const visibleStart = state.viewportTop;
+	const visibleEnd = state.viewportTop + state.height - 1;
+	const scanStart = Math.max(0, visibleStart - state.height);
+	const scanEnd = Math.min(lines.length - 1, visibleEnd + state.height);
+	for (let index = scanStart; index <= scanEnd; index++) {
+		const line = lines[index];
+		if (!line || !isImageRenderLine(line)) continue;
+		const kittyRows = /\x1b_G[^;\x1b]*?\br=(\d+)/.exec(line);
+		const itermUp = /\x1b\[(\d+)A\x1b\]1337;File=/.exec(line);
+		const first = itermUp ? index - Number(itermUp[1]) : index;
+		const last = kittyRows ? index + Number(kittyRows[1]) - 1 : index;
+		for (let covered = Math.max(first, visibleStart); covered <= Math.min(last, visibleEnd); covered++) {
+			rows.add(covered - state.viewportTop + 1);
+		}
+	}
+	if (rows.size > 0) profileCount("render.physicalSync.imageRowsSkipped", rows.size);
+	return rows;
 }
 
 function readAnchorState(tui: AnyTui): RenderAnchorState {

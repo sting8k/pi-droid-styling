@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.15.1 - 2026-10-02
+
+### Changed
+- Typing no longer lags in long sessions under the reasonix layout ([#32](https://github.com/sting8k/pi-droid-styling/pull/32), thanks @trireg). Finished tool rows keep their rendered lines and only re-render when the width, error state or footer changes. Rows still running are redrawn every frame so the spinner keeps moving.
+
+### Fixed
+- Bundled companion themes no longer fail on every other `/new` or `/resume` with "Theme not found" and a fall back to `dark` ([#30](https://github.com/sting8k/pi-droid-styling/issues/30)). Pi rebuilds its theme registry for each session, but the extension skipped any theme name it saw in the previous session's registry, including the ones it had registered itself. It now skips a bundled theme only when the same name comes from another file, such as a standalone `pi-themes` install.
+- Without `pi-ctx-kit`, the extension no longer registers its own copy of the `edit` tool ([#26](https://github.com/sting8k/pi-droid-styling/issues/26)). The copy behaved the same as Pi's but lost the `builtin` source, so tools that look for builtins, such as pi-subagents, dropped `edit` from child agents. Pi's own `edit` is kept and still gets the droid renderer. With `pi-ctx-kit` installed, the enhanced edit is registered as before.
+
+## 2.15.0 - 2026-10-02
+
+### Added
+- Pi 1.0 support. The peer dependency range is now `>=0.78.0 <2.0.0` for `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`.
+
+### Changed
+- On Pi 0.99 and later, the extension keeps Pi's own startup header (logo, key hints, ctrl+o for the full help) instead of replacing it with the 9-line gradient logo. Older Pi versions, which have no logo header, still get the extension's header. The loaded-resources table is unchanged.
+- The npm package ships only runtime files: `package.json` now lists `files`, and the bundled `pi-themes` no longer carries its preview images. The tarball drops from 179 files (1.6MB) to 92 files (146KB).
+
+### Fixed
+- The boxed editor's host-border helper is renamed to `renderHostBorder`, so it no longer collides with the `renderTopBorder` method that Pi 1.0 added to the editor base class. The collision broke type-checking.
+
+## 2.14.4 - 2026-09-24
+
+### Fixed
+- The render self-heal repaint skips screen rows covered by terminal images (kitty/iTerm2), which stops Pi from lagging after the agent reads an image. It used to re-send the whole image payload on almost every frame whenever the image was in the viewport, measured at about 6.7MB over 30 frames for a 400KB image, down to 93KB now. pi-tui still draws and removes the image; it is sent once.
+
+## 2.14.3 - 2026-09-23
+
+### Fixed
+- `edit` error and no-change results render one row per output line. Multi-line output used to go into the box as a single row: the embedded newlines broke the box border and hid the cause (e.g. the stderr line of a failed script edit), even when expanded. Applies to both the boxed and reasonix presentations.
+- Multi-file script-mode `edit` diffs render one split-diff per file under a `▸ path` title, highlighted with each file's own language, instead of one merged, unattributed table. Single-file diffs look the same as before.
+- Script-mode `edit` diff stats count parsed rows, so content lines starting with `+++`/`---` (e.g. an added YAML `---`) are no longer skipped as file headers. Core edit stats are unchanged.
+
 ## 2.14.2 - 2026-09-15
 
 ### Fixed

@@ -64,9 +64,10 @@ assert(InteractiveModeStub.prototype.bindCurrentSessionExtensions === firstWrapp
 assert(InteractiveModeStub.prototype.init === firstInitWrapper, "reload must not stack the init wrapper");
 assert(typeof handler === "function", "resources_discover handler should be registered");
 
-const call = (existingNames) => handler({ type: "resources_discover", cwd: repoRoot, reason: "startup" }, {
-	ui: { getAllThemes: () => existingNames.map((name) => ({ name, path: `/standalone/${name}.json` })) },
+const callWith = (registry) => handler({ type: "resources_discover", cwd: repoRoot, reason: "startup" }, {
+	ui: { getAllThemes: () => registry },
 });
+const call = (existingNames) => callWith(existingNames.map((name) => ({ name, path: `/standalone/${name}.json` })));
 const mode = new InteractiveModeStub();
 let reapplyCount = 0;
 mode.themeController = { applyFromSettings: async () => { reapplyCount++; } };
@@ -79,6 +80,14 @@ await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 1, "fresh install should re-apply the selected theme after discovery");
 await mode.bindCurrentSessionExtensions();
 assert(reapplyCount === 1, "theme re-apply should happen only once per discovery");
+
+// Issue #30: on /new or /resume the registry still lists the themes this extension
+// registered last session, but pi replaces it with the next loader's themes.
+const ownRegistry = fresh.map((path, index) => ({ name: names[index], path }));
+const switched = callWith(ownRegistry).themePaths;
+assert(switched.length === 26, `session switch must return own bundled themes again, got ${switched.length}`);
+await mode.bindCurrentSessionExtensions();
+assert(reapplyCount === 1, "session switch with own themes still registered should not trigger re-apply");
 
 assert(call(names).themePaths.length === 0, "standalone pi-themes should suppress every bundled duplicate");
 await mode.bindCurrentSessionExtensions();
@@ -106,5 +115,5 @@ assert(shownErrors.length === 2, "init must not hide load errors for non-bundled
 const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 assert(manifest.pi?.themes === undefined, "package manifest must not register bundled themes statically");
 assert(manifest.bundledDependencies?.includes("pi-themes"), "pi-themes must remain bundled");
-console.log("companion themes smoke ok: fresh=26 standalone=0 partial=19 reapply=2 startup-error-suppressed reload-safe");
+console.log("companion themes smoke ok: fresh=26 switch=26 standalone=0 partial=19 reapply=2 startup-error-suppressed reload-safe");
 rmSync(workDir, { recursive: true, force: true });

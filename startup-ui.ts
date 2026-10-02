@@ -453,7 +453,17 @@ function compactHeader(theme: ThemeLike, width: number): string {
 	return [title, status].map((line) => safeTruncateToWidth(line, safeWidth, "…")).join("\n");
 }
 
+// Pi 0.99.0 added its own logo header; keep it there and only replace the logo-less older header.
+function hostHasLogoHeader(): boolean {
+	const [major = 0, minor = 0] = VERSION.split(".").map((part) => Number.parseInt(part, 10) || 0);
+	return major > 0 || minor >= 99;
+}
+
 export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
+	if (hostHasLogoHeader()) {
+		activeTheme = ui.theme as ThemeLike;
+		return;
+	}
 	if (isQuietStartup(cwd)) return;
 	ui.setHeader((_tui, theme) => {
 		const headerTheme = theme as ThemeLike;
