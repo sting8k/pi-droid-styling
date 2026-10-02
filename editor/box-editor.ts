@@ -530,7 +530,7 @@ export class BoxEditor extends CustomEditor {
 		return `${sidePad}${this.pad(content, contentWidth)}${sidePad}`;
 	}
 
-	private renderTopBorder(width: number): string {
+	private renderHostBorder(width: number): string {
 		const style = this.userZoneStyle.editor;
 		const borderColor = this.themeExtraColor("inputBorderColor", style.hostBorderColor);
 		const prefix = this.styleFg(style.hostPrefixColor, `== [${currentUserHost()}] == `);
@@ -1068,7 +1068,7 @@ export class BoxEditor extends CustomEditor {
 	private renderDroidLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
 		const editorStyle = this.userZoneStyle.editor;
 		const lines: string[] = [];
-		if (editorStyle.showHostBorder) lines.push(this.renderTopBorder(width));
+		if (editorStyle.showHostBorder) lines.push(this.renderHostBorder(width));
 		if (editorStyle.showMetadataRow) lines.push(this.renderPanelLine(this.renderTopRow(contentInnerWidth), width));
 		if (editorStyle.showRuntimeRow) lines.push(this.renderPanelLine(this.renderRuntimeRow(contentInnerWidth), width));
 		if (editorStyle.showDivider) lines.push(this.renderDivider(width));

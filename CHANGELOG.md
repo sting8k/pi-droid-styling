@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.15.0 - 2026-10-02
+
+### Added
+- Pi 1.0 support. The peer dependency range is now `>=0.78.0 <2.0.0` for `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`.
+
+### Changed
+- On Pi 0.99 and later, the extension keeps Pi's own startup header (logo, key hints, ctrl+o for the full help) instead of replacing it with the 9-line gradient logo. Older Pi versions, which have no logo header, still get the extension's header. The loaded-resources table is unchanged.
+- The npm package ships only runtime files: `package.json` now lists `files`, and the bundled `pi-themes` no longer carries its preview images. The tarball drops from 179 files (1.6MB) to 92 files (146KB).
+
+### Fixed
+- The boxed editor's host-border helper is renamed to `renderHostBorder`, so it no longer collides with the `renderTopBorder` method that Pi 1.0 added to the editor base class. The collision broke type-checking.
+
 ## 2.14.4 - 2026-09-24
 
 ### Fixed
