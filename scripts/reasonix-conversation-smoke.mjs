@@ -73,6 +73,7 @@ declare const process: any;
 		join(repoRoot, "tool-tags", "bash.ts"),
 		join(repoRoot, "tool-tags", "quick-edit.ts"),
 		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
+		join(repoRoot, "tool-tags", "loader-align.ts"),
 	], { cwd: repoRoot, encoding: "utf8" });
 	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
 }
@@ -720,5 +721,31 @@ assert(quickEditLines.every((line) => line.startsWith("  ") && !line.startsWith(
 setPresentationStyle("droid");
 const droidToolLines = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState }).render(80).map(stripAnsi);
 assert(droidToolLines.some((line) => line.includes("┌")), "droid tool presentation should retain its outer box");
+
+// Status indicator alignment: under reasonix the working loader drops Pi's
+// one-column Text margin so its glyph shares the tool/assistant marker column.
+{
+	const { Loader } = await import("@earendil-works/pi-tui");
+	const { installWorkingLoaderAlignment } = await importBuilt("tool-tags/loader-align.js");
+	class StatusLoader extends Loader {
+		kind = "working";
+	}
+	const plain = (text) => text;
+	const make = (LoaderClass) => new LoaderClass(null, plain, plain, "Thinking", { frames: ["○"] });
+	setPresentationStyle("droid");
+	installWorkingLoaderAlignment(Loader);
+	installWorkingLoaderAlignment(Loader); // reload path
+	assert(typeof Loader.prototype.render[Symbol.for("pi-droid-styling.loader-align.original-render")][Symbol.for("pi-droid-styling.loader-align.original-render")] === "undefined", "a reload should rewrap the original render, not stack wrappers");
+	const status = make(StatusLoader);
+	const dialog = make(Loader);
+	assert(status.render(40)[1]?.startsWith(" ○ Thinking"), "droid layout should keep the loader margin");
+	setPresentationStyle("reasonix");
+	assert(status.render(40)[1]?.startsWith("○ Thinking"), "reasonix status loader should start at column 0");
+	assert(dialog.render(40)[1]?.startsWith(" ○ Thinking"), "non-status loaders should keep their margin");
+	const inBorder = status.render(42)[1] ?? "";
+	assert((inBorder.startsWith(" ") ? inBorder.slice(1) : inBorder).startsWith("○ Thinking"), "in-border path should still see the same content");
+	status.stop();
+	dialog.stop();
+}
 
 console.log("reasonix conversation presentation smoke ok");
