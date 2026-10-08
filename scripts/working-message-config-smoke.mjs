@@ -88,10 +88,32 @@ async function runConfigSmoke(name, initialJson, validate) {
 }
 
 async function runLoaderSmoke() {
-	const { createWorkingLoaderController, renderWorkingMessage } = await importBuilt("tool-tags/loader-accent.js");
+	const { createWorkingLoaderController, createWorkingIndicatorFrames, renderWorkingMessage } = await importBuilt("tool-tags/loader-accent.js");
 	const labels = { working: "Doing", thinking: "Pondering", answering: "Replying", running: "Executing" };
-	assert(renderWorkingMessage("running", 0, undefined, labels) === "Executing.", "custom running render failed");
-	assert(renderWorkingMessage("thinking", 1, undefined, labels) === "Pondering..", "custom thinking render failed");
+	assert(renderWorkingMessage("running", 0, undefined, labels) === "Executing", "custom running render failed");
+	assert(renderWorkingMessage("thinking", 1, undefined, labels) === "Pondering", "custom thinking render failed");
+
+	// Shimmer: the head moves one character per step, then rests 6 steps between sweeps.
+	const markTheme = { fg: (color, text) => `<${color}:${text}>`, bold: (text) => `*${text}*` };
+	assert(renderWorkingMessage("working", 0, markTheme, labels) === "<text:*D*><text:o><muted:i><muted:n><muted:g>", "shimmer head at step 0 failed");
+	assert(renderWorkingMessage("working", 2, markTheme, labels) === "<muted:D><text:o><text:*i*><text:n><muted:g>", "shimmer head at step 2 failed");
+	assert(renderWorkingMessage("working", 7, markTheme, labels) === "<muted:D><muted:o><muted:i><muted:n><muted:g>", "shimmer rest after sweep failed");
+	assert(renderWorkingMessage("working", 11, markTheme, labels) === renderWorkingMessage("working", 0, markTheme, labels), "shimmer should restart after rest");
+
+	// Breathing glyph: one glyph, accent at the top of the breath, faded toward dim (never fully) at the bottom.
+	const rgbTheme = {
+		fg: (color, text) => `<${color}:${text}>`,
+		getFgAnsi: (color) => color === "accent" ? "\x1b[38;2;200;100;0m" : "\x1b[38;2;100;100;100m",
+		getColorMode: () => "truecolor",
+	};
+	const breath = createWorkingIndicatorFrames(rgbTheme);
+	const strip = (text) => text.replace(/\x1b\[[0-9;]*m/g, "");
+	assert(breath.length === 24 && breath.every((frame) => strip(frame) === "○"), "breathing spinner should be 24 frames of the same glyph");
+	assert(breath[0] === "\x1b[38;2;200;100;0m○\x1b[39m", "breath should start at the accent color");
+	assert(breath[12] === "\x1b[38;2;115;100;85m○\x1b[39m", "breath bottom should fade 85% toward dim");
+	assert(breath[4] === breath[20], "breath should be symmetric");
+	const fallback = createWorkingIndicatorFrames({ fg: (color, text) => `<${color}:${text}>` });
+	assert(fallback.length === 1 && fallback[0] === "<accent:○>", "unreadable theme colors should give a steady accent glyph");
 
 	const renderedMessages = [];
 	const ui = {
@@ -100,11 +122,11 @@ async function runLoaderSmoke() {
 	};
 	const controller = createWorkingLoaderController(ui, labels);
 	controller.configure();
-	assert(renderedMessages.at(-1) === "Doing.", "configure should render initial working label");
+	assert(renderedMessages.at(-1) === "Doing", "configure should render initial working label");
 	controller.start("thinking");
-	assert(renderedMessages.at(-1) === "Pondering.", "start should render requested thinking label");
+	assert(renderedMessages.at(-1) === "Pondering", "start should render requested thinking label");
 	controller.setState("running");
-	assert(renderedMessages.at(-1) === "Executing.", "setState should render running label");
+	assert(renderedMessages.at(-1) === "Executing", "setState should render running label");
 	controller.stop();
 	controller.dispose();
 	console.log("loader render smoke ok");

@@ -174,6 +174,7 @@ export default function (pi: ExtensionAPI) {
 		workingStateForAssistantMessageForCurrentSession = modules.workingStateForAssistantMessage;
 		setAssistantUpdateRenderRequesterForCurrentSession = modules.setAssistantUpdateRenderRequester;
 		modules.installCompactToolSpacing();
+		modules.installWorkingLoaderAlignment();
 		modules.installDefaultBadge();
 		modules.installQuickEditRenderer(ToolExecutionComponent);
 		modules.installBuiltinToolRenderers(ToolExecutionComponent);

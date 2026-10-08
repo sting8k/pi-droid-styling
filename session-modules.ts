@@ -27,6 +27,7 @@ export { recordToolCallTimingStart, recordToolCallTimingEnd } from "./tool-tags/
 export { installQuickEditRenderer } from "./tool-tags/quick-edit.js";
 export { installResumeToolRefresh } from "./tool-tags/resume-tool-refresh.js";
 export { createWorkingLoaderController, workingStateForAssistantMessage } from "./tool-tags/loader-accent.js";
+export { installWorkingLoaderAlignment } from "./tool-tags/loader-align.js";
 export { installTuiPadding } from "./tui-padding.js";
 export { getFooterStatusLine, getFooterTokenUsageLine, installFooterStatsPatch } from "./footer-patch.js";
 export { installPiTasksWidgetStyling } from "./widgets/pi-tasks-widget.js";
