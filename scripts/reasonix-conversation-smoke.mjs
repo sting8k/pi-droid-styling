@@ -368,7 +368,7 @@ const { renderBashCall } = await importBuilt("tool-tags/bash.js");
 
 setPresentationStyle("reasonix");
 const reasonixBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
-assert(reasonixBashCall[0]?.startsWith("✓ Bash npm test") && !reasonixBashCall[0]?.includes("$"), "reasonix Bash tool call should place the command directly after the tool name");
+assert(reasonixBashCall[0]?.startsWith("● Bash npm test") && !reasonixBashCall[0]?.includes("$"), "reasonix Bash tool call should place the command directly after the tool name");
 
 const realDateNow = Date.now;
 const reasonixSpinnerFrames = ["◐", "◓", "◑", "◒"];
@@ -387,7 +387,7 @@ try {
 	const partialToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { state: partialToolState }).render(80).map(stripAnsi);
 	assert(partialToolCall[0]?.startsWith("◓") && !partialToolCall[0]?.includes("●") && !partialToolCall[0]?.includes("•"), "reasonix partial tool call should animate through the same spinner");
 	const successToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"]).render(80).map(stripAnsi);
-	assert(successToolCall[0]?.startsWith("✓") && !reasonixSpinnerFrames.some((frame) => successToolCall[0]?.startsWith(frame)), "reasonix success tool call should stay a static check");
+	assert(successToolCall[0]?.startsWith("●") && !reasonixSpinnerFrames.some((frame) => successToolCall[0]?.startsWith(frame)), "reasonix success tool call should stay a static filled circle");
 	const errorToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi);
 	assert(errorToolCall[0]?.startsWith("✗") && !reasonixSpinnerFrames.some((frame) => errorToolCall[0]?.startsWith(frame)), "reasonix error tool call should stay a static error");
 	const overlapToolCall = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true, isPending: true }).render(80).map(stripAnsi);
@@ -404,7 +404,7 @@ renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated
 const compactTool = renderCompactBoxedToolCall(activeTheme, "Read", "src/config.ts", { state: toolState });
 const compactToolLines = compactTool.render(80).map(stripAnsi);
 assert(compactToolLines.length === 1, "reasonix compact tools should keep Droid's single-row collapsed contract");
-assert(compactToolLines[0]?.startsWith("✓") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts") && compactToolLines[0]?.includes("◷"), "reasonix compact row should retain status, tool name, subject, and metrics");
+assert(compactToolLines[0]?.startsWith("●") && compactToolLines[0]?.includes("Read") && compactToolLines[0]?.includes("src/config.ts") && compactToolLines[0]?.includes("◷"), "reasonix compact row should retain status, tool name, subject, and metrics");
 assert(compactToolLines[0]?.indexOf("Read") === 2, "reasonix tool names should share the user/assistant content column");
 assert(!compactToolLines[0]?.includes("└─"), "reasonix compact tools should not create a nested metrics row");
 const nonCompactState = {};
@@ -460,7 +460,7 @@ const bashLongCallRaw = renderBoxedToolCall(activeTheme, "Bash", ["srcwalk show 
 const bashLongCall = bashLongCallRaw.map(stripAnsi);
 assert(bashLongCall.length === 3, "reasonix long bash call should wrap across three rows");
 assert(bashLongCall.every((line) => line.length <= 64), "reasonix long bash rows should each stay within the 80% cap");
-assert(bashLongCall[0]?.startsWith("✓ Bash ") && bashLongCall[0]?.indexOf("srcwalk") === 7, "reasonix bash detail should begin at visible column 7 after the marker");
+assert(bashLongCall[0]?.startsWith("● Bash ") && bashLongCall[0]?.indexOf("srcwalk") === 7, "reasonix bash detail should begin at visible column 7 after the marker");
 assert(bashLongCall.slice(1).every((line) => line[2] === "│"), "reasonix bash continuation rows should put the vertical connector at visible index 2");
 assert(bashLongCall.slice(1).every((line) => line.indexOf("x") === 7), "reasonix bash continuation payload should align at visible column 7");
 

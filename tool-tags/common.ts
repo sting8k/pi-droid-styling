@@ -549,7 +549,7 @@ function renderReasonixToolRow(
 		const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
 			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
-			const marker = isError ? "✗" : options.isPending || isPartial ? reasonixPendingMarker() : "✓";
+			const marker = isError ? "✗" : options.isPending || isPartial ? reasonixPendingMarker() : "●";
 			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
 			const rowWidth = getReasonixCollapsedRowWidth(width);
 			const markerTitle = `${theme.fg(markerColor, marker)} ${title}`;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.17.0 - 2026-10-08
+
+### Changed
+- The working loader is calmer. The spinner is now a hollow `○` that slowly fades from the theme's `accent` color toward `dim` and back (about 2.4 seconds per breath) instead of a rotating braille glyph. The label (`Working`, `Thinking`, `Answering`, `Cooking`, or your `customWorkingMessage`) has a soft highlight sweeping across it instead of animated `.` `..` `...` dots.
+- Under the reasonix layout, a finished tool row starts with `●` instead of `✓`, so a row goes `◐◓◑◒` while running and fills to `●` when done. Failed rows still show `✗`. The boxed layout is unchanged.
+
 ## 2.16.0 - 2026-10-02
 
 ### Added
