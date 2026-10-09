@@ -15,7 +15,7 @@
 ### Fixed
 - Streaming a long answer no longer starves the rest of the UI, which could show as a stuttering spinner, text appearing in chunks and laggy keystrokes. Every 33 ms reveal step re-measured the whole answer, about 37 ms of CPU per step for a 20,000-character answer, and a 50,000-character answer did not finish revealing within 20 seconds. A step now costs under 1 ms at both sizes.
 - The config file is written atomically, so a crash or two Pi sessions starting at the same moment can no longer leave a half-written `pi-droid-styling.json`, which was then ignored and reset every option to its default.
-- Breaking the config file while Pi is running, for example with a typo while editing it, no longer resets every option to its default. The last valid settings stay in effect, the file is left untouched, and the footer shows a line naming the problem the next time you send a prompt.
+- Breaking the config file while Pi is running, for example with a typo while editing it, no longer resets every option to its default. The last valid settings stay in effect, the file is left untouched, and the footer shows a line naming the problem the next time you send a prompt. The line goes away at the first prompt after the file parses again.
 - The terminal background that is set to match the theme (OSC 11) is now also reset when Pi exits without a normal session shutdown, such as after an uncaught error, instead of leaving the terminal tinted.
 - A tool whose name matches an inherited JavaScript property (`constructor`, `toString`, `valueOf`, ...) is no longer mistaken for a built-in tool. It keeps its own call and result rendering instead of falling back to Pi's plain one.
 
