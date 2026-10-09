@@ -262,6 +262,7 @@ export default function (pi: ExtensionAPI) {
 
 		modules.setDefaultBadgeTheme(sessionUi.theme);
 		modules.setToolSpacingTheme(sessionUi.theme);
+		modules.setToolGroupTheme(sessionUi.theme);
 		modules.setCoreMessageBlockTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {

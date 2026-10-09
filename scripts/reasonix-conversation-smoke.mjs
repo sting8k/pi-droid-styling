@@ -74,6 +74,8 @@ declare const process: any;
 		join(repoRoot, "tool-tags", "quick-edit.ts"),
 		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
 		join(repoRoot, "tool-tags", "loader-align.ts"),
+		join(repoRoot, "tool-tags", "tool-groups.ts"),
+		join(repoRoot, "performance", "virtualize-chat.ts"),
 	], { cwd: repoRoot, encoding: "utf8" });
 	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
 }
@@ -420,6 +422,43 @@ setPresentationStyle("claudecode");
 	assert(ccLong.slice(1).every((line) => line[2] === "│" && line.indexOf("x") === "● Bash(".length), "claudecode continuation should hang at the first arg column");
 	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
 	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
+}
+{
+	const { setToolGroupTheme } = await importBuilt("tool-tags/tool-groups.js");
+	const { virtualizeChatContainerInstance } = await importBuilt("performance/virtualize-chat.js");
+	setToolGroupTheme(activeTheme);
+	const stub = (lines, fields) => ({ ...fields, render: () => lines.slice() });
+	const tool = (name, fields = {}) => stub(["", `TOOLROW ${name}`], { toolName: name, toolCallId: `id-${name}`, result: { content: [] }, isPartial: false, expanded: false, ...fields });
+	const assistant = (content, label) => stub([`ASSISTANT ${label}`], { lastMessage: { role: "assistant", content } });
+	const chatOf = (children) => {
+		const chat = { children, addChild(child) { this.children.push(child); }, clear() { this.children = []; }, render() { return []; } };
+		virtualizeChatContainerInstance(chat, 0);
+		return (width = 100) => chat.render(width).map(stripAnsi);
+	};
+	const toolOnly = (withThought) => assistant([...(withThought ? [{ type: "thinking", thinking: "plan" }] : []), { type: "toolCall", id: "x", name: "read", arguments: {} }], "toolonly");
+	const lead = assistant([{ type: "text", text: "Let me check." }, { type: "toolCall", id: "a", name: "read", arguments: {} }], "lead");
+	const final = assistant([{ type: "text", text: "Done." }], "final");
+
+	setPresentationStyle("claudecode");
+	const folded = chatOf([lead, tool("Read"), toolOnly(true), tool("Bash"), final])();
+	assert(folded.includes("● Done(2 tool calls · 1 thought)"), `claudecode should fold a tool run into one Done row: ${JSON.stringify(folded)}`);
+	assert(folded.includes("ASSISTANT lead") && folded.includes("ASSISTANT final"), "assistant turns with answer text must stay outside the group");
+	assert(!folded.some((line) => line.startsWith("TOOLROW") || line === "ASSISTANT toolonly"), "folded members must not render their own rows");
+
+	const running = chatOf([tool("Read"), tool("Bash", { result: undefined })])();
+	assert(running.includes("● Running(2 tool calls · Bash)"), `a run with an unfinished tool should read Running with the active tool: ${JSON.stringify(running)}`);
+	const failed = chatOf([tool("Read", { result: { isError: true } }), tool("Bash")])();
+	assert(failed.includes("● Done(2 tool calls · 1 failed)"), `failed tools should be counted: ${JSON.stringify(failed)}`);
+	const expanded = chatOf([tool("Read", { expanded: true }), tool("Bash", { expanded: true })])();
+	assert(expanded.includes("TOOLROW Read") && expanded.includes("TOOLROW Bash") && !expanded.some((line) => line.includes("Done(")), "Ctrl+O (expanded tools) should show every member");
+	const single = chatOf([lead, tool("Read"), final])();
+	assert(single.includes("TOOLROW Read") && !single.some((line) => line.includes("Done(")), "a single tool call should keep its own row");
+	const split = chatOf([tool("Read"), assistant([{ type: "text", text: "mid" }], "mid"), tool("Bash")])();
+	assert(split.includes("TOOLROW Read") && split.includes("TOOLROW Bash"), "answer text between tools must break the run");
+
+	setPresentationStyle("reasonix");
+	const reasonixChat = chatOf([tool("Read"), tool("Bash")])();
+	assert(reasonixChat.includes("TOOLROW Read") && !reasonixChat.some((line) => line.includes("Done(")), "reasonix must not fold tool runs");
 }
 setPresentationStyle("droid");
 const droidBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);

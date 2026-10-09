@@ -8,6 +8,7 @@
  */
 
 import { profileCount, profileSample } from "./profiler.js";
+import { renderChatChildren } from "../tool-tags/tool-groups.js";
 
 interface AnyComponent {
 	render(width: number): string[];
@@ -227,21 +228,14 @@ export function virtualizeChatContainerInstance(
 
 		if (tail === 0 || hidden === 0) {
 			profileCount("chat.virtualize.render.full");
-			const lines: string[] = [];
-			for (let i = 0; i < total; i++) {
-				const cl = children[i].render(width);
-				for (let j = 0; j < cl.length; j++) lines.push(cl[j]);
-			}
-			return lines;
+			return renderChatChildren(children, width);
 		}
 
 		profileCount("chat.virtualize.render.capped");
 		const indicator = `\x1b[2m  ··· ${hidden} older messages hidden ···\x1b[0m`;
 		const lines: string[] = [indicator, ""];
-		for (let i = 0; i < total; i++) {
-			const cl = children[i].render(width);
-			for (let j = 0; j < cl.length; j++) lines.push(cl[j]);
-		}
+		const childLines = renderChatChildren(children, width);
+		for (let j = 0; j < childLines.length; j++) lines.push(childLines[j]);
 		return lines;
 	};
 }
