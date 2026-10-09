@@ -581,11 +581,13 @@ function renderReasonixToolRow(
 				? detailRows.map((row) => toSingleRenderLine(row).trim()).filter((row) => stripAnsi(row).length > 0).join(" ")
 				: detail;
 		}
-		// Claude Code rows always put the result on its own `└` line, never inline.
+		// Claude Code rows always put the result on its own `└` line, never inline, and keep
+		// the call itself on one row truncated with `…` (pi-pretty-tui), never wrapped.
 		const inlineFooter = options.inlineFooter && !claudeCode;
+		const maxRows = claudeCode ? 1 : options.maxRows ?? 1;
 		let rows: string[];
-		if ((options.maxRows ?? 1) > 1) {
-			rows = renderReasonixWrappedToolRows(theme, markerTitle, detailText, pending, rowWidth, options.maxRows ?? 1, separator);
+		if (maxRows > 1) {
+			rows = renderReasonixWrappedToolRows(theme, markerTitle, detailText, pending, rowWidth, maxRows, separator);
 		} else {
 			const headerText = toSingleRenderLine(`${markerTitle}${detailText ? `${separator}${detailText}` : ""}${pending}`);
 			const header = inlineFooter && compactFooter

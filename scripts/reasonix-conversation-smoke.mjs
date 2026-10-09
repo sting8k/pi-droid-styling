@@ -418,8 +418,9 @@ setPresentationStyle("claudecode");
 	const ccMulti = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a.ts", query: "x" }, activeTheme)).render(80).map(stripAnsi)[0];
 	assert(ccMulti?.startsWith("● Tool(") && ccMulti.includes(" · ") && ccMulti.endsWith(")"), `claudecode multi-param call should join args with · inside parens, got ${JSON.stringify(ccMulti)}`);
 	const ccLong = renderBoxedToolCall(activeTheme, "Bash", ["echo " + "x".repeat(300)]).render(80).map(stripAnsi);
-	assert(ccLong.length === 3 && ccLong.every((line) => line.length <= 64), "claudecode long call should wrap within three rows at the 80% cap");
-	assert(ccLong.slice(1).every((line) => line[2] === "│" && line.indexOf("x") === "● Bash(".length), "claudecode continuation should hang at the first arg column");
+	assert(ccLong.length === 1 && ccLong[0].length <= 64 && ccLong[0].startsWith("● Bash(echo x") && ccLong[0].endsWith(" …"), `claudecode long call should stay on one row truncated at the 80% cap: ${JSON.stringify(ccLong)}`);
+	const ccManyParams = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a".repeat(60), summary: "b".repeat(200), facts: "c".repeat(200) }, activeTheme)).render(80).map(stripAnsi);
+	assert(ccManyParams.length === 1 && ccManyParams[0].endsWith(" …"), `claudecode many-param call should stay on one row: ${JSON.stringify(ccManyParams)}`);
 	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
 	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
 }
