@@ -9,7 +9,7 @@ import {
   ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 
-import { assertConfigValid, getConfigIssue, loadConfig } from "./config.js";
+import { getConfigIssue, loadConfig } from "./config.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { recordToolCallTimingEnd, recordToolCallTimingStart } from "./tool-tags/elapsed.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
@@ -65,8 +65,16 @@ function flushProfile(reason: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	// Fail the extension load on an unparsable config, before anything is patched: Pi reports the error and keeps its stock UI.
-	assertConfigValid();
+	// An unparsable config at startup makes this extension inert: Pi starts with its stock UI and one status line says why.
+	// Never throw here: a throwing extension factory aborts Pi's startup.
+	loadConfig();
+	const startupConfigIssue = getConfigIssue();
+	if (startupConfigIssue) {
+		pi.on("session_start", (_event, ctx) => {
+			ctx.ui.setStatus?.("pi-droid-styling", `${startupConfigIssue}; styling is off until you fix the file and restart Pi.`);
+		});
+		return;
+	}
 	registerCompanionThemes(pi, InteractiveMode);
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -95,7 +103,8 @@ export default function (pi: ExtensionAPI) {
 	// Surface a config that broke mid-session through Pi's status channel (never from a render path).
 	const reportConfigIssue = (ui: { setStatus?: (key: string, text: string | undefined) => void }) => {
 		loadConfig();
-		ui.setStatus?.("pi-droid-styling", getConfigIssue());
+		const issue = getConfigIssue();
+		ui.setStatus?.("pi-droid-styling", issue && `${issue}; using the last valid settings.`);
 	};
 
 	pi.on("before_agent_start", (_event, ctx) => {

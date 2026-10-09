@@ -326,22 +326,9 @@ function describeInvalidJson(error: SyntaxError): string {
 }
 
 // Why the live file is being ignored right now (undefined while it parses). Set by loadConfig,
-// so callers read it from event handlers instead of render paths.
+// so callers read it from event handlers instead of render paths. Callers append what that means for them.
 export function getConfigIssue(): string | undefined {
 	return configIssue;
-}
-
-// Startup check: a config that exists but does not parse fails the extension load.
-// A missing file is the normal first run and is scaffolded by loadConfig.
-export function assertConfigValid(): void {
-	if (!existsSync(CONFIG_PATH)) return;
-	try {
-		JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-	} catch (error) {
-		if (error instanceof SyntaxError) {
-			throw new Error(`${describeInvalidJson(error)}. Fix the file or delete it to get defaults.`);
-		}
-	}
 }
 
 export function loadConfig(): DroidStylingConfig {
@@ -373,7 +360,7 @@ export function loadConfig(): DroidStylingConfig {
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			// A typo mid-session must not reset every option: keep the last good config and the file as is.
-			configIssue = `${describeInvalidJson(error)}; using the last valid settings.`;
+			configIssue = describeInvalidJson(error);
 		} else {
 			cached = defaultConfig();
 		}

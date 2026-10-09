@@ -189,7 +189,7 @@ await runConfigSmoke("inputBox missing style field", '{"inputBox":{}}', ({ confi
 });
 
 // A config that breaks after a good load keeps the last good values and is never touched;
-// at startup it throws; a missing file is still scaffolded.
+// a missing file is still scaffolded.
 async function runBrokenConfigSmoke() {
 	const homeDir = join(workDir, "home-broken-config");
 	const configDir = join(homeDir, ".pi", "agent");
@@ -202,8 +202,7 @@ async function runBrokenConfigSmoke() {
 	writeInitialConfig(homeDir, '{"inputBox":{"style":"line"}}');
 	process.env.HOME = homeDir;
 	process.env.USERPROFILE = homeDir;
-	const { loadConfig, assertConfigValid, getConfigIssue } = await importBuilt("config.js");
-	assertConfigValid();
+	const { loadConfig, getConfigIssue } = await importBuilt("config.js");
 	assert(loadConfig().inputBox.style === "line" && getConfigIssue() === undefined, "valid config should load without an issue");
 
 	// loadConfig re-stats at most once per second: move the clock instead of sleeping.
@@ -218,9 +217,6 @@ async function runBrokenConfigSmoke() {
 		assert(getConfigIssue()?.includes(configPath), "config issue should name the file");
 		assert(readFileSync(configPath, "utf8") === broken, "broken config must not be rewritten");
 		assert(readdirSync(configDir).join() === "pi-droid-styling.json", "broken config must not be renamed or shadowed");
-		let thrown;
-		try { assertConfigValid(); } catch (error) { thrown = error; }
-		assert(thrown instanceof Error && thrown.message.includes(configPath), "assertConfigValid should throw naming the file");
 
 		writeAt('{"inputBox":{"style":"solid"}}', 10000);
 		clock += 2000;
@@ -234,8 +230,7 @@ async function runBrokenConfigSmoke() {
 	process.env.HOME = freshHome;
 	process.env.USERPROFILE = freshHome;
 	const fresh = await importBuilt("config.js");
-	fresh.assertConfigValid();
-	assert(fresh.loadConfig().inputBox.style === "auto", "missing config should serve defaults");
+	assert(fresh.loadConfig().inputBox.style === "auto" && fresh.getConfigIssue() === undefined, "missing config should serve defaults without an issue");
 	assert(existsSync(join(freshHome, ".pi", "agent", "pi-droid-styling.json")), "missing config should be scaffolded");
 	console.log("config smoke ok: broken json keeps last good config");
 }
