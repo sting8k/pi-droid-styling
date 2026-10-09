@@ -315,7 +315,6 @@ export default function (pi: ExtensionAPI) {
 				fetchBranch,
 				() => tracker.getWordsPerSecond(),
 				modules.getFooterStatusLine,
-				() => "footer",
 				userZoneStyle,
 				config.inputBox.style,
 				modules.getFooterTokenUsageLine,

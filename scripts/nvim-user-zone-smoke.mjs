@@ -227,7 +227,6 @@ async function runNvimStatuslineSmoke() {
 			options.branch ?? branch,
 			speed,
 			options.footer ?? (() => ""),
-			() => "footer",
 			resolveUserZoneStyle("nvim"),
 			options.inputBoxStyle,
 			options.tokenUsage ?? tokenUsage,

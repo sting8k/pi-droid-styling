@@ -208,7 +208,6 @@ async function runBoxEditorSmoke() {
 				branch,
 				speed,
 				footerProvider,
-				() => "footer",
 				resolveUserZoneStyle(styleName),
 				options.inputBoxStyle,
 			);
