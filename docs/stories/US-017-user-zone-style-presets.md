@@ -25,42 +25,39 @@ The supported preset set is intentionally small:
 - `README.md`
 - `docs/product/overview.md`
 - `docs/ARCHITECTURE.md`
-- `docs/stories/US-005-fixed-user-zone.md`
 - `docs/stories/US-016-theme-extra-token-colors.md`
 
 ## Acceptance Criteria
 
 - `userZoneStyle` defaults to `"gemini"` when missing and is scaffolded in `~/.pi/agent/pi-droid-styling.json`; invalid/non-string values fall back to `"droid"` as the safe legacy layout.
 - Supported styles are the code-defined preset set `droid`, `gemini`, and `cli-dock`; invalid or non-string values normalize to `droid`.
-- The `droid` style preserves the existing BoxEditor/user zone layout and fixed-zone shell affordances when selected explicitly or used as the invalid-value fallback.
+- The `droid` style preserves the existing BoxEditor/user zone layout when selected explicitly or used as the invalid-value fallback.
 - The `cli-dock` style renders a Droid CLI-like normal-mode prompt dock with a true outlined prompt box, `›` prompt glyph, placeholder text for empty input, and a split status row, inset to the input-text column, with dynamic model/context/branch/project metadata on the left and MCP/footer status on the right while leaving the default `gemini` and legacy `droid` layouts untouched.
 - `inputBox.style` defaults to `"auto"`, is scaffolded/backfilled under `inputBox`, accepts only `auto`, `halfblock`, `line`, and `solid`, and invalid values normalize/backfill to `auto`.
 - Explicit `inputBox.style` values apply to the active preset instead of being Gemini-only; `auto` keeps the active preset default, `line` keeps droid's native/default input presentation, and `cli-dock` keeps its outline box regardless of a legacy `line` override.
 - The `gemini` style changes user-zone presentation in normal mode because BoxEditor consumes the resolved style directly.
 - The `gemini` style renders a top status row without `[stat]` or `Tokens:`, places compact `provider model · level` model info before the unchanged token stats with a theme-muted pipe separator, puts git branch/status on the right of that row, renders an always-visible divider before the status row using the same theme border token as tool-call boxes, keeps a borderless `❯` input row with Gemini-style half-line background padding and without full blank padding rows, and renders dim wrapped workspace/status footer values without column labels.
 - The `gemini` style does not render sandbox or quota columns.
-- When `fixedUserZone` is enabled, the same resolved style is also passed into fixed-zone composition for visual shell affordances such as scroll hints and scrollbar visibility/colors; gemini scroll hints are right-aligned on the footer/status row instead of the input row.
 - Theme format does not change; colors continue to come from the active Pi theme and existing theme extras/semantic tokens.
-- `index.ts` remains lifecycle wiring only: it loads config, resolves one style object, and passes it into editor/fixed-zone installers.
+- `index.ts` remains lifecycle wiring only: it loads config, resolves one style object, and passes it into the editor installer.
 
 ## Design Notes
 
 - Commands: `npm run test:user-zone-style`.
-- Queries: semantic search for config, BoxEditor constructor/render flow, fixed-zone compositor options, and working loader ownership.
+- Queries: semantic search for config, BoxEditor constructor/render flow, and working loader ownership.
 - API: `userZoneStyle`; built-in style names are code-defined. `inputBox.style` is a generic preset override for the input frame only.
 - Tables: none.
-- Domain rules: `fixedUserZone` remains terminal scroll isolation; `userZoneStyle` is visual presentation; theme extras remain skin/colors.
-- UI surfaces: BoxEditor input/status/footer area in all modes, fixed-zone footer/status scroll hint and scrollbar affordances when fixed mode is active.
+- Domain rules: `userZoneStyle` is visual presentation; theme extras remain skin/colors.
+- UI surfaces: BoxEditor input/status/footer area.
 - Loader row ownership stays with Pi/working-message UI; the gemini preset keeps its divider inside BoxEditor without loader-state wiring.
 
 ## Validation
 
 | Layer | Expected proof |
 | --- | --- |
-| Unit | Focused smoke for default gemini scaffold, valid gemini and cli-dock preservation, invalid droid fallback/backfill, `inputBox.style` scaffold/backfill, style resolver identity, BoxEditor droid/gemini/cli-dock render markers and omissions, explicit gemini line-frame override, droid native line semantics, droid halfblock override, and fixed-zone style options. |
-| Integration | Focused TypeScript compile for config, user-zone style module, BoxEditor, fixed-zone installer/compositor, and index; `git diff --check`; semantic review. |
-| E2E | Manual Pi smoke recommended for both presets in fixed and non-fixed modes. |
-| Platform | Terminal visual/manual smoke still recommended because fixed-zone shell uses compositor painting. |
+| Unit | Focused smoke for default gemini scaffold, valid gemini and cli-dock preservation, invalid droid fallback/backfill, `inputBox.style` scaffold/backfill, style resolver identity, BoxEditor droid/gemini/cli-dock render markers and omissions, explicit gemini line-frame override, droid native line semantics, and droid halfblock override. |
+| Integration | Focused TypeScript compile for config, user-zone style module, BoxEditor, and index; `git diff --check`; semantic review. |
+| E2E | Manual Pi smoke recommended for the presets. |
 | Release | Harness trace records changed files and verification. |
 
 ## Harness Delta
