@@ -10,7 +10,7 @@
   - Two or more consecutive tool calls fold under one `● Running(…)` row while any is still running and `● Done(3 tool calls · 1 thought)` after that. Each call is listed under it as a smaller `•` row in a `├─` / `└─` tree. `Ctrl+O` shows every call in full, and a single tool call keeps its own row.
 
 ### Changed
-- An existing `pi-droid-styling.json` that is not valid JSON now stops the extension from loading at startup, instead of styling the session with default settings. Pi shows a startup error naming the file and the JSON error position and keeps running with its own stock UI, so you can still fix the file from inside Pi. Fix or delete the file to get the styling back; a missing file is still created with defaults on first run.
+- An existing `pi-droid-styling.json` that is not valid JSON at startup now turns the styling off instead of silently applying default settings. Pi starts normally with its own look, and the footer names the file and the JSON error position. Fix or delete the file and restart Pi to get the styling back; the styling stays off for the rest of that run. A missing file is still created with defaults on first run.
 
 ### Fixed
 - Streaming a long answer no longer starves the rest of the UI, which could show as a stuttering spinner, text appearing in chunks and laggy keystrokes. Every 33 ms reveal step re-measured the whole answer, about 37 ms of CPU per step for a 20,000-character answer, and a 50,000-character answer did not finish revealing within 20 seconds. A step now costs under 1 ms at both sizes.
