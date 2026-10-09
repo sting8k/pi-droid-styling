@@ -9,6 +9,7 @@ import {
   ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 
+import { assertConfigValid, getConfigIssue, loadConfig } from "./config.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { recordToolCallTimingEnd, recordToolCallTimingStart } from "./tool-tags/elapsed.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
@@ -64,6 +65,8 @@ function flushProfile(reason: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	// Fail the extension load on an unparsable config, before anything is patched: Pi reports the error and keeps its stock UI.
+	assertConfigValid();
 	registerCompanionThemes(pi, InteractiveMode);
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -89,7 +92,14 @@ export default function (pi: ExtensionAPI) {
 	const isStaleContextError = (error: unknown): boolean =>
 		error instanceof Error && error.message.includes("stale after session replacement or reload");
 
-	pi.on("before_agent_start", () => {
+	// Surface a config that broke mid-session through Pi's status channel (never from a render path).
+	const reportConfigIssue = (ui: { setStatus?: (key: string, text: string | undefined) => void }) => {
+		loadConfig();
+		ui.setStatus?.("pi-droid-styling", getConfigIssue());
+	};
+
+	pi.on("before_agent_start", (_event, ctx) => {
+		reportConfigIssue(ctx.ui);
 		workingLoaderController?.setState("working");
 	});
 
@@ -202,6 +212,7 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = modules.loadConfig();
+		reportConfigIssue(sessionUi);
 		modules.setPresentationStyle(config.presentationStyle);
 		currentVisibleChatTail = config.visibleChatTail;
 		await ensureToolCallTagsRegistered();

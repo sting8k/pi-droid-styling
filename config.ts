@@ -101,6 +101,7 @@ const DEPRECATED_CONFIG_KEYS = ["fixedUserZoneMouseScroll", "fixedUserZoneSideba
 let cached: DroidStylingConfig = defaultConfig();
 let cachedMtimeMs = -1;
 let lastStatAt = 0;
+let configIssue: string | undefined;
 const STAT_INTERVAL_MS = 1000;
 
 function defaultCustomWorkingMessage(): CustomWorkingMessageConfig {
@@ -291,16 +292,6 @@ function scaffoldIfMissing(): void {
 	}
 }
 
-// Keep the user's unparsable file next to a fresh default one instead of ignoring it forever.
-function moveBrokenConfigAside(): void {
-	try {
-		renameSync(CONFIG_PATH, `${CONFIG_PATH}.invalid-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-	} catch {
-		// ignore — keep serving defaults
-	}
-	scaffoldIfMissing();
-}
-
 function backfillMissingDefaults(raw: unknown): void {
 	if (!isRecord(raw)) return;
 	const config = raw as Record<string, unknown>;
@@ -330,6 +321,29 @@ function backfillMissingDefaults(raw: unknown): void {
 	}
 }
 
+function describeInvalidJson(error: SyntaxError): string {
+	return `pi-droid-styling: ${CONFIG_PATH} is not valid JSON (${error.message})`;
+}
+
+// Why the live file is being ignored right now (undefined while it parses). Set by loadConfig,
+// so callers read it from event handlers instead of render paths.
+export function getConfigIssue(): string | undefined {
+	return configIssue;
+}
+
+// Startup check: a config that exists but does not parse fails the extension load.
+// A missing file is the normal first run and is scaffolded by loadConfig.
+export function assertConfigValid(): void {
+	if (!existsSync(CONFIG_PATH)) return;
+	try {
+		JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			throw new Error(`${describeInvalidJson(error)}. Fix the file or delete it to get defaults.`);
+		}
+	}
+}
+
 export function loadConfig(): DroidStylingConfig {
 	const now = Date.now();
 	if (now - lastStatAt < STAT_INTERVAL_MS) return cached;
@@ -355,9 +369,14 @@ export function loadConfig(): DroidStylingConfig {
 		const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		cached = normalizeConfig(raw);
 		backfillMissingDefaults(raw);
+		configIssue = undefined;
 	} catch (error) {
-		cached = defaultConfig();
-		if (error instanceof SyntaxError) moveBrokenConfigAside();
+		if (error instanceof SyntaxError) {
+			// A typo mid-session must not reset every option: keep the last good config and the file as is.
+			configIssue = `${describeInvalidJson(error)}; using the last valid settings.`;
+		} else {
+			cached = defaultConfig();
+		}
 	}
 	return cached;
 }
