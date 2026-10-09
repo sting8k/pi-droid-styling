@@ -29,8 +29,7 @@ function buildDividerLine(width: number): string {
 	return activeTheme ? fgHex(activeTheme, color, line) : line;
 }
 
-function composePrefixedLine(line: string): string {
-	const prefix = buildPrefixSegment();
+function composePrefixedLine(line: string, prefix = buildPrefixSegment()): string {
 	const design = getPresentationDesign();
 	if (design.compactLayout) {
 		if (!line) return `${prefix}${design.markerGap}`;
@@ -103,9 +102,9 @@ function trimLabelProgressDots(label: string): string {
 }
 
 /** The collapsed label is a short upright tag: bold `thinkingText`, never italic, the same under every preset. */
-function styleCollapsedLabel(label: string): string {
+function styleCollapsedLabel(label: string, color = "thinkingText"): string {
 	if (typeof activeTheme?.fg !== "function") return label;
-	const colored = activeTheme.fg("thinkingText", label);
+	const colored = activeTheme.fg(color, label);
 	return typeof activeTheme.bold === "function" ? activeTheme.bold(colored) : `\x1b[1m${colored}\x1b[22m`;
 }
 
@@ -124,11 +123,50 @@ function buildCollapsedThinkingRow(run: AssistantContentRun, label: string, live
 }
 
 type ThinkingChildContext = {
+	component: any;
 	run: AssistantContentRun;
 	hidden: boolean;
 	live: boolean;
 	label: string | null;
 };
+
+// claudecode: a hidden thinking run reads like a tool row — `● thinking` while live, `● thought`
+// once settled — with the `●` taking the assistant marker column so it lines up with tool dots.
+const CLAUDE_THOUGHT_ROWS = Symbol("pi-droid-styling.claudecode-thought-rows");
+
+function usesClaudeThinkingRow(context: ThinkingChildContext | undefined): boolean {
+	return Boolean(context && context.hidden && context.label !== null && getPresentationDesign().toolCallStyle === "claudecode");
+}
+
+function claudeThinkingMarker(): string {
+	return typeof activeTheme?.fg === "function" ? activeTheme.fg("mdLink", "●") : "●";
+}
+
+/** ` <label>[ <tail>]` with Pi core's 1-column Text padding; the tail follows `collapsedThinking`. */
+function buildClaudeThinkingRow(run: AssistantContentRun, live: boolean, bodyWidth: number): string {
+	const label = live ? "thinking" : "thought";
+	const row = ` ${styleCollapsedLabel(label, "text")}`;
+	if (loadConfig().collapsedThinking !== "tail") return row;
+	const tailBudget = bodyWidth - safeVisibleWidth(label) - 2;
+	if (tailBudget < COLLAPSED_TAIL_MIN_BUDGET) return row;
+	const tail = trimTailWhitespaceAfterEllipsis(safeTakeTailToWidth(lastThinkingTailLine(run.text), tailBudget));
+	if (!tail) return row;
+	const tailColor = getThemeExtra(activeTheme, "collapsedThinkingTailColor");
+	return `${row} ${activeTheme ? fgHex(activeTheme, tailColor, tail) : tail}`;
+}
+
+/** Puts the thought marker in the assistant marker column of a row rendered with 1-column padding. */
+function markClaudeThinkingRow(line: string, width: number): string {
+	const marked = composePrefixedLine(dropLeadingColumns(line, 1), claudeThinkingMarker());
+	return safeVisibleWidth(marked) > width ? safeTruncateToWidth(marked, width, "") : marked;
+}
+
+function isClaudeThinkingRow(component: any, line: string): boolean {
+	const rows: Set<string> | undefined = component?.[CLAUDE_THOUGHT_ROWS];
+	if (!rows || rows.size === 0) return false;
+	for (const row of rows) if (line.endsWith(row)) return true;
+	return false;
+}
 
 function isCollapsedTailEnabled(context: ThinkingChildContext | undefined): context is ThinkingChildContext & { label: string } {
 	return Boolean(context && context.hidden && context.label !== null && loadConfig().collapsedThinking === "tail");
@@ -141,6 +179,14 @@ function makeThinkingChildPlain(child: any, mode: "plain" | "gutter" | "prefix",
 	const baseRender = child.render.bind(child);
 	child.render = (width: number): string[] => {
 		const bodyWidth = mode === "plain" ? width : getAssistantBodyWidth(width);
+		if (context && usesClaudeThinkingRow(context)) {
+			const row = buildClaudeThinkingRow(context.run, context.live, bodyWidth);
+			if (mode !== "plain") return [markClaudeThinkingRow(row, width)];
+			// Plain rows are marked by the message render, which owns the marker column there.
+			const rows: Set<string> | undefined = context.component?.[CLAUDE_THOUGHT_ROWS];
+			rows?.add(row);
+			return [row];
+		}
 		const collapsedRow = isCollapsedTailEnabled(context)
 			? buildCollapsedThinkingRow(context.run, context.label, context.live, bodyWidth)
 			: null;
@@ -175,7 +221,7 @@ function patchThinkingChildren(component: any, runs: AssistantContentRun[], mess
 		const override = typeof visibilityOverrides?.get === "function" ? visibilityOverrides.get(thinkingOrdinal) : undefined;
 		const hidden = override ?? Boolean(component?.hideThinkingBlock);
 		const live = liveStream && !hasBlockAfter(content, run.endBlockIndex);
-		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { run, hidden, live, label });
+		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { component, run, hidden, live, label });
 		if (mode === "prefix") turnMarkerUsed = true;
 		thinkingOrdinal++;
 	}
@@ -188,12 +234,14 @@ function isToolCallOnlyAssistantMessage(message: any): boolean {
 	return contentBlocks.some((contentBlock) => contentBlock?.type === "toolCall");
 }
 
-function alignContinuationLines(lines: string[], targetIndex: number): void {
+function alignContinuationLines(lines: string[], targetIndex: number, isMarkedRow: (line: string) => boolean = () => false): void {
 	const indent = " ".repeat(safeVisibleWidth(composePrefixedLine("")));
 	for (let i = targetIndex + 1; i < lines.length; i++) {
 		const line = lines[i] ?? "";
 		if (stripAnsi(line).trim().length === 0) continue;
-		lines[i] = `${indent}${dropLeadingColumns(line, 1)}`;
+		lines[i] = isMarkedRow(line)
+			? composePrefixedLine(dropLeadingColumns(line, 1), claudeThinkingMarker())
+			: `${indent}${dropLeadingColumns(line, 1)}`;
 	}
 }
 
@@ -272,6 +320,7 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 
 	proto.render = function patchedAssistantMessageRender(width: number): string[] {
 		if (width <= 0) return baseRender.call(this, width);
+		this[CLAUDE_THOUGHT_ROWS] = new Set<string>();
 		const lines = baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width));
 		const design = getPresentationDesign();
 
@@ -311,8 +360,9 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 
 		const line = output[targetIndex] ?? "";
 		const remainder = dropLeadingColumns(line, 1); // drop the 1-column padding, keep content
-		output[targetIndex] = composePrefixedLine(remainder);
-		alignContinuationLines(output, targetIndex);
+		const isThoughtRow = (candidate: string) => isClaudeThinkingRow(this, candidate);
+		output[targetIndex] = isThoughtRow(line) ? composePrefixedLine(remainder, claudeThinkingMarker()) : composePrefixedLine(remainder);
+		alignContinuationLines(output, targetIndex, isThoughtRow);
 
 		const result = output.map((renderedLine) =>
 			safeVisibleWidth(renderedLine) > width ? safeTruncateToWidth(renderedLine, width, "") : renderedLine,

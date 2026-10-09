@@ -574,6 +574,48 @@ check("P5 narrow widths fall back to the label row", () => {
 	setConfig({ collapsedThinking: "tail" });
 });
 
+check("claudecode thought rows share the tool-dot column", () => {
+	const baseFg = activeTheme.fg;
+	const fgInputs = [];
+	activeTheme.fg = (color, text) => {
+		fgInputs.push({ color, text });
+		return baseFg(color, text);
+	};
+	state.setPresentationStyle("claudecode");
+	try {
+		setConfig({ collapsedThinking: "tail" });
+		const live = hiddenOnly(LIVE_TAIL);
+		const liveRow = stripAnsi(rowWith(withActiveStream(live, () => new AssistantMessageComponent(live, true).render(120)), "thinking") ?? "");
+		assert(liveRow.startsWith("● thinking ") && liveRow.includes(LIVE_TAIL) && !liveRow.includes("▸"), `live row should read \`● thinking <tail>\`: ${JSON.stringify(liveRow)}`);
+		assert(fgInputs.some(({ color, text }) => color === "mdLink" && text === "●"), "thought dot should use mdLink");
+		assert(fgInputs.some(({ color, text }) => color === "text" && text === "thinking"), "thought label should use the text color like tool names");
+
+		const settledLines = new AssistantMessageComponent(hiddenOnly(LIVE_TAIL), true).render(120).map(stripAnsi);
+		assert(settledLines.some((line) => line.startsWith("● thought ") && !line.includes("·")), `settled row should read \`● thought <tail>\`: ${JSON.stringify(settledLines)}`);
+
+		const mixed = { role: "assistant", content: [
+			{ type: "thinking", thinking: "first" }, { type: "text", text: "MIDANSWER" },
+			{ type: "thinking", thinking: "second" }, { type: "text", text: "FINALANSWER" },
+		] };
+		const mixedLines = new AssistantMessageComponent(mixed, true).render(80).map(stripAnsi);
+		assert(mixedLines.filter((line) => line.startsWith("● thought ")).length === 2, `leading and gutter thought rows should both own the marker column: ${JSON.stringify(mixedLines)}`);
+		const afterText = { role: "assistant", content: [{ type: "text", text: "LEADTEXT" }, { type: "thinking", thinking: "later" }, { type: "toolCall", id: "1", name: "read", arguments: {} }] };
+		const afterTextLines = new AssistantMessageComponent(afterText, true).render(80).map(stripAnsi);
+		assert(afterTextLines.some((line) => line.startsWith("● thought later")), `a thought after text should still sit in the marker column: ${JSON.stringify(afterTextLines)}`);
+
+		setConfig({ collapsedThinking: "label" });
+		const labelLines = new AssistantMessageComponent(hiddenOnly(LIVE_TAIL), true).render(120).map(stripAnsi);
+		assert(labelLines.some((line) => line.trimEnd() === "● thought"), `label mode should keep only \`● thought\`: ${JSON.stringify(labelLines)}`);
+
+		const visibleLines = new AssistantMessageComponent(hiddenOnly(LIVE_TAIL), false).render(120).map(stripAnsi);
+		assert(!visibleLines.some((line) => line.includes("● thought")), "expanded thinking should keep its full text, not the thought row");
+	} finally {
+		activeTheme.fg = baseFg;
+		state.setPresentationStyle("reasonix");
+		setConfig({ collapsedThinking: "tail" });
+	}
+});
+
 check("safeTakeTailToWidth unit behaviour", () => {
 	assert(budget.safeTakeTailToWidth("abcdef", 10) === "abcdef", "short text should pass through");
 	assert(budget.safeTakeTailToWidth("abcdefgh", 4) === "…fgh", "long text should keep the last columns with an ellipsis");
