@@ -497,7 +497,7 @@ async function runVirtualizeChatSmoke() {
 	assert(assignMode.chatContainer.children.length === 2, `assign-mode second rebuild should keep tail=2, got ${assignMode.chatContainer.children.length}`);
 	assert(!assignLines.split("\n").includes("live"), `assign-mode rebuild should drop prior live child: ${assignLines}`);
 
-	// Direct instance helper is the same path fixed-zone host marking uses
+	// Direct instance helper: virtualizes an already-built chat container given its TUI root
 	const directChat = {
 		children: [component("x1"), component("x2"), component("x3")],
 		addChild(child) { this.children.push(child); },

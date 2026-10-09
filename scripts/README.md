@@ -28,7 +28,7 @@ Run the synthetic render profiling bench with:
 npm run profile:render
 ```
 
-It enables `PI_DROID_PROFILE=1`, writes JSONL to `/tmp` unless `PI_DROID_PROFILE_OUT` is set, and exercises sidebar rendering, fixed-zone compositor repaint, render throttle, assistant/tool debounce, and git status refresh. It reports memory, CPU delta, event-loop utilization, and CPU/string/layout evidence; terminal emulator paint cost still needs a real Pi TUI capture.
+It enables `PI_DROID_PROFILE=1`, writes JSONL to `/tmp` unless `PI_DROID_PROFILE_OUT` is set, and exercises render throttle, assistant/tool debounce, and git status refresh. It reports memory, CPU delta, event-loop utilization, and CPU/string/layout evidence; terminal emulator paint cost still needs a real Pi TUI capture.
 
 ## Render Frame Log Debug
 
