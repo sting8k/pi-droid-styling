@@ -16,7 +16,7 @@ let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
 
 function buildPrefixSegment(): string {
-	const prefix = getThemeExtra(activeTheme, "assistantPrefix");
+	const prefix = getPresentationDesign().assistantMarker ?? getThemeExtra(activeTheme, "assistantPrefix");
 	const color = getThemeExtra(activeTheme, "assistantPrefixColor");
 	return activeTheme ? fgHex(activeTheme, color, prefix) : prefix;
 }

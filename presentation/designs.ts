@@ -19,6 +19,8 @@ export type PresentationDesign = {
 	stripsBackground: boolean;
 	/** Collapsed tool-call row look inside the compact layout. */
 	toolCallStyle: "box" | "reasonix" | "claudecode";
+	/** Fixed assistant turn marker; when unset the theme's `assistantPrefix` extra is used. */
+	assistantMarker?: string;
 };
 
 export const DEFAULT_PRESENTATION_STYLE: PresentationStyleName = "droid";
@@ -27,7 +29,7 @@ const PRESENTATION_DESIGNS: Record<PresentationStyleName, PresentationDesign> = 
 	droid: { name: "droid", compactLayout: false, markerGap: "  ", stripsBackground: false, toolCallStyle: "box" },
 	reasonix: { name: "reasonix", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "reasonix" },
 	// Reasonix conversation layout with Claude Code-style tool rows: `● Name(args)` + `  └ result`.
-	claudecode: { name: "claudecode", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "claudecode" },
+	claudecode: { name: "claudecode", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "claudecode", assistantMarker: "●" },
 };
 
 export function getPresentationDesignFor(style: PresentationStyleName): PresentationDesign {

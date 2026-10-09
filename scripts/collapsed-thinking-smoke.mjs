@@ -607,6 +607,17 @@ check("claudecode thought rows share the tool-dot column", () => {
 		const labelLines = new AssistantMessageComponent(hiddenOnly(LIVE_TAIL), true).render(120).map(stripAnsi);
 		assert(labelLines.some((line) => line.trimEnd() === "● thought"), `label mode should keep only \`● thought\`: ${JSON.stringify(labelLines)}`);
 
+		const diamondThemeFile = join(workDir, "diamond-theme.json");
+		writeFileSync(diamondThemeFile, `${JSON.stringify({ name: "diamond-smoke", vars: {}, extras: { assistantPrefix: "◆" } })}\n`, "utf8");
+		themeExtras.setFullTheme({ ...activeTheme, sourcePath: diamondThemeFile }, true);
+		const answerLines = new AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "ANSWER" }] }, true).render(80).map(stripAnsi);
+		assert(answerLines.some((line) => line.startsWith("● ANSWER")), `claudecode assistant marker should be a fixed ● regardless of the theme prefix: ${JSON.stringify(answerLines)}`);
+		state.setPresentationStyle("reasonix");
+		const reasonixAnswer = new AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "ANSWER" }] }, true).render(80).map(stripAnsi);
+		assert(reasonixAnswer.some((line) => line.startsWith("◆ ANSWER")), `reasonix should keep the theme assistantPrefix: ${JSON.stringify(reasonixAnswer)}`);
+		themeExtras.setFullTheme(activeTheme, true);
+		state.setPresentationStyle("claudecode");
+
 		const visibleLines = new AssistantMessageComponent(hiddenOnly(LIVE_TAIL), false).render(120).map(stripAnsi);
 		assert(!visibleLines.some((line) => line.includes("● thought")), "expanded thinking should keep its full text, not the thought row");
 	} finally {
