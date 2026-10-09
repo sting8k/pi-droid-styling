@@ -449,7 +449,7 @@ setPresentationStyle("claudecode");
 	assert(folded[summaryAt + 4] === "" && folded[summaryAt + 5] === "ASSISTANT final", `the next turn should be separated from the tree by one blank row: ${JSON.stringify(folded)}`);
 	assert(!folded.some((line) => line.startsWith("TOOLROW")), "folded members must not also render at the top level");
 	const multi = chatOf([Object.assign(tool("Read"), { render: () => ["● Read(a)", "  └ 3 lines"] }), Object.assign(tool("Bash"), { render: () => ["● Bash(b)", "  └ ok"] })])();
-	assert(JSON.stringify(multi.slice(-5)) === JSON.stringify(["  ├─ ● Read(a)", "  │    └ 3 lines", "  └─ ● Bash(b)", "       └ ok", ""]), `member continuation rows should keep the tree pipe: ${JSON.stringify(multi)}`);
+	assert(JSON.stringify(multi.slice(-5)) === JSON.stringify(["  ├─ • Read(a)", "  │    └ 3 lines", "  └─ • Bash(b)", "       └ ok", ""]), `member continuation rows should keep the tree pipe: ${JSON.stringify(multi)}`);
 
 	const running = chatOf([tool("Read"), tool("Bash", { result: undefined })])();
 	assert(running.includes("● Running(2 tool calls · Bash)"), `a run with an unfinished tool should read Running with the active tool: ${JSON.stringify(running)}`);

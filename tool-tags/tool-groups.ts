@@ -88,6 +88,13 @@ const TREE_BRANCH = "├─ ";
 const TREE_LAST = "└─ ";
 const TREE_PIPE = "│  ";
 const TREE_INDENT = "  ";
+// Members keep their own status color but use a smaller dot than the group row.
+const MEMBER_MARKER = "●";
+const TREE_MEMBER_MARKER = "•";
+
+function shrinkMemberMarker(line: string): string {
+	return stripAnsi(line).startsWith(MEMBER_MARKER) ? line.replace(MEMBER_MARKER, TREE_MEMBER_MARKER) : line;
+}
 
 /** Each member's own collapsed rows, blank spacers and image payloads dropped, hung from the tree. */
 function renderToolGroupTree(members: any[], width: number): string[] {
@@ -102,7 +109,7 @@ function renderToolGroupTree(members: any[], width: number): string[] {
 		const last = blockIndex === blocks.length - 1;
 		block.forEach((line, lineIndex) => {
 			const guide = lineIndex === 0 ? (last ? TREE_LAST : TREE_BRANCH) : (last ? "   " : TREE_PIPE);
-			lines.push(`${TREE_INDENT}${fg("dim", guide)}${line}`);
+			lines.push(`${TREE_INDENT}${fg("dim", guide)}${lineIndex === 0 ? shrinkMemberMarker(line) : line}`);
 		});
 	});
 	// Members' own spacer rows were dropped above; restore one so the next turn does not touch the tree.
