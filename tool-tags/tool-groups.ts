@@ -96,12 +96,14 @@ function shrinkMemberMarker(line: string): string {
 	return stripAnsi(line).startsWith(MEMBER_MARKER) ? line.replace(MEMBER_MARKER, TREE_MEMBER_MARKER) : line;
 }
 
-/** Each member's own collapsed rows, blank spacers and image payloads dropped, hung from the tree. */
+/**
+ * Each member's own collapsed rows, blank spacers and image payloads dropped, hung from the tree.
+ * Members render at the full chat width, the same width the host renders them at: a narrower
+ * width would make pi-tui's width-keyed Image cache miss on every frame and re-transmit images.
+ */
 function renderToolGroupTree(members: any[], width: number): string[] {
-	const guideWidth = TREE_INDENT.length + TREE_BRANCH.length;
-	const childWidth = Math.max(1, width - guideWidth);
 	const blocks = members
-		.map((member) => (member.render(childWidth) as string[])
+		.map((member) => (member.render(width) as string[])
 			.filter((line) => !isImageRenderLine(line) && stripAnsi(line).trim().length > 0))
 		.filter((block) => block.length > 0);
 	const lines: string[] = [];
@@ -109,7 +111,8 @@ function renderToolGroupTree(members: any[], width: number): string[] {
 		const last = blockIndex === blocks.length - 1;
 		block.forEach((line, lineIndex) => {
 			const guide = lineIndex === 0 ? (last ? TREE_LAST : TREE_BRANCH) : (last ? "   " : TREE_PIPE);
-			lines.push(`${TREE_INDENT}${fg("dim", guide)}${lineIndex === 0 ? shrinkMemberMarker(line) : line}`);
+			const row = `${TREE_INDENT}${fg("dim", guide)}${lineIndex === 0 ? shrinkMemberMarker(line) : line}`;
+			lines.push(safeVisibleWidth(row) > width ? safeTruncateToWidth(row, width, "") : row);
 		});
 	});
 	// Members' own spacer rows were dropped above; restore one so the next turn does not touch the tree.
