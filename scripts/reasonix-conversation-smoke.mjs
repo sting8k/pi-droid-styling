@@ -425,6 +425,8 @@ setPresentationStyle("claudecode");
 	assert(ccNormalized[1] === "  └ ◷ 0.14s  · ✎ ~5 words", `claudecode result row must keep a single └ connector: ${JSON.stringify(ccNormalized)}`);
 	const ccBareFooter = normalizeReasonixToolLines(["● Read(a.ts)", "◷ 0.14s"], 100, false).map(stripAnsi);
 	assert(ccBareFooter[1] === "  └ ◷ 0.14s", `claudecode should add its own └ connector to a bare footer: ${JSON.stringify(ccBareFooter)}`);
+	const ccBody = renderBoxedToolResult(activeTheme, () => [activeTheme.fg("dim", "↳ Read 1 image."), "↳ second row keeps its arrow"]).render(80).map(stripAnsi);
+	assert(ccBody[0] === "  └ Read 1 image." && ccBody[1]?.trim() === "↳ second row keeps its arrow", `the first body row must not stack ↳ after └: ${JSON.stringify(ccBody)}`);
 	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
 	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
 }

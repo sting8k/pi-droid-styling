@@ -619,6 +619,14 @@ function renderReasonixToolRow(
 	};
 }
 
+// Renderers lead their summary with `↳`, which reads as a second connector right after the
+// compact layout's `└` / `└─ `; drop it from the first body row only.
+const LEADING_RESULT_ARROW = /^((?:\x1b\[[0-9;]*m)*)↳ /;
+
+function dropLeadingResultArrow(line: string): string {
+	return line.replace(LEADING_RESULT_ARROW, "$1");
+}
+
 function renderReasonixToolBody(
 	theme: any,
 	body: BoxedResultBody,
@@ -640,7 +648,9 @@ function renderReasonixToolBody(
 			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
 			const rendered = [
-				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
+				...limited.map((line, index) => index === 0
+					? `${firstPrefix}${truncateReasonixLine(theme, dropLeadingResultArrow(line), bodyWidth)}`
+					: `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
 				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
 			];
 			cache = { width, lines: rendered };
