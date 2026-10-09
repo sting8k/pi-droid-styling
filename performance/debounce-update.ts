@@ -35,7 +35,11 @@ const STREAM_FLUSH_MS = 33;
 const TARGET_CATCHUP_FRAMES = 8;
 const MIN_REVEAL_CHARS = 12;
 const MAX_REVEAL_CHARS = 120;
-/** Lookahead past the reveal target so the segmenter sees the whole cluster that straddles it. */
+/**
+ * Lookahead past the reveal target so the segmenter sees the whole cluster that straddles it.
+ * shortcut: a cluster longer than (target - from) + 32 code units can be cut at the window edge
+ * for one tick; no stall, the next tick recovers.
+ */
 const BOUNDARY_WINDOW_CHARS = 32;
 
 const TIMER_KEY = Symbol("presentation-timer");
@@ -71,7 +75,7 @@ type TextEntry = {
  */
 function snapToClusterBoundary(text: string, from: number, target: number): number {
 	if (!graphemeSegmenter) {
-		// No Segmenter: only avoid splitting a surrogate pair.
+		// shortcut: without Segmenter only surrogate pairs are protected; a ZWJ or combining cluster can be split.
 		const end = text.charCodeAt(target) >= 0xdc00 && text.charCodeAt(target) <= 0xdfff ? target - 1 : target;
 		return end > from ? end : from + (text.codePointAt(from)! > 0xffff ? 2 : 1);
 	}
