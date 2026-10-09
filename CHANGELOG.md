@@ -10,11 +10,12 @@
   - Two or more consecutive tool calls fold under one `● Running(…)` row while any is still running and `● Done(3 tool calls · 1 thought)` after that. Each call is listed under it as a smaller `•` row in a `├─` / `└─` tree. `Ctrl+O` shows every call in full, and a single tool call keeps its own row.
 
 ### Changed
-- A config file that is not valid JSON is now kept instead of silently ignored. `pi-droid-styling.json` is renamed to `pi-droid-styling.json.invalid-<timestamp>` next to it and a fresh default file is written, so your edits stay in the renamed copy. Defaults apply in the meantime, as before.
+- An existing `pi-droid-styling.json` that is not valid JSON now stops the extension from loading at startup, instead of styling the session with default settings. Pi shows a startup error naming the file and the JSON error position and keeps running with its own stock UI, so you can still fix the file from inside Pi. Fix or delete the file to get the styling back; a missing file is still created with defaults on first run.
 
 ### Fixed
 - Streaming a long answer no longer starves the rest of the UI, which could show as a stuttering spinner, text appearing in chunks and laggy keystrokes. Every 33 ms reveal step re-measured the whole answer, about 37 ms of CPU per step for a 20,000-character answer, and a 50,000-character answer did not finish revealing within 20 seconds. A step now costs under 1 ms at both sizes.
 - The config file is written atomically, so a crash or two Pi sessions starting at the same moment can no longer leave a half-written `pi-droid-styling.json`, which was then ignored and reset every option to its default.
+- Breaking the config file while Pi is running, for example with a typo while editing it, no longer resets every option to its default. The last valid settings stay in effect, the file is left untouched, and the footer shows a line naming the problem the next time you send a prompt.
 - The terminal background that is set to match the theme (OSC 11) is now also reset when Pi exits without a normal session shutdown, such as after an uncaught error, instead of leaving the terminal tinted.
 - A tool whose name matches an inherited JavaScript property (`constructor`, `toString`, `valueOf`, ...) is no longer mistaken for a built-in tool. It keeps its own call and result rendering instead of falling back to Pi's plain one.
 
