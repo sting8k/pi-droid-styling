@@ -1,5 +1,5 @@
 import { stripAnsi } from "../theme/ansi.js";
-import { boxedToolWidthKey, clearCompactBoxedFooter, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, resolveRelativePath, stripTrailingNotice } from "./common.js";
+import { clearCompactBoxedFooter, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, resolveRelativePath, stripTrailingNotice } from "./common.js";
 import { markToolCallExecutionStarted } from "./elapsed.js";
 
 function parseWriteSummary(output: string): string | undefined {
@@ -32,7 +32,6 @@ export function renderWriteCall(args: any, theme: any, context: any) {
 	const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
 	const detail = relPath || "(unknown)";
 	return renderCompactBoxedToolCall(theme, "Write", `${theme.fg("dim", "Path: ")}${detail}`, {
-		widthKey: boxedToolWidthKey("Write", detail),
 		state: context?.state,
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
@@ -43,17 +42,9 @@ export function renderWriteCall(args: any, theme: any, context: any) {
 export function renderWriteResult(result: any, options, theme: any, context: any) {
 	clearCompactBoxedFooter(context?.state);
 	const output = getTextOutput(result);
-	const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
-	const cwd = typeof context?.cwd === "string" ? context.cwd : process.cwd();
-	const relPath = rawPath ? resolveRelativePath(rawPath, cwd) : "";
-	const detail = relPath || "(unknown)";
-	const widthKey = boxedToolWidthKey("Write", detail);
-	const referenceLines = [`Path: ${detail}`];
 
 	if (result.isError) {
 		return renderBoxedToolResult(theme, () => [theme.fg("error", stripAnsi(output).trim() || "Error")], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 			isError: true,
 		});
@@ -66,8 +57,6 @@ export function renderWriteResult(result: any, options, theme: any, context: any
 	if (lineCount > 0) {
 		const summary = `↳ Wrote ${lineCount} ${lineCount === 1 ? "line" : "lines"}.`;
 		return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 		});
 	}
@@ -75,8 +64,6 @@ export function renderWriteResult(result: any, options, theme: any, context: any
 	const summary = parseWriteSummary(output);
 	if (summary) {
 		return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 		});
 	}
@@ -84,8 +71,6 @@ export function renderWriteResult(result: any, options, theme: any, context: any
 	const normalized = stripTrailingNotice(stripAnsi(output)).trim();
 	const fallback = normalized ? `↳ ${normalized}` : "↳ Wrote file.";
 	return renderBoxedToolResult(theme, () => [theme.fg("dim", fallback)], {
-		widthKey,
-		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
 	});
 }

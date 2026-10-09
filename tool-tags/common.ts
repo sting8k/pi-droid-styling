@@ -131,7 +131,6 @@ const BOX_HORIZONTAL = "─";
 const BOX_VERTICAL = "│";
 const BOX_SIDE_PADDING = 2;
 const BOX_MIN_WIDTH = 12;
-const BOX_WIDTH_CACHE = new Map<string, number>();
 const COMPACT_TOOL_NAME_WIDTH = safeVisibleWidth("Search");
 const COMPACT_FOOTER_ELAPSED_WIDTH = 8;
 const COMPACT_FOOTER_EXTRA_WIDTH = 8;
@@ -143,22 +142,6 @@ export function boxWidth(width: number): number {
 
 export function boxInnerWidth(width: number): number {
 	return Math.max(1, boxWidth(width) - 2 - BOX_SIDE_PADDING * 2);
-}
-
-function tightBoxWidth(availableWidth: number, contentLines: string[], labelWidths: number[] = [], widthKey?: string): number {
-	const contentWidth = contentLines.reduce((max, line) => Math.max(max, safeVisibleWidth(line)), 0);
-	const labelWidth = labelWidths.reduce((max, width) => Math.max(max, width), 0);
-	const neededWidth = Math.max(BOX_MIN_WIDTH, contentWidth + 2 + BOX_SIDE_PADDING * 2, labelWidth + 2 + BOX_SIDE_PADDING * 2);
-	const measuredWidth = Math.min(boxWidth(availableWidth), neededWidth);
-	if (!widthKey) return measuredWidth;
-	const cachedWidth = BOX_WIDTH_CACHE.get(widthKey) ?? 0;
-	const nextWidth = Math.min(boxWidth(availableWidth), Math.max(cachedWidth, measuredWidth));
-	BOX_WIDTH_CACHE.set(widthKey, nextWidth);
-	return nextWidth;
-}
-
-export function boxedToolWidthKey(toolName: string, detail: string): string {
-	return `${toolName}:${detail}`;
 }
 
 export function formatToolName(toolName: string): string {
@@ -671,7 +654,7 @@ export function renderBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLines: string[],
-	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLines[0] ?? "", {
 		...options,
@@ -721,7 +704,7 @@ export function renderCompactBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLine: string,
-	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLine, { ...options, inlineFooter: true });
 	return {
@@ -759,7 +742,7 @@ type BoxedResultBody = Component | ((contentWidth: number) => string[]);
 export function renderBoxedToolResult(
 	theme: any,
 	body: BoxedResultBody,
-	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
+	options: { footerLines?: string[]; emptyText?: string; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolBody(theme, body, options);
 	let cache: RenderLinesCache | null = null;
