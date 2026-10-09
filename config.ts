@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
 import { DEFAULT_PRESENTATION_STYLE, isPresentationStyleName, normalizePresentationStyleName, type PresentationStyleName } from "./presentation/designs.js";
@@ -268,8 +268,17 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 // crashes mid-write never leave a half-written config behind.
 function writeConfigAtomic(config: unknown): void {
 	const tmpPath = `${CONFIG_PATH}.tmp-${process.pid}`;
-	writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
-	renameSync(tmpPath, CONFIG_PATH);
+	try {
+		writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+		renameSync(tmpPath, CONFIG_PATH);
+	} catch (error) {
+		try {
+			unlinkSync(tmpPath);
+		} catch {
+			// ignore — nothing to clean up
+		}
+		throw error;
+	}
 }
 
 function scaffoldIfMissing(): void {

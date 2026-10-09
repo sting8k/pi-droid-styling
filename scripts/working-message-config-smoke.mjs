@@ -26,6 +26,7 @@ function prepareWorkDir() {
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
 	export const readFileSync: (path: string, encoding: string) => string;
 	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 	export const statSync: (path: string) => { mtimeMs: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 }

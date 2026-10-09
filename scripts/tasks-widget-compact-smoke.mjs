@@ -37,6 +37,7 @@ function prepareWorkDir() {
 	// Keep in step with config.ts's fs imports: this script is isolated from Node's types (it declares
 	// process itself), so this block is the only source for "fs" here; elsewhere it just augments @types/node.
 	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 }
 declare module "node:fs" {
 	export const existsSync: (path: string) => boolean;
@@ -46,6 +47,7 @@ declare module "node:fs" {
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 	export const appendFileSync: (path: string, data: string, encoding?: string) => void;
 	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 }
 declare module "path" {
 	export const dirname: (path: string) => string;
