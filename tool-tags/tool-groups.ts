@@ -1,11 +1,13 @@
 import { getPresentationDesign } from "../presentation/state.js";
 import { getReasonixCollapsedRowWidth } from "../presentation/reasonix-layout.js";
-import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { isImageRenderLine, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
+import { stripAnsi } from "../theme/ansi.js";
 
 /**
  * claudecode: fold a run of consecutive tool calls (and the text-less assistant
- * turns that issued them) into one `● Running(…)` / `● Done(…)` summary row, the
- * pi-pretty-tui activity group without its mouse/session machinery.
+ * turns that issued them) under one `● Running(…)` / `● Done(…)` summary row with
+ * each member's collapsed rows hanging from a `├─` / `└─` tree, the pi-pretty-tui
+ * activity group without its mouse/session machinery.
  *
  * Grouping is a pure projection of the chat children at render time: nothing is
  * persisted, Ctrl+O (any member expanded) shows every member as before, and a
@@ -82,6 +84,32 @@ export function renderToolGroupSummary(members: any[], width: number): string[] 
 	return ["", fitted];
 }
 
+const TREE_BRANCH = "├─ ";
+const TREE_LAST = "└─ ";
+const TREE_PIPE = "│  ";
+const TREE_INDENT = "  ";
+
+/** Each member's own collapsed rows, blank spacers and image payloads dropped, hung from the tree. */
+function renderToolGroupTree(members: any[], width: number): string[] {
+	const guideWidth = TREE_INDENT.length + TREE_BRANCH.length;
+	const childWidth = Math.max(1, width - guideWidth);
+	const blocks = members
+		.map((member) => (member.render(childWidth) as string[])
+			.filter((line) => !isImageRenderLine(line) && stripAnsi(line).trim().length > 0))
+		.filter((block) => block.length > 0);
+	const lines: string[] = [];
+	blocks.forEach((block, blockIndex) => {
+		const last = blockIndex === blocks.length - 1;
+		block.forEach((line, lineIndex) => {
+			const guide = lineIndex === 0 ? (last ? TREE_LAST : TREE_BRANCH) : (last ? "   " : TREE_PIPE);
+			lines.push(`${TREE_INDENT}${fg("dim", guide)}${line}`);
+		});
+	});
+	// Members' own spacer rows were dropped above; restore one so the next turn does not touch the tree.
+	if (lines.length > 0) lines.push("");
+	return lines;
+}
+
 function pushLines(target: string[], lines: string[]): void {
 	for (let i = 0; i < lines.length; i++) target.push(lines[i]);
 }
@@ -105,6 +133,7 @@ export function renderChatChildren(children: any[], width: number): string[] {
 			for (const member of members) pushLines(lines, member.render(width));
 		} else {
 			pushLines(lines, renderToolGroupSummary(members, width));
+			pushLines(lines, renderToolGroupTree(members, width));
 		}
 		index = end;
 	}
