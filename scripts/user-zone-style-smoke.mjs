@@ -96,7 +96,6 @@ function compileChangedSurface() {
 		"user-zone/designs.ts",
 		"config.ts",
 		"editor/box-editor.ts",
-		"fixed-zone/cluster.ts",
 		"index.ts",
 	], { cwd: repoRoot, encoding: "utf8" });
 	if (result.status !== 0) {
@@ -151,7 +150,6 @@ async function runStyleResolverSmoke() {
 const INPUT_BACKGROUND_ANSI = "\x1b[48;2;100;107;56m";
 const INPUT_BACKGROUND_AS_FG_ANSI = "\x1b[38;2;100;107;56m";
 const WRONG_INPUT_BACKGROUND_FG_ANSI = "\x1b[38;2;200;10;10m";
-const CURSOR_MARKER = "\x1b_pi:c\x07";
 
 function makeTheme() {
 	return {
@@ -311,34 +309,6 @@ async function runBoxEditorSmoke() {
 	console.log("box editor style smoke ok");
 }
 
-async function runFixedZoneSmoke() {
-	const { renderFixedUserZoneCluster } = await importBuilt("fixed-zone/cluster.js");
-	const directGeminiCluster = renderFixedUserZoneCluster([{
-		target: { render: () => [] },
-		render: (width) => [
-			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
-			`${"workspace".padEnd(width - "ready".length)}ready`,
-		],
-	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
-	assert(!stripAnsi(directGeminiCluster.lines[0] ?? "").includes("^Alt"), "gemini shortcut hint should not stay inside input row");
-	const directFooterLine = stripAnsi(directGeminiCluster.lines[1] ?? "").trimEnd();
-	assert(directFooterLine.endsWith("ready  [^Alt T TOP]"), "gemini shortcut hint should append after footer status without replacing it");
-
-	const workspaceOnlyCluster = renderFixedUserZoneCluster([{
-		target: { render: () => [] },
-		render: (width) => [
-			`${CURSOR_MARKER}${INPUT_BACKGROUND_ANSI}${"editor".padEnd(width)}\x1b[49m`,
-			"workspace".padEnd(width),
-		],
-	}], 60, 4, { scrollHint: "^Alt T TOP", hintRightInset: 0, scrollHintPlacement: "lastLine" });
-	const workspaceOnlyFooter = stripAnsi(workspaceOnlyCluster.lines[1] ?? "");
-	const workspaceEnd = workspaceOnlyFooter.indexOf("workspace") + "workspace".length;
-	const hintStart = workspaceOnlyFooter.indexOf("[^Alt T TOP]");
-	assert(hintStart > workspaceEnd + 2, "gemini shortcut hint should stay right-aligned when footer status is empty");
-	assert(workspaceOnlyFooter.endsWith("[^Alt T TOP]"), "gemini shortcut hint should not leave trailing spacing");
-	console.log("fixed-zone style smoke ok");
-}
-
 prepareWorkDir();
 compileChangedSurface();
 
@@ -381,5 +351,4 @@ await runConfigSmoke("legacy fixedUserZone removed", '{"fixedUserZone":true,"use
 
 await runStyleResolverSmoke();
 await runBoxEditorSmoke();
-await runFixedZoneSmoke();
 console.log("user-zone style smoke ok");
