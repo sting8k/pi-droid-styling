@@ -21,15 +21,17 @@ export type PresentationDesign = {
 	toolCallStyle: "box" | "reasonix" | "claudecode";
 	/** Fixed assistant turn marker; when unset the theme's `assistantPrefix` extra is used. */
 	assistantMarker?: string;
+	/** Connector that hangs a tool's result/output rows under its call row. */
+	resultConnector: string;
 };
 
 export const DEFAULT_PRESENTATION_STYLE: PresentationStyleName = "droid";
 
 const PRESENTATION_DESIGNS: Record<PresentationStyleName, PresentationDesign> = {
-	droid: { name: "droid", compactLayout: false, markerGap: "  ", stripsBackground: false, toolCallStyle: "box" },
-	reasonix: { name: "reasonix", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "reasonix" },
+	droid: { name: "droid", compactLayout: false, markerGap: "  ", stripsBackground: false, toolCallStyle: "box", resultConnector: "└─ " },
+	reasonix: { name: "reasonix", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "reasonix", resultConnector: "└─ " },
 	// Reasonix conversation layout with Claude Code-style tool rows: `● Name(args)` + `  └ result`.
-	claudecode: { name: "claudecode", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "claudecode", assistantMarker: "●" },
+	claudecode: { name: "claudecode", compactLayout: true, markerGap: REASONIX_MARKER_GAP, stripsBackground: true, toolCallStyle: "claudecode", assistantMarker: "●", resultConnector: "└ " },
 };
 
 export function getPresentationDesignFor(style: PresentationStyleName): PresentationDesign {

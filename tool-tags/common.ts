@@ -596,7 +596,7 @@ function renderReasonixToolRow(
 			rows = [header];
 		}
 		if (!compactFooter || inlineFooter) return rows;
-		const connector = claudeCode ? "└ " : "└─ ";
+		const connector = getPresentationDesign().resultConnector;
 		const footerWidth = getToolBodyWidth(rowWidth, 2 + connector.length);
 		const footerText = toSingleRenderLine(compactFooter);
 		const footer = `  ${theme.fg("dim", connector)}${truncateReasonixLine(theme, footerText, footerWidth)}`;
@@ -632,7 +632,7 @@ function renderReasonixToolBody(
 		},
 		render(width: number): string[] {
 			if (cache?.width === width) return cache.lines;
-			const firstPrefix = `  ${theme.fg("dim", "└─ ")}`;
+			const firstPrefix = `  ${theme.fg("dim", getPresentationDesign().resultConnector)}`;
 			const contentIndent = safeVisibleWidth(firstPrefix);
 			const continuationPrefix = " ".repeat(contentIndent);
 			const bodyWidth = getToolBodyWidth(width, contentIndent);

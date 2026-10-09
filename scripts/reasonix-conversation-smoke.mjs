@@ -421,6 +421,10 @@ setPresentationStyle("claudecode");
 	assert(ccLong.length === 1 && ccLong[0].length <= 64 && ccLong[0].startsWith("● Bash(echo x") && ccLong[0].endsWith(" …"), `claudecode long call should stay on one row truncated at the 80% cap: ${JSON.stringify(ccLong)}`);
 	const ccManyParams = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a".repeat(60), summary: "b".repeat(200), facts: "c".repeat(200) }, activeTheme)).render(80).map(stripAnsi);
 	assert(ccManyParams.length === 1 && ccManyParams[0].endsWith(" …"), `claudecode many-param call should stay on one row: ${JSON.stringify(ccManyParams)}`);
+	const ccNormalized = normalizeReasonixToolLines(["", "● Read(a.ts)", "  └ ◷ 0.14s  · ✎ ~5 words"], 100, false).map(stripAnsi);
+	assert(ccNormalized[1] === "  └ ◷ 0.14s  · ✎ ~5 words", `claudecode result row must keep a single └ connector: ${JSON.stringify(ccNormalized)}`);
+	const ccBareFooter = normalizeReasonixToolLines(["● Read(a.ts)", "◷ 0.14s"], 100, false).map(stripAnsi);
+	assert(ccBareFooter[1] === "  └ ◷ 0.14s", `claudecode should add its own └ connector to a bare footer: ${JSON.stringify(ccBareFooter)}`);
 	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
 	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
 }
@@ -450,6 +454,11 @@ setPresentationStyle("claudecode");
 	assert(!folded.some((line) => line.startsWith("TOOLROW")), "folded members must not also render at the top level");
 	const multi = chatOf([Object.assign(tool("Read"), { render: () => ["● Read(a)", "  └ 3 lines"] }), Object.assign(tool("Bash"), { render: () => ["● Bash(b)", "  └ ok"] })])();
 	assert(JSON.stringify(multi.slice(-5)) === JSON.stringify(["  ├─ • Read(a)", "  │    └ 3 lines", "  └─ • Bash(b)", "       └ ok", ""]), `member continuation rows should keep the tree pipe: ${JSON.stringify(multi)}`);
+
+	const renderWidths = [];
+	const spied = (name) => Object.assign(tool(name), { render: (width) => { renderWidths.push(width); return ["", `TOOLROW ${name}`]; } });
+	chatOf([spied("Read"), spied("Bash")])(120);
+	assert(renderWidths.length === 2 && renderWidths.every((width) => width === 120), `tree members must render at the chat width so width-keyed image caches stay warm: ${JSON.stringify(renderWidths)}`);
 
 	const running = chatOf([tool("Read"), tool("Bash", { result: undefined })])();
 	assert(running.includes("● Running(2 tool calls · Bash)"), `a run with an unfinished tool should read Running with the active tool: ${JSON.stringify(running)}`);
