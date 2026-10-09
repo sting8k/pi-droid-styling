@@ -8,7 +8,6 @@
     "*.ts",
     "core/",
     "editor/",
-    "fixed-zone/",
     "messages/",
     "performance/",
     "presentation/",

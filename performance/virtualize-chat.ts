@@ -3,8 +3,10 @@
  * chat container tree, park older ones in an overflow buffer, and show a
  * compact indicator line when history is hidden.
  *
- * Structural pruning is required for fixed-zone: its windowed root walk can
- * recurse into Container children and bypass a render-only cap.
+ * Structural pruning (not a render-only cap) is required: parked children must
+ * leave the live children array, because renderChatChildren in
+ * tool-tags/tool-groups.ts projects over it, while tool-tags/resume-tool-refresh.ts
+ * reads the parked ones back through state.hiddenChildren.
  */
 
 import { profileCount, profileSample } from "./profiler.js";
@@ -45,7 +47,7 @@ function normalizeVisibleTail(value: number): number {
 
 export const VIRTUALIZED_CHAT_PATCHED = Symbol.for("pi-droid-styling.virtualized-chat.patched");
 export const VIRTUALIZED_CHAT_STATE = Symbol.for("pi-droid-styling.virtualized-chat.state");
-/** Marks the TUI root → chat container relationship for fixed-zone lookups. */
+/** Marks the TUI root → chat container relationship so findChatContainer resolves the same container after layout shifts. */
 export const VIRTUALIZED_CHAT_HOST = Symbol.for("pi-droid-styling.virtualized-chat.host-chat");
 
 function isContainerLike(value: unknown): value is AnyContainer {
@@ -110,7 +112,7 @@ export function isPatchedVirtualizedChatContainer(value: unknown): boolean {
 
 /**
  * Move older children out of (or back into) the active children array so every
- * consumer — including fixed-zone window walks — only sees the visible tail.
+ * consumer of the children array only sees the visible tail.
  */
 function syncHiddenChildren(chatContainer: AnyContainer, state: VirtualizedChatState): void {
 	const tail = state.visibleTail;

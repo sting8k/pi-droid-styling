@@ -47,14 +47,6 @@ performance/
     assistant stream state from messages/assistant-streaming-state.ts: only the component attached to
     the live stream is buffered, and its render bypasses the finished cache
 
-fixed-zone/
-  Opt-in terminal compositor for the true fixed user zone
-  - install/dispose lifecycle
-  - terminal split/scroll-region patching
-  - fixed cluster rendering
-  - optional right sidebar rendering for fixed user zone metadata
-  - reserved bottom notice footer rendering for fixed-zone-local feedback
-
 startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
   Focused UI patches/components that are still small enough to stay at root
 ```
@@ -66,14 +58,14 @@ startup-ui.ts, footer-patch.ts, tui-padding.ts, split-diff.ts
 3. Patch installers must be idempotent because sessions and extensions can reload.
    Terminal compositor patches must also restore `terminal.write`, `terminal.rows`, `tui.render`, scroll regions, and input listeners on dispose.
 4. Tool rendering belongs in `tool-tags/` until that domain grows enough to justify subfolders.
-5. Theme and ANSI behavior belongs in `theme/`; row-level background painting uses the shared theme painter; OSC 11 terminal background sync is platform-gated there; component/fixed-zone ownership decides where rows are emitted; performance wrappers belong in `performance/`.
+5. Theme and ANSI behavior belongs in `theme/`; row-level background painting uses the shared theme painter; OSC 11 terminal background sync is platform-gated there; component ownership decides where rows are emitted; performance wrappers belong in `performance/`.
 6. Runtime providers used by UI components should be cheap on render paths and cache background work when needed.
 
 ## Dependency Direction
 
 ```text
 index.ts
-  -> core, editor, fixed-zone, messages, performance, presentation, theme, tool-tags, root UI modules
+  -> core, editor, messages, performance, presentation, theme, tool-tags, root UI modules
 
 editor/messages/tool-tags/root UI modules
   -> theme helpers when they need color or ANSI behavior
