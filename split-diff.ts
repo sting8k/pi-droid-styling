@@ -456,22 +456,23 @@ export function firstText(content: Array<{ type: string; text?: string }>): stri
 	return "";
 }
 
-// ── SplitDiffComponent ─────────────────────────────────────────────
+// ── Shared base ────────────────────────────────────────────────────
+// State, constructor and syntax highlighting common to the split and unified views.
 
-export class SplitDiffComponent implements Component {
-	private cacheWidth?: number;
-	private cacheLines?: string[];
-	private readonly lineNumberWidth: number;
-	private readonly highlightCache = new Map<string, string>();
-	private readonly inlineHighlights = new WeakMap<DiffLine, DiffSpan[]>();
-	private readonly palette: DiffPalette;
-	private readonly containerBgAnsi: string;
+abstract class DiffComponentBase {
+	protected cacheWidth?: number;
+	protected cacheLines?: string[];
+	protected readonly lineNumberWidth: number;
+	protected readonly highlightCache = new Map<string, string>();
+	protected readonly inlineHighlights = new WeakMap<DiffLine, DiffSpan[]>();
+	protected readonly palette: DiffPalette;
+	protected readonly containerBgAnsi: string;
 
 	constructor(
-		private readonly theme: Theme,
-		private readonly rows: SplitDiffRow[],
-		private readonly maxRows: number,
-		private readonly language?: string,
+		protected readonly theme: Theme,
+		protected readonly rows: SplitDiffRow[],
+		protected readonly maxRows: number,
+		protected readonly language?: string,
 	) {
 		let maxDigits = 3;
 		for (const row of rows) {
@@ -490,6 +491,28 @@ export class SplitDiffComponent implements Component {
 		this.containerBgAnsi = theme.getBgAnsi("toolSuccessBg");
 	}
 
+	protected syntaxHighlight(line: string): string {
+		if (!this.language) return stripInlineBreaksPreserveAnsi(line);
+		const safeLine = sanitizeSingleLineText(line);
+		const key = `${this.language}\n${safeLine}`;
+		const cached = this.highlightCache.get(key);
+		if (cached) return cached;
+
+		let highlighted = safeLine;
+		try {
+			highlighted = highlightCode(safeLine, this.language)[0] ?? safeLine;
+			highlighted = stripInlineBreaksPreserveAnsi(highlighted).replace(BG_ANSI_PATTERN, "");
+		} catch {
+			highlighted = safeLine;
+		}
+		this.highlightCache.set(key, highlighted);
+		return highlighted;
+	}
+}
+
+// ── SplitDiffComponent ─────────────────────────────────────────────
+
+export class SplitDiffComponent extends DiffComponentBase implements Component {
 	private getCellLineKind(kind: SplitDiffRow["kind"], side: "left" | "right"): CellLineKind {
 		if (kind === "changed") return side === "left" ? "remove" : "add";
 		if (kind === "removed" && side === "left") return "remove";
@@ -552,24 +575,6 @@ export class SplitDiffComponent implements Component {
 		if (!bg) return padRenderedLineWidth(rendered, columnWidth);
 		rendered = `${bg}${keepBackgroundAcrossResets(rendered, bg)}${this.containerBgAnsi}`;
 		return padRenderedLineWidth(rendered, columnWidth);
-	}
-
-	private syntaxHighlight(line: string): string {
-		if (!this.language) return stripInlineBreaksPreserveAnsi(line);
-		const safeLine = sanitizeSingleLineText(line);
-		const key = `${this.language}\n${safeLine}`;
-		const cached = this.highlightCache.get(key);
-		if (cached) return cached;
-
-		let highlighted = safeLine;
-		try {
-			highlighted = highlightCode(safeLine, this.language)[0] ?? safeLine;
-			highlighted = stripInlineBreaksPreserveAnsi(highlighted).replace(BG_ANSI_PATTERN, "");
-		} catch {
-			highlighted = safeLine;
-		}
-		this.highlightCache.set(key, highlighted);
-		return highlighted;
 	}
 
 	private formatCellLines(
@@ -745,56 +750,7 @@ export function resolveDiffRenderMode(mode: "split" | "unified" | "auto", width:
 // syntax highlighting, and word-level emphasis. Removed lines render
 // before their added counterparts, like a classic unified diff.
 
-export class UnifiedDiffComponent implements Component {
-	private cacheWidth?: number;
-	private cacheLines?: string[];
-	private readonly lineNumberWidth: number;
-	private readonly highlightCache = new Map<string, string>();
-	private readonly inlineHighlights = new WeakMap<DiffLine, DiffSpan[]>();
-	private readonly palette: DiffPalette;
-	private readonly containerBgAnsi: string;
-
-	constructor(
-		private readonly theme: Theme,
-		private readonly rows: SplitDiffRow[],
-		private readonly maxRows: number,
-		private readonly language?: string,
-	) {
-		let maxDigits = 3;
-		for (const row of rows) {
-			const leftDigits = row.left?.lineNumber.trim().length ?? 0;
-			const rightDigits = row.right?.lineNumber.trim().length ?? 0;
-			maxDigits = Math.max(maxDigits, leftDigits, rightDigits);
-
-			if (row.kind === "changed" && row.left && row.right) {
-				const spans = computeInlineDiffSpans(row.left.line, row.right.line);
-				if (spans.left.length > 0) this.inlineHighlights.set(row.left, spans.left);
-				if (spans.right.length > 0) this.inlineHighlights.set(row.right, spans.right);
-			}
-		}
-		this.lineNumberWidth = maxDigits;
-		this.palette = resolveDiffPalette(theme);
-		this.containerBgAnsi = theme.getBgAnsi("toolSuccessBg");
-	}
-
-	private syntaxHighlight(line: string): string {
-		if (!this.language) return stripInlineBreaksPreserveAnsi(line);
-		const safeLine = sanitizeSingleLineText(line);
-		const key = `${this.language}\n${safeLine}`;
-		const cached = this.highlightCache.get(key);
-		if (cached) return cached;
-
-		let highlighted = safeLine;
-		try {
-			highlighted = highlightCode(safeLine, this.language)[0] ?? safeLine;
-			highlighted = stripInlineBreaksPreserveAnsi(highlighted).replace(BG_ANSI_PATTERN, "");
-		} catch {
-			highlighted = safeLine;
-		}
-		this.highlightCache.set(key, highlighted);
-		return highlighted;
-	}
-
+export class UnifiedDiffComponent extends DiffComponentBase implements Component {
 	private formatLine(kind: CellLineKind, line: DiffLine, width: number): string[] {
 		const markerChar = kind === "add" || kind === "remove" ? "▌" : " ";
 		const markerColor = kind === "add" ? "toolDiffAdded" : kind === "remove" ? "toolDiffRemoved" : "borderMuted";
