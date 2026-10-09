@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { homedir } from "os";
 import { DEFAULT_PRESENTATION_STYLE, isPresentationStyleName, normalizePresentationStyleName, type PresentationStyleName } from "./presentation/designs.js";
@@ -264,14 +264,41 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 	};
 }
 
+// Write a sibling temp file, then rename over the live file: concurrent Pi starts and
+// crashes mid-write never leave a half-written config behind.
+function writeConfigAtomic(config: unknown): void {
+	const tmpPath = `${CONFIG_PATH}.tmp-${process.pid}`;
+	try {
+		writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+		renameSync(tmpPath, CONFIG_PATH);
+	} catch (error) {
+		try {
+			unlinkSync(tmpPath);
+		} catch {
+			// ignore — nothing to clean up
+		}
+		throw error;
+	}
+}
+
 function scaffoldIfMissing(): void {
 	if (existsSync(CONFIG_PATH)) return;
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig(), null, 2) + "\n", "utf-8");
+		writeConfigAtomic(defaultConfig());
 	} catch {
 		// ignore — read path will fall back to normalized defaults
 	}
+}
+
+// Keep the user's unparsable file next to a fresh default one instead of ignoring it forever.
+function moveBrokenConfigAside(): void {
+	try {
+		renameSync(CONFIG_PATH, `${CONFIG_PATH}.invalid-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+	} catch {
+		// ignore — keep serving defaults
+	}
+	scaffoldIfMissing();
 }
 
 function backfillMissingDefaults(raw: unknown): void {
@@ -297,7 +324,7 @@ function backfillMissingDefaults(raw: unknown): void {
 	if (backfillDiffMode(config)) changed = true;
 	if (!changed) return;
 	try {
-		writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+		writeConfigAtomic(config);
 	} catch {
 		// ignore — read path will keep using normalized defaults
 	}
@@ -328,8 +355,9 @@ export function loadConfig(): DroidStylingConfig {
 		const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 		cached = normalizeConfig(raw);
 		backfillMissingDefaults(raw);
-	} catch {
+	} catch (error) {
 		cached = defaultConfig();
+		if (error instanceof SyntaxError) moveBrokenConfigAside();
 	}
 	return cached;
 }

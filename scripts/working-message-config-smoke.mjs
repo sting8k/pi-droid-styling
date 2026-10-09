@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,6 +25,8 @@ function prepareWorkDir() {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
 	export const readFileSync: (path: string, encoding: string) => string;
+	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 	export const statSync: (path: string) => { mtimeMs: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 }
@@ -186,6 +188,14 @@ await runConfigSmoke("inputBox missing style field", '{"inputBox":{}}', ({ confi
 	assert(config.inputBox.style === "auto", "missing style field did not normalize to default");
 });
 
+const brokenJson = '{"inputBox":{"style":"line"},}';
+await runConfigSmoke("broken json moved aside", brokenJson, ({ config, raw }) => {
+	const configDir = join(workDir, "home-broken-json-moved-aside", ".pi", "agent");
+	const aside = readdirSync(configDir).filter((name) => name.startsWith("pi-droid-styling.json.invalid-"));
+	assert(aside.length === 1 && readFileSync(join(configDir, aside[0]), "utf8") === `${brokenJson}\n`, "broken config was not preserved aside");
+	assert(raw.customWorkingMessage?.running === "Cooking", "fresh default config was not scaffolded");
+	assert(config.inputBox.style === "auto", "broken config should serve defaults");
+});
 
 await runLoaderSmoke();
 console.log("working-message config smoke ok");

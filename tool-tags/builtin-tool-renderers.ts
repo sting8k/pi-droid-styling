@@ -12,7 +12,7 @@ const SHELL_PATCHED = Symbol.for("pi-droid-styling.builtin-tool-renderers.shell.
 
 // Applied name-first: for these builtin tool names the droid renderer wins
 // regardless of which definition survived registry dedup (issue #24).
-const BUILTIN_TOOL_RENDERERS: Record<string, { call: Function; result: Function }> = {
+const BUILTIN_TOOL_RENDERERS: Record<string, { call: Function; result: Function }> = Object.assign(Object.create(null), {
 	read: { call: renderReadCall, result: renderReadResult },
 	write: { call: renderWriteCall, result: renderWriteResult },
 	edit: { call: renderEditCall, result: renderEditResult },
@@ -20,7 +20,7 @@ const BUILTIN_TOOL_RENDERERS: Record<string, { call: Function; result: Function 
 	find: { call: renderFindCall, result: renderFindResult },
 	grep: { call: renderGrepCall, result: renderGrepResult },
 	bash: { call: renderBashCall, result: renderBashResult },
-};
+});
 
 export function installBuiltinToolRenderers(ToolExecutionComponentClass: any): void {
 	const proto = ToolExecutionComponentClass?.prototype;
