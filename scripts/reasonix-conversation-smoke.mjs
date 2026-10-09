@@ -396,6 +396,31 @@ try {
 } finally {
 	Date.now = realDateNow;
 }
+setPresentationStyle("claudecode");
+{
+	const ccBash = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+	assert(ccBash[0] === "● Bash(npm test)", `claudecode Bash call should read like a call, got ${JSON.stringify(ccBash[0])}`);
+	const ccState = {};
+	renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated file" }] }, { state: ccState });
+	const ccRead = renderCompactBoxedToolCall(activeTheme, "Read", `${activeTheme.fg("dim", "Path: ")}src/config.ts`, { state: ccState }).render(80).map(stripAnsi);
+	assert(ccRead.length === 2 && ccRead[0] === "● Read(src/config.ts)", `claudecode compact call should drop the styled field label and keep parens, got ${JSON.stringify(ccRead)}`);
+	assert(ccRead[1]?.startsWith("  └ ") && !ccRead[1]?.includes("└─"), "claudecode result should sit on its own `  └ ` row");
+	const ccPending = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi)[0];
+	assert(ccPending?.startsWith("● Bash(npm test)") && !reasonixSpinnerFrames.some((frame) => ccPending.includes(frame)), "claudecode pending call should keep a steady dot");
+	const ccPendingFg = fgInputs.length;
+	renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80);
+	assert(fgInputs.slice(ccPendingFg).some(({ color, text }) => color === "dim" && text === "●"), "claudecode pending dot should be dim");
+	const ccErrFg = fgInputs.length;
+	const ccError = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi)[0];
+	assert(ccError?.startsWith("● ") && fgInputs.slice(ccErrFg).some(({ color, text }) => color === "error" && text === "●"), "claudecode error should use an error-colored dot");
+	const ccMulti = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a.ts", query: "x" }, activeTheme)).render(80).map(stripAnsi)[0];
+	assert(ccMulti?.startsWith("● Tool(") && ccMulti.includes(" · ") && ccMulti.endsWith(")"), `claudecode multi-param call should join args with · inside parens, got ${JSON.stringify(ccMulti)}`);
+	const ccLong = renderBoxedToolCall(activeTheme, "Bash", ["echo " + "x".repeat(300)]).render(80).map(stripAnsi);
+	assert(ccLong.length === 3 && ccLong.every((line) => line.length <= 64), "claudecode long call should wrap within three rows at the 80% cap");
+	assert(ccLong.slice(1).every((line) => line[2] === "│" && line.indexOf("x") === "● Bash(".length), "claudecode continuation should hang at the first arg column");
+	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
+	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
+}
 setPresentationStyle("droid");
 const droidBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
 assert(droidBashCall.some((line) => line.includes("$ npm test")), "droid Bash tool call should retain its shell prompt");
