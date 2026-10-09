@@ -123,6 +123,8 @@ The synthetic bench exercises footer/editor rendering, render throttle, assistan
 
 The gradient startup header was inspired by [EnderLiquid/pi-startup-header](https://github.com/EnderLiquid/pi-startup-header).
 
+The `claudecode` presentation style (the `● Name(args)` tool rows and the folded `● Running(…)` / `● Done(…)` activity group) was modelled on the look of [ykn0309/pi-pretty-tui](https://github.com/ykn0309/pi-pretty-tui) by Kainan Yang (MIT); it is a re-implementation, not copied code.
+
 ## License
 
 MIT
