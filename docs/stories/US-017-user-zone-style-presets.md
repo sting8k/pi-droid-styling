@@ -10,7 +10,7 @@ normal
 
 ## Product Contract
 
-Users can select a built-in user-zone presentation preset with `userZoneStyle`. The selected style applies to the BoxEditor/user input area in both normal and `fixedUserZone` modes, and also styles fixed-zone-only shell affordances when `fixedUserZone` is enabled. Users can also choose `inputBox.style` to override the active preset's input-frame treatment across presets. Theme JSON format remains unchanged: themes continue to customize colors through the existing `extras` keys and semantic theme tokens, not arbitrary layout or glyph configuration.
+Users can select a built-in user-zone presentation preset with `userZoneStyle`. The selected style applies to the BoxEditor/user input area. Users can also choose `inputBox.style` to override the active preset's input-frame treatment across presets. Theme JSON format remains unchanged: themes continue to customize colors through the existing `extras` keys and semantic theme tokens, not arbitrary layout or glyph configuration.
 
 The supported preset set is intentionally small:
 
