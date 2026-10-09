@@ -60,13 +60,17 @@ export function applyTerminalPageBackgroundOsc11(theme: any, terminal: TerminalL
 	}
 
 	let restored = false;
-	return () => {
+	const restore = () => {
 		if (restored) return;
 		restored = true;
+		process.removeListener("exit", restore);
 		try {
 			write(resetTerminalBackgroundOsc111());
 		} catch {
 			// Best effort only; do not let terminal integration affect shutdown.
 		}
 	};
+	// A crash or kill skips session_shutdown; the exit hook keeps the terminal from staying tinted.
+	process.once("exit", restore);
+	return restore;
 }
