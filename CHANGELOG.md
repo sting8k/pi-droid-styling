@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.18.0 - 2026-10-09
+
+### Added
+- New `claudecode` value for `presentationStyle`: the `reasonix` layout with Claude Code-style tool calls, modelled on the look of [pi-pretty-tui](https://github.com/ykn0309/pi-pretty-tui). It is opt-in; the default stays `droid`. Set `"presentationStyle": "claudecode"` to use it.
+  - A tool call is one row, `● Read(src/a.ts)`, with long arguments cut off by `…`. The dot is dim while the tool runs, then takes the success or error color. The result hangs below it on a `└` line.
+  - Every assistant turn starts with `●`; the theme's `assistantPrefix` is ignored.
+  - With thinking hidden (`Ctrl+T`), the thinking row reads `● thinking` while live and `● thought` once done, followed by the tail of the thought unless `collapsedThinking` is `label`.
+  - Two or more consecutive tool calls fold under one `● Running(…)` row while any is still running and `● Done(3 tool calls · 1 thought)` after that. Each call is listed under it as a smaller `•` row in a `├─` / `└─` tree. `Ctrl+O` shows every call in full, and a single tool call keeps its own row.
+
+### Changed
+- An existing `pi-droid-styling.json` that is not valid JSON at startup now turns the styling off instead of silently applying default settings. Pi starts normally with its own look, and the footer names the file and the JSON error position. Fix or delete the file and restart Pi to get the styling back; the styling stays off for the rest of that run. A missing file is still created with defaults on first run.
+
+### Fixed
+- Streaming a long answer no longer starves the rest of the UI, which could show as a stuttering spinner, text appearing in chunks and laggy keystrokes. Every 33 ms reveal step re-measured the whole answer, about 37 ms of CPU per step for a 20,000-character answer, and a 50,000-character answer did not finish revealing within 20 seconds. A step now costs under 1 ms at both sizes.
+- The config file is written atomically, so a crash or two Pi sessions starting at the same moment can no longer leave a half-written `pi-droid-styling.json`, which was then ignored and reset every option to its default.
+- Breaking the config file while Pi is running, for example with a typo while editing it, no longer resets every option to its default. The last valid settings stay in effect, the file is left untouched, and the footer shows a line naming the problem the next time you send a prompt. The line goes away at the first prompt after the file parses again.
+- The terminal background that is set to match the theme (OSC 11) is now also reset when Pi exits without a normal session shutdown, such as after an uncaught error, instead of leaving the terminal tinted.
+- A tool whose name matches an inherited JavaScript property (`constructor`, `toString`, `valueOf`, ...) is no longer mistaken for a built-in tool. It keeps its own call and result rendering instead of falling back to Pi's plain one.
+
 ## 2.17.0 - 2026-10-08
 
 ### Changed

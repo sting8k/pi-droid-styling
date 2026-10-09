@@ -69,7 +69,6 @@ type BranchInfo = {
 type BranchProvider = () => BranchInfo | null;
 type ResponseSpeedProvider = () => number | null;
 type FooterStatusProvider = () => string | null;
-type MetadataPlacementProvider = () => "footer" | "sidebar";
 type FooterTokenUsageProvider = () => string | null;
 
 function isBorderLine(line: string): boolean {
@@ -162,7 +161,6 @@ export class BoxEditor extends CustomEditor {
 		private readonly getBranch?: BranchProvider,
 		private readonly getResponseSpeed?: ResponseSpeedProvider,
 		private readonly getFooterStatus?: FooterStatusProvider,
-		private readonly getMetadataPlacement?: MetadataPlacementProvider,
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 		private readonly inputBoxStyle?: InputBoxStyle,
 		private readonly getFooterTokenUsage?: FooterTokenUsageProvider,
@@ -195,10 +193,6 @@ export class BoxEditor extends CustomEditor {
 
 	private themeExtraColor(key: string, fallback: string): string {
 		return getThemeExtra(this.fullTheme, key) || fallback;
-	}
-
-	private metadataInSidebar(): boolean {
-		return this.getMetadataPlacement?.() === "sidebar";
 	}
 
 	private getSlashAutocompleteModel(): SlashAutocompleteModel | null {
@@ -553,11 +547,10 @@ export class BoxEditor extends CustomEditor {
 	private renderTopRow(width: number): string {
 		const sep = this.tone("borderMuted", "│");
 		const model = this.formatModelBadge();
-		const showFooterMetadata = !this.metadataInSidebar();
-		const path = showFooterMetadata ? `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}` : null;
+		const path = `${this.formatCellLabel("env")}${this.tone("accent", this.formatCwd())}`;
 		const leftParts = [path, model?.rendered].filter(Boolean);
 		let left = leftParts.join(` ${sep} `);
-		const branch = showFooterMetadata ? this.formatBranchBadge() : null;
+		const branch = this.formatBranchBadge();
 		const right = branch ? `${sep} ${branch.rendered}` : "";
 		const rightPlainWidth = branch ? safeVisibleWidth(`│ ${branch.plain}`) : 0;
 		const available = Math.max(1, width - rightPlainWidth - (right ? 1 : 0));
@@ -621,7 +614,7 @@ export class BoxEditor extends CustomEditor {
 	private renderRuntimeRow(width: number): string {
 		const usageParts = this.formatRuntimeParts();
 		const left = usageParts.length > 0 ? `${this.formatCellLabel("stat")}${usageParts.join("  ")}` : this.formatCellLabel("stat").trimEnd();
-		const footerStatus = this.metadataInSidebar() ? "" : (this.getFooterStatus?.() ?? "");
+		const footerStatus = this.getFooterStatus?.() ?? "";
 		const tokenUsage = this.formatFooterTokenUsage();
 		const rightPlain = [tokenUsage, normalizeSingleLine(stripAnsi(footerStatus))].filter(Boolean).join("  ");
 		const right = this.tone("dim", rightPlain);
@@ -635,7 +628,7 @@ export class BoxEditor extends CustomEditor {
 		const left = [model?.rendered, runtime]
 			.filter((part): part is string => Boolean(part && stripAnsi(part).trim().length > 0))
 			.join(` ${sep} `);
-		const branch = this.metadataInSidebar() ? null : this.formatBranchBadge();
+		const branch = this.formatBranchBadge();
 		const rightPlain = branch?.plain ?? "";
 		const right = branch?.rendered ?? "";
 		return this.renderSplitRow(left, right, rightPlain, width);
@@ -788,7 +781,7 @@ export class BoxEditor extends CustomEditor {
 
 	private renderGeminiFooter(width: number, contentWidth: number): string[] {
 		const style = this.userZoneStyle.editor;
-		const footerStatus = this.metadataInSidebar() ? "" : normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
+		const footerStatus = normalizeSingleLine(stripAnsi(this.getFooterStatus?.() ?? ""));
 		const tokenUsage = this.formatFooterTokenUsage();
 		const affordance = [tokenUsage, footerStatus].filter(Boolean).join("  ");
 		const cwd = this.formatCwd();

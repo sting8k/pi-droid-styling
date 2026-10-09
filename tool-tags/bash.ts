@@ -6,7 +6,7 @@ import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
 import { getPresentationDesign } from "../presentation/state.js";
-import { boxedToolWidthKey, formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
+import { formatBoxedFooter, formatToolOutputLine, getTextOutput, isExpanded, renderBoxedToolCall, renderBoxedToolResult, replaceTabs } from "./common.js";
 import { markToolCallExecutionStarted } from "./elapsed.js";
 
 const MAX_BASH_PREVIEW_LINES = 5;
@@ -135,11 +135,7 @@ function stripBashToolNoticeLines(text: string): string {
 	return filteredLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
-function bashWidthKey(rawCommand: string, timeout: unknown): string {
-	return boxedToolWidthKey("Bash", `${rawCommand}|${timeout ?? ""}`);
-}
-
-function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknown, widthKey: string, context?: any): Component {
+function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknown, context?: any): Component {
 	const maxCommandLines = 5;
 	const shownCount = Math.min(commandLines.length, maxCommandLines + 1);
 	const detailLines: string[] = [];
@@ -152,7 +148,6 @@ function renderBoxedBashCall(theme: any, commandLines: string[], timeout: unknow
 		detailLines.push(theme.fg("muted", `... ${commandLines.length - maxCommandLines - 1} more lines`));
 	}
 	return renderBoxedToolCall(theme, "Bash", detailLines, {
-		widthKey,
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
 		isPending: Boolean(context?.isPartial && !context?.hasResult),
@@ -165,12 +160,7 @@ function formatTimeout(context: any): string {
 }
 
 function renderBoxedBashResult(theme: any, inner: Component, result: any, context: any): Component {
-	const rawCommand = String(context?.args?.command ?? "...");
-	const timeout = context?.args?.timeout;
-	const referenceLines = rawCommand.split("\n").map((line, index) => `${index === 0 ? "$ " : "> "}${line}`);
 	return renderBoxedToolResult(theme, inner, {
-		widthKey: bashWidthKey(rawCommand, timeout),
-		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [`⏹ ${formatTimeout(context)}`], context)],
 		isError: context?.isError,
 		isPartial: Boolean(context?.isPartial),
@@ -285,7 +275,7 @@ function createBashResultPreview(
 export function renderBashCall(args: any, theme: any, context: any) {
 	markToolCallExecutionStarted(context);
 	const rawCommand = String(args?.command ?? "...");
-	return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, bashWidthKey(rawCommand, args?.timeout), context);
+	return renderBoxedBashCall(theme, rawCommand.split("\n"), args?.timeout, context);
 }
 
 export function renderBashResult(result, options, theme: any, context: any) {

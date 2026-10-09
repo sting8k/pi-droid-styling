@@ -3,7 +3,7 @@ import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-ag
 import { safeTruncateToWidth } from "../render-budget.js";
 import { stripAnsi } from "../theme/ansi.js";
 import { loadConfig } from "../config.js";
-import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
+import { clearCompactBoxedFooter, countLines, extractTrailingNotice, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
 import { markToolCallExecutionStarted } from "./elapsed.js";
 
 const MAX_HIGHLIGHT_OUTPUT_CHARS = 12000;
@@ -56,7 +56,6 @@ export function renderReadCall(args: any, theme: any, context: any) {
 
 	const detail = path ? `${path}${range}` : "(unknown)";
 	return renderCompactBoxedToolCall(theme, "Read", `${theme.fg("dim", "Path: ")}${detail}`, {
-		widthKey: boxedToolWidthKey("Read", detail),
 		state: context?.state,
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
@@ -67,24 +66,9 @@ export function renderReadCall(args: any, theme: any, context: any) {
 export function renderReadResult(result: any, options, theme: any, context: any) {
 	clearCompactBoxedFooter(context?.state);
 	const output = stripAnsi(getTextOutput(result)).trimEnd();
-	const rawPath = String(context?.args?.path ?? context?.args?.file_path ?? "");
-	const path = shortenPath(rawPath);
-	const offset = context?.args?.offset;
-	const limit = context?.args?.limit;
-	let range = "";
-	if (offset !== undefined || limit !== undefined) {
-		const start = offset ?? 1;
-		const end = limit !== undefined ? start + limit - 1 : "";
-		range = `:${start}${end ? `-${end}` : ""}`;
-	}
-	const detail = path ? `${path}${range}` : "(unknown)";
-	const widthKey = boxedToolWidthKey("Read", detail);
-	const referenceLines = [`Path: ${detail}`];
 
 	if (result.isError) {
 		return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 			isError: true,
 		});
@@ -97,8 +81,6 @@ export function renderReadResult(result: any, options, theme: any, context: any)
 		if (!isExpanded(options)) return renderCompactBoxedFooter(theme, result, { state: context?.state, isError: Boolean(context?.isError), isPartial: Boolean(options?.isPartial), toolCallId: context?.toolCallId });
 		const summary = `↳ Read ${imageCount} ${imageCount === 1 ? "image" : "images"}.`;
 		return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 		});
 	}
@@ -195,8 +177,6 @@ export function renderReadResult(result: any, options, theme: any, context: any)
 		},
 	};
 	return renderBoxedToolResult(theme, body, {
-		widthKey,
-		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
 	});
 }

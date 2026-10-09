@@ -1,6 +1,6 @@
 import type { ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { stripAnsi } from "../theme/ansi.js";
-import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
+import { clearCompactBoxedFooter, countLines, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, renderLines, shortenPath, stripTrailingNotice } from "./common.js";
 import { markToolCallExecutionStarted } from "./elapsed.js";
 
 const MAX_GREP_PREVIEW_LINES = 10;
@@ -12,7 +12,6 @@ export function renderGrepCall(args: any, theme: any, context: any) {
 	const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 	const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
 	return renderCompactBoxedToolCall(theme, "Search", `${theme.fg("dim", "Query: ")}${detail}`, {
-		widthKey: boxedToolWidthKey("Search", detail),
 		state: context?.state,
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
@@ -24,12 +23,6 @@ export function renderGrepResult(result: any, options: ToolRenderResultOptions, 
 	clearCompactBoxedFooter(context?.state);
 	const output = stripAnsi(getTextOutput(result)).trimEnd();
 	const stripped = stripTrailingNotice(output);
-	const pattern = String(context?.args?.pattern ?? "");
-	const rawPath = String(context?.args?.path ?? ".");
-	const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
-	const detail = pattern ? `/${pattern}/ in ${displayPath}` : displayPath;
-	const widthKey = boxedToolWidthKey("Search", detail);
-	const referenceLines = [`Query: ${detail}`];
 
 	if (result.isError) {
 		return renderBoxedToolResult(theme, (width) => {
@@ -40,8 +33,6 @@ export function renderGrepResult(result: any, options: ToolRenderResultOptions, 
 			});
 			return body ? body.split("\n") : [];
 		}, {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 			isError: true,
 		});
@@ -66,8 +57,6 @@ export function renderGrepResult(result: any, options: ToolRenderResultOptions, 
 	const summary = theme.fg("dim", `↳ Found ${matchCount} ${matchCount === 1 ? "match" : "matches"}.`);
 	if (!stripped || stripped === "No matches found") {
 		return renderBoxedToolResult(theme, () => [summary], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 		});
 	}
@@ -80,8 +69,6 @@ export function renderGrepResult(result: any, options: ToolRenderResultOptions, 
 		});
 		return [summary, ...(body ? body.split("\n") : [])];
 	}, {
-		widthKey,
-		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
 	});
 }

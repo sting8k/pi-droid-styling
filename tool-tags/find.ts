@@ -1,5 +1,5 @@
 import { stripAnsi } from "../theme/ansi.js";
-import { boxedToolWidthKey, clearCompactBoxedFooter, countLines, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
+import { clearCompactBoxedFooter, countLines, formatBoxedFooter, getTextOutput, isExpanded, renderBoxedToolResult, renderCompactBoxedFooter, renderCompactBoxedToolCall, shortenPath, stripTrailingNotice } from "./common.js";
 import { markToolCallExecutionStarted } from "./elapsed.js";
 
 export function renderFindCall(args: any, theme: any, context: any) {
@@ -9,7 +9,6 @@ export function renderFindCall(args: any, theme: any, context: any) {
 	const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
 	const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
 	return renderCompactBoxedToolCall(theme, "Find", `${theme.fg("dim", "Query: ")}${detail}`, {
-		widthKey: boxedToolWidthKey("Find", detail),
 		state: context?.state,
 		isError: Boolean(context?.isError),
 		isPartial: Boolean(context?.isPartial),
@@ -20,16 +19,8 @@ export function renderFindCall(args: any, theme: any, context: any) {
 export function renderFindResult(result, options, theme: any, context: any) {
 	clearCompactBoxedFooter(context?.state);
 	const output = stripAnsi(getTextOutput(result)).trimEnd();
-	const pattern = String(context?.args?.pattern ?? "");
-	const rawPath = String(context?.args?.path ?? ".");
-	const displayPath = rawPath === "." || rawPath === "" ? "current directory" : shortenPath(rawPath);
-	const detail = pattern ? `${pattern} in ${displayPath}` : displayPath;
-	const widthKey = boxedToolWidthKey("Find", detail);
-	const referenceLines = [`Query: ${detail}`];
 	if (context?.isError) {
 		return renderBoxedToolResult(theme, () => [theme.fg("error", output || "Error")], {
-			widthKey,
-			referenceLines,
 			footerLines: [formatBoxedFooter(theme, result, [], context)],
 			isError: true,
 		});
@@ -48,8 +39,6 @@ export function renderFindResult(result, options, theme: any, context: any) {
 
 	const summary = `↳ Found ${fileCount} ${fileCount === 1 ? "file" : "files"}.`;
 	return renderBoxedToolResult(theme, () => [theme.fg("dim", summary)], {
-		widthKey,
-		referenceLines,
 		footerLines: [formatBoxedFooter(theme, result, [], context)],
 	});
 }

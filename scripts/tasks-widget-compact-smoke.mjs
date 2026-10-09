@@ -34,6 +34,10 @@ function prepareWorkDir() {
 	export const statSync: (path: string) => { mtimeMs: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 	export const appendFileSync: (path: string, data: string, encoding?: string) => void;
+	// Keep in step with config.ts's fs imports: this script is isolated from Node's types (it declares
+	// process itself), so this block is the only source for "fs" here; elsewhere it just augments @types/node.
+	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 }
 declare module "node:fs" {
 	export const existsSync: (path: string) => boolean;
@@ -42,6 +46,8 @@ declare module "node:fs" {
 	export const statSync: (path: string) => { mtimeMs: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 	export const appendFileSync: (path: string, data: string, encoding?: string) => void;
+	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 }
 declare module "path" {
 	export const dirname: (path: string) => string;
@@ -497,7 +503,7 @@ async function runVirtualizeChatSmoke() {
 	assert(assignMode.chatContainer.children.length === 2, `assign-mode second rebuild should keep tail=2, got ${assignMode.chatContainer.children.length}`);
 	assert(!assignLines.split("\n").includes("live"), `assign-mode rebuild should drop prior live child: ${assignLines}`);
 
-	// Direct instance helper is the same path fixed-zone host marking uses
+	// Direct instance helper: virtualizes an already-built chat container given its TUI root
 	const directChat = {
 		children: [component("x1"), component("x2"), component("x3")],
 		addChild(child) { this.children.push(child); },

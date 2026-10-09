@@ -9,6 +9,7 @@ import {
   ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 
+import { getConfigIssue, loadConfig } from "./config.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { recordToolCallTimingEnd, recordToolCallTimingStart } from "./tool-tags/elapsed.js";
 import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
@@ -64,6 +65,16 @@ function flushProfile(reason: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	// An unparsable config at startup makes this extension inert: Pi starts with its stock UI and one status line says why.
+	// Never throw here: a throwing extension factory aborts Pi's startup.
+	loadConfig();
+	const startupConfigIssue = getConfigIssue();
+	if (startupConfigIssue) {
+		pi.on("session_start", (_event, ctx) => {
+			ctx.ui.setStatus?.("pi-droid-styling", `${startupConfigIssue}; styling is off until you fix the file and restart Pi.`);
+		});
+		return;
+	}
 	registerCompanionThemes(pi, InteractiveMode);
 	suppressStartupModelScopeLog();
 	installStartupUiPatch(InteractiveMode);
@@ -89,7 +100,15 @@ export default function (pi: ExtensionAPI) {
 	const isStaleContextError = (error: unknown): boolean =>
 		error instanceof Error && error.message.includes("stale after session replacement or reload");
 
-	pi.on("before_agent_start", () => {
+	// Surface a config that broke mid-session through Pi's status channel (never from a render path).
+	const reportConfigIssue = (ui: { setStatus?: (key: string, text: string | undefined) => void }) => {
+		loadConfig();
+		const issue = getConfigIssue();
+		ui.setStatus?.("pi-droid-styling", issue && `${issue}; using the last valid settings.`);
+	};
+
+	pi.on("before_agent_start", (_event, ctx) => {
+		reportConfigIssue(ctx.ui);
 		workingLoaderController?.setState("working");
 	});
 
@@ -202,6 +221,7 @@ export default function (pi: ExtensionAPI) {
 			currentThinkingLevel = undefined;
 		}
 		const config = modules.loadConfig();
+		reportConfigIssue(sessionUi);
 		modules.setPresentationStyle(config.presentationStyle);
 		currentVisibleChatTail = config.visibleChatTail;
 		await ensureToolCallTagsRegistered();
@@ -262,6 +282,7 @@ export default function (pi: ExtensionAPI) {
 
 		modules.setDefaultBadgeTheme(sessionUi.theme);
 		modules.setToolSpacingTheme(sessionUi.theme);
+		modules.setToolGroupTheme(sessionUi.theme);
 		modules.setCoreMessageBlockTheme(sessionUi.theme);
 
 		sessionUi.setEditorComponent((tui, theme, kb) => {
@@ -314,7 +335,6 @@ export default function (pi: ExtensionAPI) {
 				fetchBranch,
 				() => tracker.getWordsPerSecond(),
 				modules.getFooterStatusLine,
-				() => "footer",
 				userZoneStyle,
 				config.inputBox.style,
 				modules.getFooterTokenUsageLine,

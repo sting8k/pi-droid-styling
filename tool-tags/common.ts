@@ -131,7 +131,6 @@ const BOX_HORIZONTAL = "─";
 const BOX_VERTICAL = "│";
 const BOX_SIDE_PADDING = 2;
 const BOX_MIN_WIDTH = 12;
-const BOX_WIDTH_CACHE = new Map<string, number>();
 const COMPACT_TOOL_NAME_WIDTH = safeVisibleWidth("Search");
 const COMPACT_FOOTER_ELAPSED_WIDTH = 8;
 const COMPACT_FOOTER_EXTRA_WIDTH = 8;
@@ -143,22 +142,6 @@ export function boxWidth(width: number): number {
 
 export function boxInnerWidth(width: number): number {
 	return Math.max(1, boxWidth(width) - 2 - BOX_SIDE_PADDING * 2);
-}
-
-function tightBoxWidth(availableWidth: number, contentLines: string[], labelWidths: number[] = [], widthKey?: string): number {
-	const contentWidth = contentLines.reduce((max, line) => Math.max(max, safeVisibleWidth(line)), 0);
-	const labelWidth = labelWidths.reduce((max, width) => Math.max(max, width), 0);
-	const neededWidth = Math.max(BOX_MIN_WIDTH, contentWidth + 2 + BOX_SIDE_PADDING * 2, labelWidth + 2 + BOX_SIDE_PADDING * 2);
-	const measuredWidth = Math.min(boxWidth(availableWidth), neededWidth);
-	if (!widthKey) return measuredWidth;
-	const cachedWidth = BOX_WIDTH_CACHE.get(widthKey) ?? 0;
-	const nextWidth = Math.min(boxWidth(availableWidth), Math.max(cachedWidth, measuredWidth));
-	BOX_WIDTH_CACHE.set(widthKey, nextWidth);
-	return nextWidth;
-}
-
-export function boxedToolWidthKey(toolName: string, detail: string): string {
-	return `${toolName}:${detail}`;
 }
 
 export function formatToolName(toolName: string): string {
@@ -484,21 +467,18 @@ const REASONIX_MAX_TOOL_CALL_ROWS = 3;
 function renderReasonixWrappedToolRows(
 	theme: any,
 	markerTitle: string,
-	detailRows: string[],
+	detail: string,
 	pending: string,
 	rowWidth: number,
 	maxRows: number,
+	separator = " ",
 ): string[] {
-	const detail = detailRows
-		.map((row) => toSingleRenderLine(row).trim())
-		.filter((row) => stripAnsi(row).length > 0)
-		.join(" ");
-	const detailStart = safeVisibleWidth(markerTitle) + 1;
+	const detailStart = safeVisibleWidth(markerTitle) + safeVisibleWidth(separator);
 	if (detailStart >= rowWidth) {
 		// Degenerate: the tool title alone consumes the row. Wrap the whole line so
 		// no physical row exceeds the 80% cap, keeping the legacy plain indent.
 		const contentWidth = Math.max(1, rowWidth - safeVisibleWidth("     "));
-		const text = `${markerTitle}${detail ? ` ${detail}` : ""}${pending}`;
+		const text = `${markerTitle}${detail ? `${separator}${detail}` : ""}${pending}`;
 		const wrapped = safeWrapTextWithAnsi(text, contentWidth).map(trimTrailingRenderPadding);
 		const rows = wrapped.slice(0, Math.max(1, maxRows));
 		if (wrapped.length > rows.length) {
@@ -513,7 +493,7 @@ function renderReasonixWrappedToolRows(
 	// Wrap only the detail/pending payload at the detail column so row 1 can use
 	// the full row width; continuation rows hang from a dim vertical connector.
 	const payload = `${detail ? `${detail}` : ""}${pending}`;
-	const payloadPrefix = detail ? " " : "";
+	const payloadPrefix = detail ? separator : "";
 	const payloadWidth = Math.max(1, rowWidth - detailStart);
 	const connector = `  ${theme.fg("dim", "│")}${' '.repeat(Math.max(0, detailStart - 3))}`;
 	const wrappedPayload = safeWrapTextWithAnsi(payload, payloadWidth).map(trimTrailingRenderPadding);
@@ -532,12 +512,24 @@ function renderReasonixWrappedToolRows(
 	return rows;
 }
 
+// Call sites style field labels separately (`theme.fg("dim", "Path: ")`); the Claude Code
+// row drops a leading styled label so `Read(src/a.ts)` reads like a call, not a form.
+const STYLED_LEADING_LABEL = /^(?:\x1b\[[0-9;]*m)+[A-Z][A-Za-z ]*: (?:\x1b\[[0-9;]*m)+/;
+
+function claudeCodeDetail(theme: any, detailRows: string[]): string {
+	return detailRows
+		.map((row) => toSingleRenderLine(row).trim().replace(STYLED_LEADING_LABEL, ""))
+		.filter((row) => stripAnsi(row).length > 0)
+		.join(theme.fg("dim", " · "));
+}
+
 function renderReasonixToolRow(
 	theme: any,
 	toolName: string,
 	detail: string,
 	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string; inlineFooter?: boolean; detailRows?: string[]; maxRows?: number } = {},
 ): Component {
+	const claudeCode = getPresentationDesign().toolCallStyle === "claudecode";
 	// Completed rows are memoized by width+footer; pending/partial rows stay uncached so
 	// the Date.now()-driven spinner frame keeps animating on every host redraw.
 	// The footer text is part of the cache key because setCompactBoxedFooter mutates
@@ -546,30 +538,53 @@ function renderReasonixToolRow(
 	let cache: { key: string; lines: string[] } | null = null;
 	const needsLiveFrame = (isPartial: boolean) => Boolean(options.isPending || isPartial);
 	const renderUncached = (width: number, compactFooter: string, isError: boolean, isPartial: boolean): string[] => {
-		const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
+		const running = Boolean(options.isPending || isPartial);
+		const rowWidth = getReasonixCollapsedRowWidth(width);
+		const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
+		const detailRows = options.detailRows ?? [detail];
+		let markerTitle: string;
+		let detailText: string;
+		let separator = " ";
+		if (claudeCode) {
+			// pi-pretty-tui look: dim dot while running, success/error dot once settled;
+			// bold name, args in dim parentheses.
+			const name = theme.fg("text", toolName);
+			const dot = theme.fg(isError ? "error" : running ? "dim" : "success", "●");
+			const args = claudeCodeDetail(theme, detailRows);
+			markerTitle = `${dot} ${typeof theme?.bold === "function" ? theme.bold(name) : name}`;
+			detailText = args ? `${args}${theme.fg("dim", ")")}` : "";
+			separator = args ? theme.fg("dim", "(") : "";
+		} else {
+			const coloredName = colorFromExtra(theme, "bashPromptColor", "bashMode", toolName);
 			const title = typeof theme?.bold === "function" ? theme.bold(coloredName) : coloredName;
-			const pending = options.isPending ? ` · ${theme.fg("dim", options.pendingText ?? "Waiting for output…")}` : "";
-			const marker = isError ? "✗" : options.isPending || isPartial ? reasonixPendingMarker() : "●";
-			const markerColor = isError ? "error" : options.isPending || isPartial ? "accent" : "success";
-			const rowWidth = getReasonixCollapsedRowWidth(width);
-			const markerTitle = `${theme.fg(markerColor, marker)} ${title}`;
-			const detailRows = options.detailRows ?? [detail];
-			let rows: string[];
-			if ((options.maxRows ?? 1) > 1) {
-				rows = renderReasonixWrappedToolRows(theme, markerTitle, detailRows, pending, rowWidth, options.maxRows ?? 1);
-			} else {
-				const headerText = toSingleRenderLine(`${markerTitle}${detail ? ` ${detail}` : ""}${pending}`);
-				const header = options.inlineFooter && compactFooter
-					? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
-					: truncateReasonixLine(theme, headerText, rowWidth);
-				rows = [header];
-			}
-			if (!compactFooter || options.inlineFooter) return rows;
-			const footerWidth = getToolBodyWidth(rowWidth, 5);
-			const footerText = toSingleRenderLine(compactFooter);
-			const footer = `  ${theme.fg("dim", "└─ ")}${truncateReasonixLine(theme, footerText, footerWidth)}`;
-			return [...rows, footer];
-		};
+			const marker = isError ? "✗" : running ? reasonixPendingMarker() : "●";
+			const markerColor = isError ? "error" : running ? "accent" : "success";
+			markerTitle = `${theme.fg(markerColor, marker)} ${title}`;
+			detailText = (options.maxRows ?? 1) > 1
+				? detailRows.map((row) => toSingleRenderLine(row).trim()).filter((row) => stripAnsi(row).length > 0).join(" ")
+				: detail;
+		}
+		// Claude Code rows always put the result on its own `└` line, never inline, and keep
+		// the call itself on one row truncated with `…` (pi-pretty-tui), never wrapped.
+		const inlineFooter = options.inlineFooter && !claudeCode;
+		const maxRows = claudeCode ? 1 : options.maxRows ?? 1;
+		let rows: string[];
+		if (maxRows > 1) {
+			rows = renderReasonixWrappedToolRows(theme, markerTitle, detailText, pending, rowWidth, maxRows, separator);
+		} else {
+			const headerText = toSingleRenderLine(`${markerTitle}${detailText ? `${separator}${detailText}` : ""}${pending}`);
+			const header = inlineFooter && compactFooter
+				? renderReasonixInlineFooter(theme, headerText, compactFooter, rowWidth)
+				: truncateReasonixLine(theme, headerText, rowWidth);
+			rows = [header];
+		}
+		if (!compactFooter || inlineFooter) return rows;
+		const connector = getPresentationDesign().resultConnector;
+		const footerWidth = getToolBodyWidth(rowWidth, 2 + connector.length);
+		const footerText = toSingleRenderLine(compactFooter);
+		const footer = `  ${theme.fg("dim", connector)}${truncateReasonixLine(theme, footerText, footerWidth)}`;
+		return [...rows, footer];
+	};
 	return {
 		invalidate() { cache = null; },
 		render(width: number): string[] {
@@ -587,6 +602,14 @@ function renderReasonixToolRow(
 	};
 }
 
+// Renderers lead their summary with `↳`, which reads as a second connector right after the
+// compact layout's `└` / `└─ `; drop it from the first body row only.
+const LEADING_RESULT_ARROW = /^((?:\x1b\[[0-9;]*m)*)↳ /;
+
+function dropLeadingResultArrow(line: string): string {
+	return line.replace(LEADING_RESULT_ARROW, "$1");
+}
+
 function renderReasonixToolBody(
 	theme: any,
 	body: BoxedResultBody,
@@ -600,7 +623,7 @@ function renderReasonixToolBody(
 		},
 		render(width: number): string[] {
 			if (cache?.width === width) return cache.lines;
-			const firstPrefix = `  ${theme.fg("dim", "└─ ")}`;
+			const firstPrefix = `  ${theme.fg("dim", getPresentationDesign().resultConnector)}`;
 			const contentIndent = safeVisibleWidth(firstPrefix);
 			const continuationPrefix = " ".repeat(contentIndent);
 			const bodyWidth = getToolBodyWidth(width, contentIndent);
@@ -608,7 +631,9 @@ function renderReasonixToolBody(
 			const outputLines = bodyLines.length > 0 ? bodyLines : [theme.fg("muted", `∅ ${options.emptyText ?? "(no output)"}`)];
 			const limited = options.renderLineBudget === undefined ? outputLines : outputLines.slice(0, options.renderLineBudget);
 			const rendered = [
-				...limited.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
+				...limited.map((line, index) => index === 0
+					? `${firstPrefix}${truncateReasonixLine(theme, dropLeadingResultArrow(line), bodyWidth)}`
+					: `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
 				...(options.footerLines ?? []).map((line) => `${continuationPrefix}${truncateReasonixLine(theme, line, bodyWidth)}`),
 			];
 			cache = { width, lines: rendered };
@@ -629,7 +654,7 @@ export function renderBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLines: string[],
-	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLines[0] ?? "", {
 		...options,
@@ -679,7 +704,7 @@ export function renderCompactBoxedToolCall(
 	theme: any,
 	toolName: string,
 	detailLine: string,
-	options: { widthKey?: string; state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
+	options: { state?: any; isError?: boolean; isPartial?: boolean; isPending?: boolean; pendingText?: string } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolRow(theme, toolName, detailLine, { ...options, inlineFooter: true });
 	return {
@@ -717,7 +742,7 @@ type BoxedResultBody = Component | ((contentWidth: number) => string[]);
 export function renderBoxedToolResult(
 	theme: any,
 	body: BoxedResultBody,
-	options: { outputLabel?: string; footerLines?: string[]; emptyText?: string; widthKey?: string; referenceLines?: string[]; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
+	options: { footerLines?: string[]; emptyText?: string; renderLineBudget?: number; isError?: boolean; isPartial?: boolean } = {},
 ): Component {
 	if (isReasonixPresentation()) return renderReasonixToolBody(theme, body, options);
 	let cache: RenderLinesCache | null = null;

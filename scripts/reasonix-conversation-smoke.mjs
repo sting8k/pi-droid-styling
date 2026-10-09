@@ -74,6 +74,8 @@ declare const process: any;
 		join(repoRoot, "tool-tags", "quick-edit.ts"),
 		join(repoRoot, "tool-tags", "compact-tool-spacing.ts"),
 		join(repoRoot, "tool-tags", "loader-align.ts"),
+		join(repoRoot, "tool-tags", "tool-groups.ts"),
+		join(repoRoot, "performance", "virtualize-chat.ts"),
 	], { cwd: repoRoot, encoding: "utf8" });
 	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
 }
@@ -395,6 +397,85 @@ try {
 	assert(overlapToolCall[0]?.startsWith("✗"), "reasonix error marker should win over the pending spinner");
 } finally {
 	Date.now = realDateNow;
+}
+setPresentationStyle("claudecode");
+{
+	const ccBash = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);
+	assert(ccBash[0] === "● Bash(npm test)", `claudecode Bash call should read like a call, got ${JSON.stringify(ccBash[0])}`);
+	const ccState = {};
+	renderCompactBoxedFooter(activeTheme, { content: [{ type: "text", text: "updated file" }] }, { state: ccState });
+	const ccRead = renderCompactBoxedToolCall(activeTheme, "Read", `${activeTheme.fg("dim", "Path: ")}src/config.ts`, { state: ccState }).render(80).map(stripAnsi);
+	assert(ccRead.length === 2 && ccRead[0] === "● Read(src/config.ts)", `claudecode compact call should drop the styled field label and keep parens, got ${JSON.stringify(ccRead)}`);
+	assert(ccRead[1]?.startsWith("  └ ") && !ccRead[1]?.includes("└─"), "claudecode result should sit on its own `  └ ` row");
+	const ccPending = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80).map(stripAnsi)[0];
+	assert(ccPending?.startsWith("● Bash(npm test)") && !reasonixSpinnerFrames.some((frame) => ccPending.includes(frame)), "claudecode pending call should keep a steady dot");
+	const ccPendingFg = fgInputs.length;
+	renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isPending: true }).render(80);
+	assert(fgInputs.slice(ccPendingFg).some(({ color, text }) => color === "dim" && text === "●"), "claudecode pending dot should be dim");
+	const ccErrFg = fgInputs.length;
+	const ccError = renderBoxedToolCall(activeTheme, "Bash", ["npm test"], { isError: true }).render(80).map(stripAnsi)[0];
+	assert(ccError?.startsWith("● ") && fgInputs.slice(ccErrFg).some(({ color, text }) => color === "error" && text === "●"), "claudecode error should use an error-colored dot");
+	const ccMulti = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a.ts", query: "x" }, activeTheme)).render(80).map(stripAnsi)[0];
+	assert(ccMulti?.startsWith("● Tool(") && ccMulti.includes(" · ") && ccMulti.endsWith(")"), `claudecode multi-param call should join args with · inside parens, got ${JSON.stringify(ccMulti)}`);
+	const ccLong = renderBoxedToolCall(activeTheme, "Bash", ["echo " + "x".repeat(300)]).render(80).map(stripAnsi);
+	assert(ccLong.length === 1 && ccLong[0].length <= 64 && ccLong[0].startsWith("● Bash(echo x") && ccLong[0].endsWith(" …"), `claudecode long call should stay on one row truncated at the 80% cap: ${JSON.stringify(ccLong)}`);
+	const ccManyParams = renderBoxedToolCall(activeTheme, "Tool", formatToolParamLines({ path: "a".repeat(60), summary: "b".repeat(200), facts: "c".repeat(200) }, activeTheme)).render(80).map(stripAnsi);
+	assert(ccManyParams.length === 1 && ccManyParams[0].endsWith(" …"), `claudecode many-param call should stay on one row: ${JSON.stringify(ccManyParams)}`);
+	const ccNormalized = normalizeReasonixToolLines(["", "● Read(a.ts)", "  └ ◷ 0.14s  · ✎ ~5 words"], 100, false).map(stripAnsi);
+	assert(ccNormalized[1] === "  └ ◷ 0.14s  · ✎ ~5 words", `claudecode result row must keep a single └ connector: ${JSON.stringify(ccNormalized)}`);
+	const ccBareFooter = normalizeReasonixToolLines(["● Read(a.ts)", "◷ 0.14s"], 100, false).map(stripAnsi);
+	assert(ccBareFooter[1] === "  └ ◷ 0.14s", `claudecode should add its own └ connector to a bare footer: ${JSON.stringify(ccBareFooter)}`);
+	const ccBody = renderBoxedToolResult(activeTheme, () => [activeTheme.fg("dim", "↳ Read 1 image."), "↳ second row keeps its arrow"]).render(80).map(stripAnsi);
+	assert(ccBody[0] === "  └ Read 1 image." && ccBody[1]?.trim() === "↳ second row keeps its arrow", `the first body row must not stack ↳ after └: ${JSON.stringify(ccBody)}`);
+	const ccNoArgs = renderBoxedToolCall(activeTheme, "Tool", []).render(80).map(stripAnsi)[0];
+	assert(ccNoArgs === "● Tool", "claudecode call without args should not print empty parens");
+}
+{
+	const { setToolGroupTheme } = await importBuilt("tool-tags/tool-groups.js");
+	const { virtualizeChatContainerInstance } = await importBuilt("performance/virtualize-chat.js");
+	setToolGroupTheme(activeTheme);
+	const stub = (lines, fields) => ({ ...fields, render: () => lines.slice() });
+	const tool = (name, fields = {}) => stub(["", `TOOLROW ${name}`], { toolName: name, toolCallId: `id-${name}`, result: { content: [] }, isPartial: false, expanded: false, ...fields });
+	const assistant = (content, label) => stub([`ASSISTANT ${label}`], { lastMessage: { role: "assistant", content } });
+	const chatOf = (children) => {
+		const chat = { children, addChild(child) { this.children.push(child); }, clear() { this.children = []; }, render() { return []; } };
+		virtualizeChatContainerInstance(chat, 0);
+		return (width = 100) => chat.render(width).map(stripAnsi);
+	};
+	const toolOnly = (withThought) => assistant([...(withThought ? [{ type: "thinking", thinking: "plan" }] : []), { type: "toolCall", id: "x", name: "read", arguments: {} }], "toolonly");
+	const lead = assistant([{ type: "text", text: "Let me check." }, { type: "toolCall", id: "a", name: "read", arguments: {} }], "lead");
+	const final = assistant([{ type: "text", text: "Done." }], "final");
+
+	setPresentationStyle("claudecode");
+	const folded = chatOf([lead, tool("Read"), toolOnly(true), tool("Bash"), final])();
+	assert(folded.includes("● Done(2 tool calls · 1 thought)"), `claudecode should fold a tool run into one Done row: ${JSON.stringify(folded)}`);
+	assert(folded.includes("ASSISTANT lead") && folded.includes("ASSISTANT final"), "assistant turns with answer text must stay outside the group");
+	const summaryAt = folded.indexOf("● Done(2 tool calls · 1 thought)");
+	assert(JSON.stringify(folded.slice(summaryAt + 1, summaryAt + 4)) === JSON.stringify(["  ├─ TOOLROW Read", "  ├─ ASSISTANT toolonly", "  └─ TOOLROW Bash"]), `members should hang from the tree in order, blanks dropped: ${JSON.stringify(folded)}`);
+	assert(folded[summaryAt + 4] === "" && folded[summaryAt + 5] === "ASSISTANT final", `the next turn should be separated from the tree by one blank row: ${JSON.stringify(folded)}`);
+	assert(!folded.some((line) => line.startsWith("TOOLROW")), "folded members must not also render at the top level");
+	const multi = chatOf([Object.assign(tool("Read"), { render: () => ["● Read(a)", "  └ 3 lines"] }), Object.assign(tool("Bash"), { render: () => ["● Bash(b)", "  └ ok"] })])();
+	assert(JSON.stringify(multi.slice(-5)) === JSON.stringify(["  ├─ • Read(a)", "  │    └ 3 lines", "  └─ • Bash(b)", "       └ ok", ""]), `member continuation rows should keep the tree pipe: ${JSON.stringify(multi)}`);
+
+	const renderWidths = [];
+	const spied = (name) => Object.assign(tool(name), { render: (width) => { renderWidths.push(width); return ["", `TOOLROW ${name}`]; } });
+	chatOf([spied("Read"), spied("Bash")])(120);
+	assert(renderWidths.length === 2 && renderWidths.every((width) => width === 120), `tree members must render at the chat width so width-keyed image caches stay warm: ${JSON.stringify(renderWidths)}`);
+
+	const running = chatOf([tool("Read"), tool("Bash", { result: undefined })])();
+	assert(running.includes("● Running(2 tool calls · Bash)"), `a run with an unfinished tool should read Running with the active tool: ${JSON.stringify(running)}`);
+	const failed = chatOf([tool("Read", { result: { isError: true } }), tool("Bash")])();
+	assert(failed.includes("● Done(2 tool calls · 1 failed)"), `failed tools should be counted: ${JSON.stringify(failed)}`);
+	const expanded = chatOf([tool("Read", { expanded: true }), tool("Bash", { expanded: true })])();
+	assert(expanded.includes("TOOLROW Read") && expanded.includes("TOOLROW Bash") && !expanded.some((line) => line.includes("Done(")), "Ctrl+O (expanded tools) should show every member");
+	const single = chatOf([lead, tool("Read"), final])();
+	assert(single.includes("TOOLROW Read") && !single.some((line) => line.includes("Done(")), "a single tool call should keep its own row");
+	const split = chatOf([tool("Read"), assistant([{ type: "text", text: "mid" }], "mid"), tool("Bash")])();
+	assert(split.includes("TOOLROW Read") && split.includes("TOOLROW Bash"), "answer text between tools must break the run");
+
+	setPresentationStyle("reasonix");
+	const reasonixChat = chatOf([tool("Read"), tool("Bash")])();
+	assert(reasonixChat.includes("TOOLROW Read") && !reasonixChat.some((line) => line.includes("Done(")), "reasonix must not fold tool runs");
 }
 setPresentationStyle("droid");
 const droidBashCall = renderBashCall({ command: "npm test" }, activeTheme, {}).render(80).map(stripAnsi);

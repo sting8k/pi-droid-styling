@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,6 +25,8 @@ function prepareWorkDir() {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
 	export const readFileSync: (path: string, encoding: string) => string;
+	export const renameSync: (from: string, to: string) => void;
+	export const unlinkSync: (path: string) => void;
 	export const statSync: (path: string) => { mtimeMs: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 }
@@ -186,6 +188,54 @@ await runConfigSmoke("inputBox missing style field", '{"inputBox":{}}', ({ confi
 	assert(config.inputBox.style === "auto", "missing style field did not normalize to default");
 });
 
+// A config that breaks after a good load keeps the last good values and is never touched;
+// a missing file is still scaffolded.
+async function runBrokenConfigSmoke() {
+	const homeDir = join(workDir, "home-broken-config");
+	const configDir = join(homeDir, ".pi", "agent");
+	const configPath = join(configDir, "pi-droid-styling.json");
+	const writeAt = (json, offsetMs) => {
+		writeFileSync(configPath, json, "utf8");
+		const when = new Date(Date.now() + offsetMs);
+		utimesSync(configPath, when, when);
+	};
+	writeInitialConfig(homeDir, '{"inputBox":{"style":"line"}}');
+	process.env.HOME = homeDir;
+	process.env.USERPROFILE = homeDir;
+	const { loadConfig, getConfigIssue } = await importBuilt("config.js");
+	assert(loadConfig().inputBox.style === "line" && getConfigIssue() === undefined, "valid config should load without an issue");
+
+	// loadConfig re-stats at most once per second: move the clock instead of sleeping.
+	const realNow = Date.now;
+	let clock = realNow();
+	Date.now = () => clock;
+	try {
+		const broken = '{"inputBox":{"style":"solid"},}\n';
+		writeAt(broken, 5000);
+		clock += 2000;
+		assert(loadConfig().inputBox.style === "line", "broken edit should keep the last good config, not defaults");
+		assert(getConfigIssue()?.includes(configPath), "config issue should name the file");
+		assert(readFileSync(configPath, "utf8") === broken, "broken config must not be rewritten");
+		assert(readdirSync(configDir).join() === "pi-droid-styling.json", "broken config must not be renamed or shadowed");
+
+		writeAt('{"inputBox":{"style":"solid"}}', 10000);
+		clock += 2000;
+		assert(loadConfig().inputBox.style === "solid" && getConfigIssue() === undefined, "fixed config should load and clear the issue");
+	} finally {
+		Date.now = realNow;
+	}
+
+	const freshHome = join(workDir, "home-missing-config");
+	mkdirSync(freshHome, { recursive: true });
+	process.env.HOME = freshHome;
+	process.env.USERPROFILE = freshHome;
+	const fresh = await importBuilt("config.js");
+	assert(fresh.loadConfig().inputBox.style === "auto" && fresh.getConfigIssue() === undefined, "missing config should serve defaults without an issue");
+	assert(existsSync(join(freshHome, ".pi", "agent", "pi-droid-styling.json")), "missing config should be scaffolded");
+	console.log("config smoke ok: broken json keeps last good config");
+}
+
+await runBrokenConfigSmoke();
 
 await runLoaderSmoke();
 console.log("working-message config smoke ok");

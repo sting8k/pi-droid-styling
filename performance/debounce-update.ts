@@ -35,9 +35,16 @@ const STREAM_FLUSH_MS = 33;
 const TARGET_CATCHUP_FRAMES = 8;
 const MIN_REVEAL_CHARS = 12;
 const MAX_REVEAL_CHARS = 120;
+/**
+ * Lookahead past the reveal target so the segmenter sees the whole cluster that straddles it.
+ * shortcut: a cluster longer than (target - from) + 32 code units can be cut at the window edge
+ * for one tick; no stall, the next tick recovers.
+ */
+const BOUNDARY_WINDOW_CHARS = 32;
 
 const TIMER_KEY = Symbol("presentation-timer");
 const SOURCE_KEY = Symbol("presentation-source");
+/** Per text entry: code-unit index into the entry text up to which it is revealed. */
 const DISPLAYED_LENGTHS_KEY = Symbol("presentation-displayed-lengths");
 const LAST_SOURCE_TEXTS_KEY = Symbol("presentation-last-source-texts");
 const LAST_PRESENTATION_AT_KEY = Symbol("presentation-last-at");
@@ -61,22 +68,25 @@ type TextEntry = {
 	text: string;
 };
 
-function getGraphemes(text: string): string[] {
-	if (graphemeSegmenter) {
-		return Array.from(graphemeSegmenter.segment(text), (part: any) => String(part.segment));
+/**
+ * Largest grapheme-cluster boundary <= target (from is a boundary, from < target < text.length).
+ * Segments only a small window, never the whole text. If no boundary falls in (from, target],
+ * returns the end of the first cluster so a long cluster still makes progress.
+ */
+function snapToClusterBoundary(text: string, from: number, target: number): number {
+	if (!graphemeSegmenter) {
+		// shortcut: without Segmenter only surrogate pairs are protected; a ZWJ or combining cluster can be split.
+		const end = text.charCodeAt(target) >= 0xdc00 && text.charCodeAt(target) <= 0xdfff ? target - 1 : target;
+		return end > from ? end : from + (text.codePointAt(from)! > 0xffff ? 2 : 1);
 	}
-	return Array.from(text);
-}
-
-function countGraphemes(text: string): number {
-	return getGraphemes(text).length;
-}
-
-function sliceGraphemes(text: string, length: number): string {
-	if (length <= 0) return "";
-	const graphemes = getGraphemes(text);
-	if (length >= graphemes.length) return text;
-	return graphemes.slice(0, length).join("");
+	let snapped = from;
+	let firstEnd = from;
+	for (const part of graphemeSegmenter.segment(text.slice(from, target + BOUNDARY_WINDOW_CHARS))) {
+		if (part.index === 0) firstEnd = from + part.segment.length;
+		else if (from + part.index > target) break;
+		snapped = from + part.index;
+	}
+	return snapped > from ? snapped : firstEnd;
 }
 
 function collectTextEntries(message: any): TextEntry[] {
@@ -143,7 +153,7 @@ function updateSourceState(component: any, message: any): void {
 
 function countAssistantMessageChars(message: any): number {
 	let chars = 0;
-	for (const entry of collectTextEntries(message)) chars += countGraphemes(entry.text);
+	for (const entry of collectTextEntries(message)) chars += entry.text.length;
 	return chars;
 }
 
@@ -151,7 +161,7 @@ function countDisplayedChars(component: any): number {
 	let chars = 0;
 	const lengths = getDisplayedLengths(component);
 	for (const entry of collectTextEntries(component[SOURCE_KEY])) {
-		chars += Math.min(lengths.get(entry.key) ?? 0, countGraphemes(entry.text));
+		chars += Math.min(lengths.get(entry.key) ?? 0, entry.text.length);
 	}
 	return chars;
 }
@@ -172,14 +182,15 @@ function revealNextChunk(component: any, revealChars: number): number {
 	const lengths = getDisplayedLengths(component);
 	for (const entry of collectTextEntries(component[SOURCE_KEY])) {
 		if (remaining <= 0) break;
-		const sourceLength = countGraphemes(entry.text);
+		const sourceLength = entry.text.length;
 		const currentLength = Math.min(lengths.get(entry.key) ?? 0, sourceLength);
 		const available = sourceLength - currentLength;
 		if (available <= 0) continue;
-		const take = Math.min(available, remaining);
-		lengths.set(entry.key, currentLength + take);
-		remaining -= take;
-		revealed += take;
+		let target = currentLength + Math.min(available, remaining);
+		if (target < sourceLength) target = snapToClusterBoundary(entry.text, currentLength, target);
+		lengths.set(entry.key, target);
+		remaining -= target - currentLength;
+		revealed += target - currentLength;
 	}
 	return revealed;
 }
@@ -195,15 +206,15 @@ function cloneDisplayedMessage(message: any, displayedLengths: Map<string, numbe
 			const textKey = `content:${index}:text`;
 			const thinkingKey = `content:${index}:thinking`;
 			if (typeof block.text === "string") {
-				blockClone.text = sliceGraphemes(block.text, displayedLengths.get(textKey) ?? 0);
+				blockClone.text = block.text.slice(0, displayedLengths.get(textKey) ?? 0);
 			}
 			if (typeof block.thinking === "string") {
-				blockClone.thinking = sliceGraphemes(block.thinking, displayedLengths.get(thinkingKey) ?? 0);
+				blockClone.thinking = block.thinking.slice(0, displayedLengths.get(thinkingKey) ?? 0);
 			}
 			return blockClone;
 		});
 	} else if (typeof message.text === "string") {
-		clone.text = sliceGraphemes(message.text, displayedLengths.get("message:text") ?? 0);
+		clone.text = message.text.slice(0, displayedLengths.get("message:text") ?? 0);
 	}
 	return clone;
 }

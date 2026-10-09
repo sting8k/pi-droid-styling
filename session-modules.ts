@@ -21,6 +21,7 @@ export { installInteractiveChatVirtualization, virtualizeChatContainer, virtuali
 export { setFullTheme } from "./theme/theme-extras.js";
 export { applyTerminalPageBackgroundOsc11, clearTerminalPageBackgroundOsc111 } from "./theme/terminal-background.js";
 export { installCompactToolSpacing, setToolSpacingTheme } from "./tool-tags/compact-tool-spacing.js";
+export { setToolGroupTheme } from "./tool-tags/tool-groups.js";
 export { installDefaultBadge, setDefaultBadgeTheme } from "./tool-tags/default-badge.js";
 export { installBuiltinToolRenderers } from "./tool-tags/builtin-tool-renderers.js";
 export { recordToolCallTimingStart, recordToolCallTimingEnd } from "./tool-tags/elapsed.js";

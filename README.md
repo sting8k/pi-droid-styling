@@ -79,7 +79,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `maxExpandedLines` | `0`–`1000` | `50` | Limit expanded tool output. Use `0` for no limit. |
 | `dimToolOutput` | `true`, `false` | `false` | Dim tool output so the conversation stands out. |
 | `customWorkingMessage` | Custom text | See example | Rename the working, thinking, answering, and tool-running labels. You can set only the ones you want to change. |
-| `presentationStyle` | `droid`, `reasonix` | `droid` | `droid` keeps cards and tool boxes. `reasonix` uses a cleaner, compact conversation layout. |
+| `presentationStyle` | `droid`, `reasonix`, `claudecode` | `droid` | `droid` keeps cards and tool boxes. `reasonix` uses a cleaner, compact conversation layout. `claudecode` uses the same layout with Claude Code-style tool calls: `● Read(src/a.ts)` on one row (long arguments end in `…`) and the result on a `└` line below. Assistant turns always start with `●` (the theme's `assistantPrefix` is ignored). Hidden thinking reads `● thinking` while live and `● thought` once done. Two or more consecutive tool calls fold under one `● Running(…)` / `● Done(3 tool calls · 1 thought)` row with each call listed as a smaller `•` row in a `├─` / `└─` tree; `Ctrl+O` shows full output. |
 | `userZoneStyle` | `gemini`, `droid`, `cli-dock`, `nvim` | `gemini` | Choose the look of the prompt, status rows, and footer. `nvim` is a Neovim-style dock: a lined input plus one statusline bar (thinking-level badge, model, branch, tokens, context %, cache-hit %). |
 | `inputBox.style` | `auto`, `halfblock`, `line`, `solid` | `auto` | Choose the input-box frame. `auto` uses the best match for the selected user-zone style. Some presets always resolve to a frame outside this list regardless of the setting: `cli-dock` always renders `outline`, and `droid` collapses an explicit `line` to `none`. |
 | `tasksWidgetStyle` | `compact`, `default` | `compact` | Use the one-line tasks widget, or leave the original `pi-tasks` widget unchanged. |
@@ -91,7 +91,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 
 ## Profiling
 
-Render profiling is disabled by default. To capture render/update/git/sidebar metrics plus memory, CPU delta, and event-loop utilization:
+Render profiling is disabled by default. To capture render/update/git metrics plus memory, CPU delta, and event-loop utilization:
 
 ```sh
 PI_DROID_PROFILE=1 PI_DROID_PROFILE_OUT=/tmp/pi-droid-profile.jsonl pi
@@ -122,6 +122,8 @@ The synthetic bench exercises footer/editor rendering, render throttle, assistan
 ## Credits
 
 The gradient startup header was inspired by [EnderLiquid/pi-startup-header](https://github.com/EnderLiquid/pi-startup-header).
+
+The `claudecode` presentation style (the `● Name(args)` tool rows and the folded `● Running(…)` / `● Done(…)` activity group) was modelled on the look of [ykn0309/pi-pretty-tui](https://github.com/ykn0309/pi-pretty-tui) by Kainan Yang (MIT); it is a re-implementation, not copied code.
 
 ## License
 

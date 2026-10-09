@@ -82,18 +82,24 @@ function truncateReasonixLine(text: string, width: number): string {
 	return safeTruncateToWidth(content, rowWidth, reasonixEllipsis());
 }
 
+function resultConnector(): string {
+	return getPresentationDesign().resultConnector;
+}
+
 function colorReasonixConnector(line: string): string {
+	const connectorText = resultConnector();
 	const visible = stripAnsi(line);
-	const connectorIndex = visible.indexOf("└─ ");
+	const connectorIndex = visible.indexOf(connectorText);
 	if (connectorIndex < 0 || visible.slice(0, connectorIndex).trim().length > 0) return line;
-	const remainder = dropLeadingColumns(line, connectorIndex + 3);
-	const connector = cachedTheme?.fg?.("dim", "└─ ") ?? "└─ ";
+	const remainder = dropLeadingColumns(line, connectorIndex + connectorText.length);
+	const connector = cachedTheme?.fg?.("dim", connectorText) ?? connectorText;
 	return `${" ".repeat(connectorIndex)}${connector}${remainder}`;
 }
 
 function formatReasonixMetricsLine(footerLine: string, width: number): string {
 	const footer = toSingleRenderLine(footerLine).trimStart();
-	const line = stripAnsi(footer).startsWith("└─ ") ? `  ${footer}` : `  └─ ${footer}`;
+	const connector = resultConnector();
+	const line = stripAnsi(footer).startsWith(connector) ? `  ${footer}` : `  ${connector}${footer}`;
 	return truncateReasonixLine(colorReasonixConnector(line), width);
 }
 
@@ -114,12 +120,12 @@ export function normalizeReasonixToolLines(lines: string[], width: number, expan
 	let footerIndex = -1;
 	for (let index = content.length - 1; index > 0; index--) {
 		const plain = stripAnsi(content[index] ?? "").trimStart();
-		if (!plain.includes("◷") && !(content.length === 2 && plain.startsWith("└─ "))) continue;
+		if (!plain.includes("◷") && !(content.length === 2 && plain.startsWith(resultConnector()))) continue;
 		footerIndex = index;
 		break;
 	}
 
-	const outputIndex = content.findIndex((line, index) => index > 0 && stripAnsi(line).trimStart().startsWith("└─ "));
+	const outputIndex = content.findIndex((line, index) => index > 0 && stripAnsi(line).trimStart().startsWith(resultConnector()));
 	const headerEnd = outputIndex >= 0 ? outputIndex : footerIndex >= 0 ? footerIndex : content.length;
 	const headerRows = content.slice(0, Math.max(1, headerEnd)).map((line) => truncateReasonixLine(toSingleRenderLine(line), rowWidth));
 	if (footerIndex < 0) return [...headerRows, ""];
