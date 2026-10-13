@@ -50,12 +50,16 @@ type ThemeDiscovery = {
 };
 
 function themeDiscoveryFromContent(content: any): ThemeDiscovery | null {
-	const extras = content?.extras && typeof content.extras === "object"
-		? content.extras as Record<string, string | boolean>
-		: null;
 	const vars = content?.vars && typeof content.vars === "object"
 		? content.vars as Record<string, string>
 		: null;
+	// Pi 1.2.0 rejects unknown top-level theme keys, so extras moved into "vars".
+	// Recover extras from vars keys that match the known extras set.
+	const extras = content?.extras && typeof content.extras === "object"
+		? content.extras as Record<string, string | boolean>
+		: vars
+			? Object.fromEntries(Object.entries(vars).filter(([key]) => key in HARDCODED_DEFAULTS))
+			: null;
 	const colors = content?.colors && typeof content.colors === "object"
 		? content.colors as Record<string, string>
 		: null;
