@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.18.1 - 2026-10-13
+
+### Fixed
+- Pi 1.2.0 refused to load every bundled theme, reporting `Invalid theme` at startup, because it now rejects the custom top-level `extras` block those themes used. The 26 bundled themes now keep their extras in `vars`, which Pi accepts, and they load again with their prompt prefixes, divider and slash-command colors. Thanks @btmc0.
+- Themes that keep `extras` keys such as `assistantPrefix` or `dividerColor` in `vars` are read the same way as a top-level `extras` block. If you wrote your own theme with `extras`, move those keys into `vars` for Pi 1.2.0, and write `true`/`false` as the strings `"true"`/`"false"`. A theme that still has `extras` keeps working on older Pi.
+
 ## 2.18.0 - 2026-10-09
 
 ### Added

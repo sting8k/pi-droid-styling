@@ -107,8 +107,11 @@ async function runThemeExtrasSmoke() {
 		themeExtras.setFullTheme(bundledTheme, true);
 		const resolved = themeExtras.getThemeExtra(bundledTheme, "collapsedThinkingTailColor");
 		assert(/^#[0-9a-fA-F]{3,8}$/.test(resolved), `companion theme ${file} did not resolve collapsedThinkingTailColor (got ${resolved})`);
+		// Pi 1.2.0 rejects a top-level "extras" key, so companion themes carry their extras in "vars".
+		const prefix = JSON.parse(readFileSync(bundledTheme.sourcePath, "utf8")).vars?.assistantPrefix;
+		assert(prefix && themeExtras.getThemeExtra(bundledTheme, "assistantPrefix") === prefix, `companion theme ${file} extras were not read from vars`);
 	}
-	console.log("theme extras token smoke ok (26 companion themes resolve collapsedThinkingTailColor)");
+	console.log("theme extras token smoke ok (26 companion themes resolve collapsedThinkingTailColor and vars extras)");
 }
 
 prepareWorkDir();
