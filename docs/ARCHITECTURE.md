@@ -23,6 +23,14 @@ core/
 
 editor/
   BoxEditor component and editor-specific rendering
+  - image-attachments.ts owns the durable pasted-image store (the session directory for the
+    current cwd: ~/.pi/agent/sessions/--<cwd>--/images/<N>.<ext>, sharing the sessions' lifecycle;
+    same-cwd fork/resume share one store): paste-time persist + host-tmp consumption, disk-seeded
+    monotonic ids (never reused within the store), and a startup scan that rebuilds the edit
+    registry (newest 16, powers re-send) plus the global link table (powers the OSC 8 history
+    hyperlinks in messages/user-prefix.ts) while deleting store files older than 7 days. BoxEditor diverts the host clipboard-image insertTextAtCursor call into
+    a literal [Image #N] text token; submit keeps tokens in the sent text and the hybrid sender
+    (editor/image-submit.ts) emits ImageContent parts or inline path text based on model modalities
 
 messages/
   Assistant/user message prefix patches and boxed Pi core special message block styling

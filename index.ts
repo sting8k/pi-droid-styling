@@ -305,7 +305,7 @@ export default function (pi: ExtensionAPI) {
 			modules.installRenderFrameBackground(tui as any, uiTheme);
 			modules.installRenderPhysicalSync(tui as any);
 			renderFrameDebugModule?.installRenderFrameDebug(tui as any);
-			return new modules.BoxEditor(
+			const editor = new modules.BoxEditor(
 				tui, theme, kb, uiTheme, sessionCwd,
 				() => {
 					try {
@@ -338,7 +338,23 @@ export default function (pi: ExtensionAPI) {
 				userZoneStyle,
 				config.inputBox.style,
 				modules.getFooterTokenUsageLine,
+				// Hybrid image submit: real ImageContent parts when the model accepts image input,
+				// path text otherwise (read-tool compatible). Policy lives in editor/image-submit.ts.
+				(text, attachments) => {
+					modules.submitEditorImages({
+						getModelInputModalities: () => {
+							try {
+								return (ctx.model as { input?: string[] } | undefined)?.input;
+							} catch (error) {
+								if (!isStaleContextError(error)) throw error;
+								return undefined;
+							}
+						},
+						sendUserMessage: (contents) => pi.sendUserMessage(contents),
+					}, text, attachments);
+				},
 			);
+				return editor;
 		});
 	});
 }

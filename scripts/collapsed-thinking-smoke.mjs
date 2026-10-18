@@ -53,9 +53,9 @@ function prepareBuild() {
 	writeFileSync(stubPath, `declare module "fs" {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
-	export const readFileSync: (path: string, encoding: string) => string;
+	export const readFileSync: (path: string, encoding?: string) => any;
 	export const readdirSync: any;
-	export const statSync: (path: string) => { mtimeMs: number };
+	export const statSync: (path: string) => { mtimeMs: number; size: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 	export const appendFileSync: (path: string, data: string, encoding?: string) => void;
 }

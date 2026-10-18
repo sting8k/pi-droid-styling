@@ -65,6 +65,7 @@ export interface DroidStylingConfig {
 	forceOSC11: boolean;
 	transparentBackground: boolean;
 	visibleChatTail: number;
+	imageAttachments: boolean;
 }
 
 const DEFAULT_CUSTOM_WORKING_MESSAGE: CustomWorkingMessageConfig = {
@@ -92,6 +93,7 @@ const DEFAULTS: DroidStylingConfig = {
 	forceOSC11: false,
 	transparentBackground: false,
 	visibleChatTail: 30,
+	imageAttachments: true,
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-droid-styling.json");
@@ -262,6 +264,7 @@ function normalizeConfig(raw: unknown): DroidStylingConfig {
 		forceOSC11: booleanOrDefault(config.forceOSC11, DEFAULTS.forceOSC11),
 		transparentBackground: booleanOrDefault(config.transparentBackground, DEFAULTS.transparentBackground),
 		visibleChatTail: visibleChatTailOrDefault(config.visibleChatTail),
+		imageAttachments: booleanOrDefault(config.imageAttachments, DEFAULTS.imageAttachments),
 	};
 }
 

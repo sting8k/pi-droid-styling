@@ -24,7 +24,7 @@ function prepareWorkDir() {
 	writeFileSync(join(buildDir, "package.json"), "{\"type\":\"module\"}\n", "utf8");
 	writeFileSync(stubPath, `declare module "fs" {
 	export const existsSync: (path: string) => boolean;
-	export const readFileSync: (path: string, encoding: string) => string;
+	export const readFileSync: (path: string, encoding?: string) => any;
 }
 declare module "os" {
 	export const homedir: () => string;

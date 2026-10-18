@@ -1,4 +1,6 @@
 export { BoxEditor } from "./editor/box-editor.js";
+export { attachmentToImageContent, type ImageAttachment } from "./editor/image-attachments.js";
+export { submitEditorImages } from "./editor/image-submit.js";
 export { createAssistantSpeedTracker } from "./core/assistant-speed.js";
 export { createGitBranchFetcher } from "./core/git-status.js";
 export { loadConfig } from "./config.js";

@@ -1,12 +1,21 @@
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { homedir, hostname, userInfo } from "node:os";
+import { join } from "node:path";
 
 import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 import { loadConfig, type InputBoxStyle } from "../config.js";
+import {
+	ImageAttachmentList,
+	isCommandLikeInput,
+	isHostClipboardImagePath,
+	resolveImageTokens,
+	setImageStoreDir,
+	type ImageAttachment,
+} from "./image-attachments.js";
 
 /** Outline border plus the prompt gap, so the cli-dock status row lines up with the input text. */
 const CLI_DOCK_STATUS_INSET = 2;
@@ -164,8 +173,14 @@ export class BoxEditor extends CustomEditor {
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 		private readonly inputBoxStyle?: InputBoxStyle,
 		private readonly getFooterTokenUsage?: FooterTokenUsageProvider,
+		private readonly onSubmitWithImages?: (text: string, attachments: ImageAttachment[]) => void,
 	) {
 		super(tui, editorTheme, kb);
+		// Scope the image store to this session directory (Pi groups sessions per cwd under
+		// ~/.pi/agent/sessions/--<cwd>--/); images share the session lifecycle. The path rule
+		// mirrors the host getDefaultSessionDirPath convention and degrades gracefully if it moves.
+		const safeCwd = this.sessionCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
+		setImageStoreDir(join(homedir(), ".pi", "agent", "sessions", `--${safeCwd}--`, "images"));
 	}
 
 	private color(hex: string, text: string): string {
@@ -1058,6 +1073,146 @@ export class BoxEditor extends CustomEditor {
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
+	// ---------------------------------------------------------------------------
+	// Image attachments as text tokens (the Claude Code model).
+	//
+	// The host clipboard flow writes <tmpdir>/pi-clipboard-<uuid>.<ext> and then calls
+	// insertTextAtCursor(path); that call is diverted here into a literal `[Image #N]` text token
+	// plus a registry entry. Because the token is plain text, arrow-key history, Backspace deletion,
+	// and moving/copying the reference all work with zero custom key routing. On submit the tokens
+	// are resolved against the registry; unknown tokens stay as literal text and unreferenced
+	// attachments are dropped. With imageAttachments disabled every path below falls through to
+	// the host behavior byte-for-byte.
+	// ---------------------------------------------------------------------------
+
+	private readonly imageAttachments = new ImageAttachmentList();
+
+	private imageAttachmentsEnabled(): boolean {
+		return loadConfig().imageAttachments;
+	}
+
+	insertTextAtCursor(text: string): void {
+		if (this.imageAttachmentsEnabled() && isHostClipboardImagePath(text)) {
+			const attachment = this.imageAttachments.addFromPath(text);
+			if (attachment) {
+				super.insertTextAtCursor(`[Image #${attachment.id}] `);
+				return;
+			}
+		}
+		super.insertTextAtCursor(text);
+	}
+
+	handleInput(data: string): void {
+		// Atomic token deletion: Backspace/Delete removes a whole `[Image #N]` at once when the
+		// cursor sits right after (or before) a complete token, matching how the host deletes whole
+		// bracketed-paste markers and how Claude Code chips / Codex text elements behave.
+		if (this.imageAttachmentsEnabled() && (data === "\x7f" || data === "\x08")) {
+			if (this.deleteWholeImageTokenBeforeCursor()) return;
+		} else if (this.imageAttachmentsEnabled() && data === "\x1b[3~") {
+			if (this.deleteWholeImageTokenForward()) return;
+		}
+		if (
+			this.imageAttachmentsEnabled()
+			&& this.imageAttachments.count() > 0
+			&& this.onSubmitWithImages !== undefined
+			&& (data === "\r" || data === "\n" || this.matchesEditorKey(data, "tui.input.submit"))
+		) {
+			this.withImagesOnSubmit(() => super.handleInput(data));
+			return;
+		}
+		super.handleInput(data);
+	}
+
+	/**
+	 * submitValue is private in the host editor, so images ride along by swapping onSubmit for one
+	 * call: super.handleInput() runs the real submit (trim, paste markers, state reset) and invokes
+	 * our shim, which resolves the `[Image #N]` tokens and forwards clean text + attachments to the
+	 * hybrid sender. Nothing is consumed: registry entries and temp files survive the submit so a
+	 * token recalled from input history still resolves and can re-send the same image; the
+	 * registry bounds itself with FIFO eviction instead. When the keypress does not actually submit
+	 * (escaped newline, paste burst) or no token resolves, onSubmit falls through to the host path.
+	 */
+	private withImagesOnSubmit(run: () => void): void {
+		const original = this.onSubmit;
+		this.onSubmit = (submitted: string) => {
+			this.onSubmit = original;
+			if (typeof submitted === "string") {
+				const resolution = resolveImageTokens(submitted, this.imageAttachments.list());
+				// Tokens stay in the sent text (Claude Code / Codex convention): the conversation,
+				// input history, and the model all see the same [Image #N] positional reference.
+				if (resolution.referenced.length > 0 && !isCommandLikeInput(submitted)) {
+					this.onSubmitWithImages?.(submitted, resolution.referenced);
+					return;
+				}
+			}
+			original?.(submitted);
+		};
+		try {
+			run();
+		} finally {
+			this.onSubmit = original;
+		}
+	}
+
+
+	private matchesEditorKey(data: string, action: string): boolean {
+		try {
+			return (this as any).keybindings?.matches?.(data, action) === true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** Backspace deletes a complete `[Image #N] ` (trailing space included) in one stroke. */
+	private deleteWholeImageTokenBeforeCursor(): boolean {
+		const state = (this as any).state;
+		if (!state || typeof state.cursorCol !== "number" || state.cursorCol <= 0) return false;
+		const line = state.lines[state.cursorLine] ?? "";
+		const before = line.slice(0, state.cursorCol);
+		const match = /(\[Image #\d+\]) ?$/.exec(before);
+		if (!match) return false;
+		this.spliceImageToken(state, state.cursorCol - match[0].length, match[0].length);
+		return true;
+	}
+
+	/** Delete (forward) removes a complete `[Image #N] ` (trailing space included) in one stroke. */
+	private deleteWholeImageTokenForward(): boolean {
+		const state = (this as any).state;
+		if (!state || typeof state.cursorCol !== "number") return false;
+		const line = state.lines[state.cursorLine] ?? "";
+		const match = /^(\[Image #\d+\]) ?/.exec(line.slice(state.cursorCol));
+		if (!match) return false;
+		this.spliceImageToken(state, state.cursorCol, match[0].length);
+		return true;
+	}
+
+	private spliceImageToken(state: any, start: number, length: number): void {
+		const line = state.lines[state.cursorLine] ?? "";
+		try {
+			(this as any).pushUndoSnapshot?.();
+		} catch {
+			// Undo depth is best-effort here.
+		}
+		state.lines[state.cursorLine] = line.slice(0, start) + line.slice(start + length);
+		try {
+			(this as any).setCursorCol?.(Math.max(0, start));
+		} catch {
+			state.cursorCol = Math.max(0, start);
+		}
+		this.onChange?.(this.getText());
+		try {
+			(this.tui as any)?.requestRender?.();
+		} catch {
+			// Render is best-effort.
+		}
+	}
+
+	/** Accent-color `[Image #N]` tokens in a rendered line; width is unchanged (ANSI only). */
+	private colorizeImageTokens(line: string): string {
+		if (!this.imageAttachmentsEnabled() || !line.includes("[Image #")) return line;
+		return line.replace(/\[Image #\d+\]/g, (token) => this.tone("accent", token));
+	}
+
 	private renderDroidLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
 		const editorStyle = this.userZoneStyle.editor;
 		const lines: string[] = [];
@@ -1120,7 +1275,7 @@ export class BoxEditor extends CustomEditor {
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const available = Math.max(1, inputInnerWidth - safeVisibleWidth(prefix));
-			const row = `${prefix}${this.pad(line, available)}`;
+			const row = `${prefix}${this.pad(this.colorizeImageTokens(line), available)}`;
 			return editorStyle.layout === "cli-dock" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
 		});
 

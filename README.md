@@ -35,6 +35,7 @@ pi install git:github.com/sting8k/pi-themes
 ### Look and feel
 
 - **A cleaner Pi, instantly.** Compact startup, a focused input editor, tidier conversations, collapsed tool output that still peeks at the live thinking tail, and a footer that tracks your session.
+- **Paste screenshots as attachments.** Images pasted from the clipboard drop a `[Image #1]` token at the cursor instead of a raw `/tmp` path. The token is plain text: one Backspace deletes the whole token (atomic, like Claude Code chips), arrows and history work exactly as before, and you can move or copy the reference anywhere in the prompt. In conversation history the token is a clickable link (Cmd+Click) to a persistent copy, so the image survives session restarts. Submit resolves the tokens and sends real image content when the model supports it.
 - **Make it yours.** Two conversation layouts, three prompt styles, multiple input frames, and 25 themes included.
 
 ### Built for the terminal
@@ -69,7 +70,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
   "diffMode": "auto",
   "forceOSC11": false,
   "transparentBackground": false,
-  "visibleChatTail": 30
+  "visibleChatTail": 30,
+  "imageAttachments": true
 }
 ```
 
@@ -88,6 +90,7 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `forceOSC11` | `true`, `false` | `false` | Force terminal background sync on Windows/WSL. Usually leave this off. |
 | `transparentBackground` | `true`, `false` | `false` | Stop painting the page/frame background, tool boxes, user messages, and the input box, and reset OSC 11, so the terminal's own background (wallpaper, blur) shows through. Selections and diff accents stay opaque. Dim/blur is tuned on the terminal side (Ghostty `background-image`, kitty `background_image`, WezTerm `window_background_image`). |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
+| `imageAttachments` | `true`, `false` | `true` | Paste clipboard images as `[Image #N]` text tokens at the cursor (Backspace deletes like any text; ids are monotonic per project and never reused). Pasted bytes are persisted immediately into the session directory for the current project (`~/.pi/agent/sessions/--<cwd>--/images/<N>.<ext>` — images share the sessions' lifecycle; the host tmp file is consumed), so restart/resume in the same project restores both the OSC 8 history links and the newest 16 re-sendable references from disk. The startup sweep deletes store files older than 7 days; resuming somewhere the files no longer exist degrades old tokens to literal text (the model context itself keeps its embedded copies). Submit keeps tokens in the sent text and sends real image content when the model accepts image input, otherwise tokens are replaced inline by their file paths. `false` restores the stock host behavior of inserting the path into the text. |
 
 ## Profiling
 
@@ -117,6 +120,7 @@ The synthetic bench exercises footer/editor rendering, render throttle, assistan
 - `transparentBackground: true` skips page/frame background painting, tool boxes, boxed core message blocks, user-message backgrounds, and input-box bg fills (all presets), and resets OSC 11 so the terminal's own default background (wallpaper, blur) shows through. Real selections and diff accents stay opaque for readability; half-block ▄▀ frame edges blank out to plain rows (row count and width preserved), so only `outline`/`line` frames keep a visible edge.
 
 - `customWorkingMessage` is on by default. Set `working`, `thinking`, `answering`, and `running` strings to customize the themed loader labels.
+- Attachments are text tokens (`[Image #1]`), the same model Claude Code uses: Backspace deletes the reference, `↑`/`↓` history is never hijacked, and moving/copying the token changes where the image is referenced. Numbers are assigned at paste time and never renumbered — `[Image #1] [Image #3]` after deleting #2 is valid. On submit, tokens stay in the sent text (the Claude Code / Codex convention), so the conversation, input history, and the model all keep the same positional reference; text-only models get tokens replaced inline by their file paths. Submissions do not consume the registry: tokens recalled from input history still resolve and can re-send the same image without re-pasting (Codex local-history semantics) — the registry keeps the newest 16 attachments and FIFO-evicts older ones (evicted tokens degrade to literal text), and session shutdown removes the retained temp files. Hand-typed or long-recalled tokens with no image behind them stay as literal text. Slash-command and `!` bash submits keep the host path.
 - Existing legacy `customWorkingMessage: true` or `false` values are normalized back to the default label object.
 
 ## Credits
