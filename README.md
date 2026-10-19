@@ -18,6 +18,8 @@ Or install directly from Git:
 pi install git:github.com/sting8k/pi-droid-styling
 ```
 
+Requires Pi 1.x (`@earendil-works/pi-coding-agent` and `pi-tui` `>=1.0.0 <2.0.0`). Pi 0.x is not supported; use version 2.18.x or earlier there.
+
 ## Themes
 
 This extension uses [`pi-themes`](https://github.com/sting8k/pi-themes) as its color layer. Installing `pi-droid-styling` automatically installs and registers those themes—no second install command is needed.
@@ -91,6 +93,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `transparentBackground` | `true`, `false` | `false` | Stop painting the page/frame background, tool boxes, user messages, and the input box, and reset OSC 11, so the terminal's own background (wallpaper, blur) shows through. Selections and diff accents stay opaque. Dim/blur is tuned on the terminal side (Ghostty `background-image`, kitty `background_image`, WezTerm `window_background_image`). |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
 | `imageAttachments` | `true`, `false` | `true` | Paste clipboard images as `[Image #N]` text tokens at the cursor (Backspace deletes like any text; ids are monotonic per project and never reused). Pasted bytes are persisted immediately into the session directory for the current project (`~/.pi/agent/sessions/--<cwd>--/images/<N>.<ext>` — images share the sessions' lifecycle; the host tmp file is consumed), so restart/resume in the same project restores both the OSC 8 history links and the newest 16 re-sendable references from disk. The startup sweep deletes store files older than 7 days; resuming somewhere the files no longer exist degrades old tokens to literal text (the model context itself keeps its embedded copies). Submit keeps tokens in the sent text and sends real image content when the model accepts image input, otherwise tokens are replaced inline by their file paths. `false` restores the stock host behavior of inserting the path into the text. |
+
+Streamed answers appear character by character, with the newest characters fading in on truecolor themes. Finished and resumed messages always show at once. Set `PI_REDUCED_MOTION=1` to show streamed text in chunks instead.
 
 ## Profiling
 

@@ -1,12 +1,10 @@
-import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
+import { existsSync } from "fs";
 import { join } from "path";
 
-import { getAgentDir, keyHint, rawKeyHint, VERSION } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Spacer, Text } from "@earendil-works/pi-tui";
 import { safeTruncateToWidth, safeVisibleWidth } from "./render-budget.js";
-import { fgHex, parseFgAnsiToRgb, rgbToHex } from "./theme/ansi.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.startup-ui.patched");
 const ORIGINAL_SHOW_LOADED_RESOURCES = Symbol.for("pi-droid-styling.startup-ui.original-show-loaded-resources");
@@ -19,18 +17,6 @@ const STARTUP_PANEL_SIDE_PADDING = 2;
 const SYSTEM_CONTEXT_TYPE_WIDTH = safeVisibleWidth("System & Context");
 const SYSTEM_CONTEXT_METRIC_WIDTH = safeVisibleWidth("Words/Lines");
 const RESOURCE_ROW_GAP = "  ·  ";
-const PI_LOGO_LINES = [
-	"████████████╗",
-	"████████████║",
-	"████╔═══████║",
-	"████║   ████║",
-	"████████╬═══████╗",
-	"████████║   ████║ ",
-	"████╔═══╝   ████║",
-	"████║       ████║",
-	"╚═══╝       ╚═══╝",
-] as const;
-
 let activeTheme: ThemeLike | undefined;
 const FALLBACK_THEME: ThemeLike = {
 	bold: (text) => text,
@@ -43,87 +29,6 @@ type ThemeLike = {
 	getFgAnsi?(color: string): string;
 	getColorMode?(): string;
 };
-
-type Rgb = { r: number; g: number; b: number };
-
-const FALLBACK_ACCENT_RGB: Rgb = { r: 80, g: 160, b: 255 };
-const LOGO_PALETTE_STEPS = 24;
-const LOGO_MAX_DARKEN = 0.18;
-const LOGO_MAX_LIGHTEN = 0.18;
-const LOGO_ROW_PHASE_STEP = 0.12;
-
-function clampChannel(value: number): number {
-	return Math.max(0, Math.min(255, Math.round(value)));
-}
-
-function interpolateRgb(start: Rgb, end: Rgb, factor: number): Rgb {
-	return {
-		r: clampChannel(start.r + (end.r - start.r) * factor),
-		g: clampChannel(start.g + (end.g - start.g) * factor),
-		b: clampChannel(start.b + (end.b - start.b) * factor),
-	};
-}
-
-function darkenRgb(rgb: Rgb, amount: number): Rgb {
-	return {
-		r: clampChannel(rgb.r * (1 - amount)),
-		g: clampChannel(rgb.g * (1 - amount)),
-		b: clampChannel(rgb.b * (1 - amount)),
-	};
-}
-
-function lightenRgb(rgb: Rgb, amount: number): Rgb {
-	return {
-		r: clampChannel(rgb.r + (255 - rgb.r) * amount),
-		g: clampChannel(rgb.g + (255 - rgb.g) * amount),
-		b: clampChannel(rgb.b + (255 - rgb.b) * amount),
-	};
-}
-
-function buildLogoPalette(accent: Rgb): Rgb[] {
-	return Array.from({ length: LOGO_PALETTE_STEPS }, (_, index) => {
-		const progress = index / LOGO_PALETTE_STEPS;
-		const wave = -Math.cos(progress * Math.PI * 2);
-		return wave < 0 ? darkenRgb(accent, LOGO_MAX_DARKEN * -wave) : lightenRgb(accent, LOGO_MAX_LIGHTEN * wave);
-	});
-}
-
-function sampleLogoGradient(palette: Rgb[], position: number): Rgb {
-	const wrapped = ((position % 1) + 1) % 1;
-	const scaled = wrapped * palette.length;
-	const baseIndex = Math.floor(scaled) % palette.length;
-	const nextIndex = (baseIndex + 1) % palette.length;
-	return interpolateRgb(palette[baseIndex]!, palette[nextIndex]!, scaled - Math.floor(scaled));
-}
-
-function renderLogoGradientLine(theme: ThemeLike, line: string, palette: Rgb[], phase: number): string {
-	const characters = [...line];
-	const span = Math.max(characters.length - 1, 1);
-	return characters
-		.map((character, index) => {
-			if (character === " ") return character;
-			const color = sampleLogoGradient(palette, index / span + phase);
-			return fgHex(theme, rgbToHex(color), character);
-		})
-		.join("");
-}
-
-let logoGradientCacheKey: string | undefined;
-let logoGradientCacheLines: string[] | undefined;
-
-function styledLogoLines(theme: ThemeLike): string[] {
-	const accentAnsi = theme.getFgAnsi?.("accent") ?? "";
-	const mode = theme.getColorMode?.() ?? "truecolor";
-	const cacheKey = `${mode}|${accentAnsi}`;
-	if (cacheKey === logoGradientCacheKey && logoGradientCacheLines) return logoGradientCacheLines;
-	const accent = parseFgAnsiToRgb(accentAnsi) ?? FALLBACK_ACCENT_RGB;
-	const palette = buildLogoPalette(accent);
-	logoGradientCacheLines = PI_LOGO_LINES.map((line, rowIndex) =>
-		renderLogoGradientLine(theme, line, palette, rowIndex * LOGO_ROW_PHASE_STEP),
-	);
-	logoGradientCacheKey = cacheKey;
-	return logoGradientCacheLines;
-}
 
 type ResourceRow = {
 	label: string;
@@ -164,22 +69,6 @@ class ExpandableText extends Text {
 	}
 }
 
-function readJson(path: string): Record<string, unknown> {
-	if (!existsSync(path)) return {};
-	try {
-		const parsed = JSON.parse(readFileSync(path, "utf-8"));
-		return typeof parsed === "object" && parsed !== null ? parsed : {};
-	} catch {
-		return {};
-	}
-}
-
-function isQuietStartup(cwd: string): boolean {
-	const globalSettings = readJson(join(homedir(), ".pi", "agent", "settings.json"));
-	const projectSettings = readJson(join(cwd, ".pi", "settings.json"));
-	return Boolean((projectSettings.quietStartup ?? globalSettings.quietStartup) ?? false);
-}
-
 function discoverPromptFile(cwd: string, agentDir: string, filename: string): string | undefined {
 	const projectPath = join(cwd, ".pi", filename);
 	if (existsSync(projectPath)) return projectPath;
@@ -202,10 +91,6 @@ function countLines(text: string): number {
 
 function indentStartupLines(lines: string[]): string[] {
 	return lines.map((line) => `${MESSAGE_TEXT_INDENT}${line}`);
-}
-
-function startupBodyWidth(width: number): number {
-	return Math.max(1, width - safeVisibleWidth(MESSAGE_TEXT_INDENT));
 }
 
 function normalizeToolNames(names: unknown): string[] {
@@ -411,70 +296,9 @@ function renderResourceTable(theme: ThemeLike, rows: ResourceRow[], systemContex
 	].join("\n");
 }
 
-function compactHeader(theme: ThemeLike, width: number): string {
-	const logoLines = styledLogoLines(theme);
-	const logoWidth = Math.max(...PI_LOGO_LINES.map((line) => safeVisibleWidth(line)));
-	const gap = "   ";
-	const title = theme.bold(theme.fg("accent", "Pi")) + theme.fg("dim", ` v${VERSION}`);
-	const hints = [
-		theme.bold(rawKeyHint("/", "commands")),
-		theme.bold(rawKeyHint("!", "bash")),
-		theme.bold(keyHint("app.tools.expand", "more")),
-	].join(theme.fg("muted", " · "));
-	const status = `${theme.fg("success", "●")} ${theme.bold(theme.fg("success", "ready"))}`;
-	const details = [title, hints, status];
-	const safeWidth = Math.max(1, width);
-	const detailWidth = safeWidth - logoWidth - safeVisibleWidth(gap);
-
-	if (detailWidth >= 12) {
-		const detailStartRow = Math.max(0, Math.floor((PI_LOGO_LINES.length - details.length) / 2));
-		return logoLines
-			.map((styledLine, index) => {
-				const logoPadding = " ".repeat(Math.max(0, logoWidth - safeVisibleWidth(PI_LOGO_LINES[index]!)));
-				const detailIndex = index - detailStartRow;
-				const detail =
-					detailIndex >= 0 && detailIndex < details.length
-						? safeTruncateToWidth(details[detailIndex]!, detailWidth, "…")
-						: "";
-				return `${styledLine}${logoPadding}${detail ? `${gap}${detail}` : ""}`;
-			})
-			.join("\n");
-	}
-
-	if (safeWidth >= logoWidth) {
-		return [
-			...logoLines,
-			safeTruncateToWidth(title, safeWidth, "…"),
-			safeTruncateToWidth(hints, safeWidth, "…"),
-			safeTruncateToWidth(status, safeWidth, "…"),
-		].join("\n");
-	}
-
-	return [title, status].map((line) => safeTruncateToWidth(line, safeWidth, "…")).join("\n");
-}
-
-// Pi 0.99.0 added its own logo header; keep it there and only replace the logo-less older header.
-function hostHasLogoHeader(): boolean {
-	const [major = 0, minor = 0] = VERSION.split(".").map((part) => Number.parseInt(part, 10) || 0);
-	return major > 0 || minor >= 99;
-}
-
-export function setCompactStartupHeader(ui: ExtensionUIContext, cwd: string): void {
-	if (hostHasLogoHeader()) {
-		activeTheme = ui.theme as ThemeLike;
-		return;
-	}
-	if (isQuietStartup(cwd)) return;
-	ui.setHeader((_tui, theme) => {
-		const headerTheme = theme as ThemeLike;
-		activeTheme = headerTheme;
-		return {
-			invalidate() {},
-			render(width: number): string[] {
-				return indentStartupLines(compactHeader(headerTheme, startupBodyWidth(width)).split("\n"));
-			},
-		};
-	});
+/** Theme for the startup resources panel; Pi draws its own logo header. */
+export function setStartupUiTheme(ui: ExtensionUIContext): void {
+	activeTheme = ui.theme as ThemeLike;
 }
 
 export function suppressStartupModelScopeLog(): void {

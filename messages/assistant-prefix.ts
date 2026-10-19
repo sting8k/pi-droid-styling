@@ -11,6 +11,7 @@ import {
 	getAssistantContentRuns,
 	hasVisibleAssistantContent,
 } from "./assistant-content-runs.js";
+import { revealBody, setRevealTheme } from "./reveal.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
@@ -211,15 +212,15 @@ function patchThinkingChildren(component: any, runs: AssistantContentRun[], mess
 	let thinkingOrdinal = 0;
 	const content = Array.isArray(message?.content) ? message.content : [];
 	const label = typeof component?.hiddenThinkingLabel === "string" ? trimLabelProgressDots(component.hiddenThinkingLabel) : null;
-	const visibilityOverrides = component?.thinkingVisibilityOverrides;
+	const visibilityOverrides = component.thinkingVisibilityOverrides as Map<number, boolean>;
 
 	for (let i = 0; i < runs.length; i++) {
 		const run = runs[i];
 		if (run.kind !== "thinking") continue;
 		const hasTextAfter = runs.slice(i + 1).some((nextRun) => nextRun.kind === "text");
 		const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
-		const override = typeof visibilityOverrides?.get === "function" ? visibilityOverrides.get(thinkingOrdinal) : undefined;
-		const hidden = override ?? Boolean(component?.hideThinkingBlock);
+		// Same rule as Pi's own AssistantMessageComponent: a per-run toggle wins over the global setting.
+		const hidden = visibilityOverrides.get(thinkingOrdinal) ?? Boolean(component.hideThinkingBlock);
 		const live = liveStream && !hasBlockAfter(content, run.endBlockIndex);
 		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { component, run, hidden, live, label });
 		if (mode === "prefix") turnMarkerUsed = true;
@@ -275,6 +276,7 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 
 export function installAssistantMessagePrefix(theme: any, componentClass: any = AssistantMessageComponent): void {
 	activeTheme = theme;
+	setRevealTheme(theme);
 	const proto = componentClass?.prototype as any;
 	if (!proto) return;
 	if (proto[PATCHED] || proto.render?.name === "patchedAssistantMessageRender") {
@@ -293,7 +295,7 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 
 			if (!message || !Array.isArray(message.content)) return;
 
-			const runs = getAssistantContentRuns(this, message);
+			const runs = getAssistantContentRuns(message);
 			patchThinkingChildren(this, runs, message, liveStream);
 
 			const firstTextRunIndex = runs.findIndex((run) => run.kind === "text");
@@ -321,7 +323,7 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 	proto.render = function patchedAssistantMessageRender(width: number): string[] {
 		if (width <= 0) return baseRender.call(this, width);
 		this[CLAUDE_THOUGHT_ROWS] = new Set<string>();
-		const lines = baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width));
+		const lines = revealBody(this, baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width)));
 		const design = getPresentationDesign();
 
 		const compactPrefixBase = composePrefixedLine("");

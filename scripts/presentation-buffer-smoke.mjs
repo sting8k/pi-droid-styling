@@ -2,22 +2,13 @@
 /**
  * US-025 presentation-buffer / finished-cache smoke.
  *
- * Drives the real Pi 0.78 AssistantMessageComponent with `installAssistantUpdateDebounce` and
+ * Drives the real Pi AssistantMessageComponent with `installAssistantUpdateDebounce` and
  * `installFinishedRenderCache` installed in the same order index.ts uses, on top of a spy that
  * records every delegate (`orig`) call. Stream state comes from the real
  * messages/assistant-streaming-state.ts seam.
  */
 
-import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const repoRoot = process.cwd();
-const workDir = join(repoRoot, ".pi", "presentation-buffer-smoke");
-const buildDir = join(workDir, "build");
-const stubPath = join(workDir, "node-stubs.d.ts");
-const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
+import { buildSmoke } from "./smoke-build.mjs";
 
 function assert(condition, message) {
 	if (!condition) throw new Error(message);
@@ -44,58 +35,13 @@ async function waitUntil(predicate, maxTicks = 40) {
 	return predicate();
 }
 
-function prepareBuild() {
-	rmSync(workDir, { recursive: true, force: true });
-	mkdirSync(buildDir, { recursive: true });
-	writeFileSync(join(buildDir, "package.json"), '{"type":"module"}\n', "utf8");
-	writeFileSync(stubPath, `declare module "fs" {
-	export const existsSync: (path: string) => boolean;
-	export const mkdirSync: (path: string, options?: unknown) => unknown;
-	export const readFileSync: (path: string, encoding?: string) => any;
-	export const readdirSync: any;
-	export const appendFileSync: (path: string, data: string, encoding?: string) => void;
-}
-declare module "node:fs" {
-	export * from "fs";
-}
-declare module "node:buffer" {
-	export const Buffer: any;
-}
-declare module "node:perf_hooks" {
-	export const monitorEventLoopDelay: any;
-	export const performance: any;
-}
-declare const process: any;
-declare const setInterval: any;
-declare const clearInterval: any;
-declare const setTimeout: any;
-declare const clearTimeout: any;
-`, "utf8");
+// These cases pin the source-level drip (`PI_REDUCED_MOTION=1`); scripts/reveal-smoke.mjs covers the default reveal.
+process.env.PI_REDUCED_MOTION = "1";
+const built = buildSmoke("presentation-buffer-smoke", ["performance/debounce-update.ts", "performance/finished-render-cache.ts"]);
 
-	const result = spawnSync(process.execPath, [
-		tsc,
-		"--target", "ES2022",
-		"--module", "NodeNext",
-		"--moduleResolution", "NodeNext",
-		"--outDir", buildDir,
-		"--rootDir", repoRoot,
-		"--skipLibCheck",
-		"--noImplicitAny", "false",
-		"--lib", "ES2022",
-		stubPath,
-		join(repoRoot, "messages", "assistant-streaming-state.ts"),
-		join(repoRoot, "performance", "profiler.ts"),
-		join(repoRoot, "performance", "debounce-update.ts"),
-		join(repoRoot, "performance", "finished-render-cache.ts"),
-	], { cwd: repoRoot, encoding: "utf8" });
-	if (result.status !== 0) throw new Error(`tsc failed\n${result.stdout}\n${result.stderr}`);
-}
-
-prepareBuild();
-
-const streamingState = await import(pathToFileURL(join(buildDir, "messages", "assistant-streaming-state.js")).href);
-const debounce = await import(pathToFileURL(join(buildDir, "performance", "debounce-update.js")).href);
-const finishedCache = await import(pathToFileURL(join(buildDir, "performance", "finished-render-cache.js")).href);
+const streamingState = await built.importBuilt("messages/assistant-streaming-state.js");
+const debounce = await built.importBuilt("performance/debounce-update.js");
+const finishedCache = await built.importBuilt("performance/finished-render-cache.js");
 
 const { initTheme, AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
 initTheme("dark");
