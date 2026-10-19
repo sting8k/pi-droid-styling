@@ -11,6 +11,7 @@ import {
 	getAssistantContentRuns,
 	hasVisibleAssistantContent,
 } from "./assistant-content-runs.js";
+import { revealBody, setRevealTheme } from "./reveal.js";
 
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.assistant-prefix.patched");
@@ -275,6 +276,7 @@ function prefixFirstNonEmptyLine(lines: string[], width: number): string[] {
 
 export function installAssistantMessagePrefix(theme: any, componentClass: any = AssistantMessageComponent): void {
 	activeTheme = theme;
+	setRevealTheme(theme);
 	const proto = componentClass?.prototype as any;
 	if (!proto) return;
 	if (proto[PATCHED] || proto.render?.name === "patchedAssistantMessageRender") {
@@ -321,7 +323,7 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 	proto.render = function patchedAssistantMessageRender(width: number): string[] {
 		if (width <= 0) return baseRender.call(this, width);
 		this[CLAUDE_THOUGHT_ROWS] = new Set<string>();
-		const lines = baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width));
+		const lines = revealBody(this, baseRender.call(this, this.__assistantResponsePrefixChildMode ? width : getAssistantBodyWidth(width)));
 		const design = getPresentationDesign();
 
 		const compactPrefixBase = composePrefixedLine("");

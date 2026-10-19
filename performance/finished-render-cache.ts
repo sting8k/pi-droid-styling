@@ -1,4 +1,5 @@
 import { isComponentOnActiveStream } from "../messages/assistant-streaming-state.js";
+import { isRevealing } from "../messages/reveal.js";
 import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
 
 const ASSISTANT_PATCHED = Symbol.for("pi-droid-styling.finished-render-cache.assistant.patched");
@@ -88,7 +89,8 @@ function getCachedSignature(component: any, source: any, build: () => string): s
 }
 
 function getAssistantFinishedKey(component: any): string | undefined {
-	if (isComponentOnActiveStream(component)) return undefined;
+	// A message still being revealed renders differently on every frame, even after its stream ended.
+	if (isComponentOnActiveStream(component) || isRevealing(component)) return undefined;
 	const message = component?.lastMessage;
 	if (!message) return undefined;
 	const signature = getCachedSignature(component, message, () => [
