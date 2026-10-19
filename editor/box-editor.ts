@@ -7,6 +7,12 @@ import { fgHex, stripAnsi } from "../theme/ansi.js";
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.js";
 import { loadConfig, type InputBoxStyle } from "../config.js";
+import {
+	ImageAttachmentList,
+	pastedImageFilePath,
+	setImageStoreDir,
+	type ImageAttachment,
+} from "./image-attachments.js";
 
 /** Outline border plus the prompt gap, so the cli-dock status row lines up with the input text. */
 const CLI_DOCK_STATUS_INSET = 2;
@@ -164,8 +170,22 @@ export class BoxEditor extends CustomEditor {
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 		private readonly inputBoxStyle?: InputBoxStyle,
 		private readonly getFooterTokenUsage?: FooterTokenUsageProvider,
+		/** Where pasted images persist: `<session dir>/images`, from the host session manager. */
+		imageStoreDir?: string,
 	) {
 		super(tui, editorTheme, kb);
+		// The store must point at the session directory BEFORE the registry scans it: the scan seeds
+		// the id serial, and a scan of the wrong directory would hand out ids that already exist.
+		if (imageStoreDir) setImageStoreDir(imageStoreDir);
+		this.imageAttachments = new ImageAttachmentList();
+		// Terminal paste (Cmd+V) of a copied image file arrives as an escaped path through the host's
+		// private handlePaste, which handleInput calls via `this` — so an instance wrapper sees it.
+		const hostPaste = (this as any).handlePaste;
+		if (typeof hostPaste === "function") {
+			(this as any).handlePaste = (pastedText: string) => {
+				if (!this.insertImageToken(pastedText, (token) => hostPaste.call(this, token))) hostPaste.call(this, pastedText);
+			};
+		}
 	}
 
 	private color(hex: string, text: string): string {
@@ -1058,6 +1078,105 @@ export class BoxEditor extends CustomEditor {
 		return this.appendAutocomplete(lines, autocompleteLines, width);
 	}
 
+	// ---------------------------------------------------------------------------
+	// Image attachments as text tokens (the Claude Code model).
+	//
+	// The host clipboard flow writes <tmpdir>/pi-clipboard-<uuid>.<ext> and then calls
+	// insertTextAtCursor(path); that call is diverted here into a literal `[Image #N]` text token
+	// plus a registry entry. Because the token is plain text, arrow-key history, Backspace deletion,
+	// and moving/copying the reference all work with zero custom key routing. Submit stays with the
+	// host; Pi's `input` event resolves the tokens against getImageAttachments() (index.ts,
+	// editor/image-submit.ts). With imageAttachments disabled every path below falls through to the
+	// host behavior.
+	// ---------------------------------------------------------------------------
+
+	private readonly imageAttachments: ImageAttachmentList;
+
+	/** Attachments `[Image #N]` tokens may resolve to; empty while the feature is disabled. */
+	getImageAttachments(): readonly ImageAttachment[] {
+		return this.imageAttachmentsEnabled() ? this.imageAttachments.list() : [];
+	}
+
+	private imageAttachmentsEnabled(): boolean {
+		return loadConfig().imageAttachments;
+	}
+
+	insertTextAtCursor(text: string): void {
+		if (!this.insertImageToken(text, (token) => super.insertTextAtCursor(token))) super.insertTextAtCursor(text);
+	}
+
+	/** Turn a pasted image path into a `[Image #N] ` token via `insert`; false leaves it to the host. */
+	private insertImageToken(text: string, insert: (token: string) => void): boolean {
+		if (!this.imageAttachmentsEnabled()) return false;
+		const filePath = pastedImageFilePath(text);
+		const attachment = filePath ? this.imageAttachments.addFromPath(filePath) : null;
+		if (!attachment) return false;
+		insert(`[Image #${attachment.id}] `);
+		return true;
+	}
+
+	handleInput(data: string): void {
+		// Atomic token deletion: Backspace/Delete removes a whole `[Image #N]` at once when the
+		// cursor sits right after (or before) a complete token, matching how the host deletes whole
+		// bracketed-paste markers and how Claude Code chips / Codex text elements behave.
+		if (this.imageAttachmentsEnabled() && (data === "\x7f" || data === "\x08")) {
+			if (this.deleteWholeImageTokenBeforeCursor()) return;
+		} else if (this.imageAttachmentsEnabled() && data === "\x1b[3~") {
+			if (this.deleteWholeImageTokenForward()) return;
+		}
+		super.handleInput(data);
+	}
+
+	/** Backspace deletes a complete `[Image #N] ` (trailing space included) in one stroke. */
+	private deleteWholeImageTokenBeforeCursor(): boolean {
+		const state = (this as any).state;
+		if (!state || typeof state.cursorCol !== "number" || state.cursorCol <= 0) return false;
+		const line = state.lines[state.cursorLine] ?? "";
+		const before = line.slice(0, state.cursorCol);
+		const match = /(\[Image #\d+\]) ?$/.exec(before);
+		if (!match) return false;
+		this.spliceImageToken(state, state.cursorCol - match[0].length, match[0].length);
+		return true;
+	}
+
+	/** Delete (forward) removes a complete `[Image #N] ` (trailing space included) in one stroke. */
+	private deleteWholeImageTokenForward(): boolean {
+		const state = (this as any).state;
+		if (!state || typeof state.cursorCol !== "number") return false;
+		const line = state.lines[state.cursorLine] ?? "";
+		const match = /^(\[Image #\d+\]) ?/.exec(line.slice(state.cursorCol));
+		if (!match) return false;
+		this.spliceImageToken(state, state.cursorCol, match[0].length);
+		return true;
+	}
+
+	private spliceImageToken(state: any, start: number, length: number): void {
+		const line = state.lines[state.cursorLine] ?? "";
+		try {
+			(this as any).pushUndoSnapshot?.();
+		} catch {
+			// Undo depth is best-effort here.
+		}
+		state.lines[state.cursorLine] = line.slice(0, start) + line.slice(start + length);
+		try {
+			(this as any).setCursorCol?.(Math.max(0, start));
+		} catch {
+			state.cursorCol = Math.max(0, start);
+		}
+		this.onChange?.(this.getText());
+		try {
+			(this.tui as any)?.requestRender?.();
+		} catch {
+			// Render is best-effort.
+		}
+	}
+
+	/** Accent-color `[Image #N]` tokens in a rendered line; width is unchanged (ANSI only). */
+	private colorizeImageTokens(line: string): string {
+		if (!this.imageAttachmentsEnabled() || !line.includes("[Image #")) return line;
+		return line.replace(/\[Image #\d+\]/g, (token) => this.tone("accent", token));
+	}
+
 	private renderDroidLayout(inputLines: string[], autocompleteLines: string[], width: number, contentInnerWidth: number): string[] {
 		const editorStyle = this.userZoneStyle.editor;
 		const lines: string[] = [];
@@ -1120,7 +1239,7 @@ export class BoxEditor extends CustomEditor {
 		const inputLines = displayLines.map((line, index) => {
 			const prefix = index === 0 ? promptPrefix : " ".repeat(prefixWidth);
 			const available = Math.max(1, inputInnerWidth - safeVisibleWidth(prefix));
-			const row = `${prefix}${this.pad(line, available)}`;
+			const row = `${prefix}${this.pad(this.colorizeImageTokens(line), available)}`;
 			return editorStyle.layout === "cli-dock" ? this.pad(row, inputInnerWidth) : this.renderPanelLine(row, width);
 		});
 

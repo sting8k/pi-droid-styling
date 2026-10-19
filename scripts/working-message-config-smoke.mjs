@@ -24,10 +24,10 @@ function prepareWorkDir() {
 	writeFileSync(stubPath, `declare module "fs" {
 	export const existsSync: (path: string) => boolean;
 	export const mkdirSync: (path: string, options?: unknown) => unknown;
-	export const readFileSync: (path: string, encoding: string) => string;
+	export const readFileSync: (path: string, encoding?: string) => any;
 	export const renameSync: (from: string, to: string) => void;
 	export const unlinkSync: (path: string) => void;
-	export const statSync: (path: string) => { mtimeMs: number };
+	export const statSync: (path: string) => { mtimeMs: number; size: number };
 	export const writeFileSync: (path: string, data: string, encoding?: string) => void;
 }
 declare module "path" {

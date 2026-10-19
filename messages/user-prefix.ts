@@ -6,6 +6,23 @@ import { dropLeadingColumns, fgHex, isHexColor, stripAnsi } from "../theme/ansi.
 import { getThemeExtra } from "../theme/theme-extras.js";
 import { safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 
+import { getGlobalImageLink, IMAGE_TOKEN_RE } from "../editor/image-attachments.js";
+
+/**
+ * Wrap `[Image #N]` tokens in OSC 8 file:// hyperlinks (Cmd+Click in supporting terminals).
+ * Uses the global registry: token ids are process-monotonic, so any rendered line that contains
+ * a token can be linked without knowing which message object it came from.
+ */
+function linkImageTokensInLine(line: string): string {
+	if (!line.includes("[Image #")) return line;
+	return line.replace(IMAGE_TOKEN_RE, (token, id: string) => {
+		const target = getGlobalImageLink(id);
+		if (!target) return token;
+		// Underline marks the link even when the terminal hides OSC 8 styling until hover.
+		return `\x1b]8;;file://${target}\x07\x1b[4m${token}\x1b[24m\x1b]8;;\x07`;
+	});
+}
+
 let activeTheme: any = null;
 const PATCHED = Symbol.for("pi-droid-styling.user-prefix.patched");
 
@@ -121,7 +138,8 @@ export function installUserMessagePrefix(theme: any): void {
 		const result = output.map((renderedLine) => {
 			const presentationLine = stripBg ? stripBackgroundAnsi(renderedLine) : renderedLine;
 			const plainLine = stripEmphasisAnsi(presentationLine);
-			return safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
+			const clamped = safeVisibleWidth(plainLine) > width ? safeTruncateToWidth(plainLine, width, "") : plainLine;
+			return linkImageTokensInLine(clamped);
 		});
 
 		if (design.compactLayout) return [...result, ""];
