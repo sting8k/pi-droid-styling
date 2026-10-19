@@ -18,6 +18,8 @@ Or install directly from Git:
 pi install git:github.com/sting8k/pi-droid-styling
 ```
 
+Requires Pi 1.x (`@earendil-works/pi-coding-agent` and `pi-tui` `>=1.0.0 <2.0.0`). Pi 0.x is not supported; use version 2.18.x or earlier there.
+
 ## Themes
 
 This extension uses [`pi-themes`](https://github.com/sting8k/pi-themes) as its color layer. Installing `pi-droid-styling` automatically installs and registers those themes—no second install command is needed.

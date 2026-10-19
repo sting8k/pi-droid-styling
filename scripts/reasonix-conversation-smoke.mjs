@@ -215,19 +215,44 @@ const toolCallOnly = new AssistantMessageComponent({
 }).render(46);
 assert(toolCallOnly.every((line) => stripAnsi(line).trim() === ""), "tool-call-only assistant message should stay visually empty");
 
-// The installed core cannot exercise both layouts, so drive the shared mapper with stub
-// components that reproduce each core's contentContainer layout exactly.
+// The shared run mapper must address the children Pi core actually builds: consecutive thinking
+// blocks (blank ones included) are one child, and trailing core children never shift the runs.
 const { Markdown: TuiMarkdown, Spacer: TuiSpacer } = await import("@earendil-works/pi-tui");
-const isVisibleBlock = (block) => (block.type === "text" && block.text.trim()) || (block.type === "thinking" && block.thinking.trim());
+const { getAssistantContentRuns } = await importBuilt("messages/assistant-content-runs.js");
+const groupedMessage = {
+	role: "assistant",
+	stopReason: "error",
+	content: [
+		{ type: "thinking", thinking: "alpha" },
+		{ type: "thinking", thinking: "   " },
+		{ type: "thinking", thinking: "beta" },
+		{ type: "text", text: "final" },
+	],
+};
+const groupedRuns = getAssistantContentRuns(groupedMessage);
+const expectedRuns = [
+	{ kind: "thinking", childIndex: 1, text: "alpha\n\nbeta" },
+	{ kind: "text", childIndex: 3, text: "final" },
+];
+assert(groupedRuns.length === expectedRuns.length, `should resolve ${expectedRuns.length} rendered runs`);
+const coreChildren = new AssistantMessageComponent(groupedMessage).contentContainer.children;
+for (let i = 0; i < expectedRuns.length; i++) {
+	const expected = expectedRuns[i];
+	const run = groupedRuns[i];
+	assert(run.kind === expected.kind && run.childIndex === expected.childIndex && run.text === expected.text, `run ${i} should be ${expected.kind} at child ${expected.childIndex}`);
+	const childText = stripAnsi(coreChildren[run.childIndex].render(46).join("\n"));
+	assert(childText.includes(expected.kind === "text" ? "final" : "beta"), `run ${i} must address the core child that renders it: ${childText}`);
+}
 
+// Consumer 3: the streaming markdown cache must seed each rendered run's own child. A stub with the
+// core's child layout keeps the real class unpatched for the checks below.
+const isVisibleBlock = (block) => (block.type === "text" && block.text.trim()) || (block.type === "thinking" && block.thinking.trim());
 class GroupedLayoutStub {
-	static constructions = 0;
 	constructor(message) {
-		GroupedLayoutStub.constructions += 1;
 		this.contentContainer = { children: [] };
 		if (message) this.updateContent(message);
 	}
-	// mirrors Pi >= 0.84: consecutive thinking blocks collapse into a single child
+	// mirrors Pi core: consecutive thinking blocks collapse into a single child
 	updateContent(message) {
 		const children = [];
 		if (message.content.some(isVisibleBlock)) children.push(new TuiSpacer(1));
@@ -250,90 +275,8 @@ class GroupedLayoutStub {
 		this.contentContainer.children = children;
 	}
 }
-
-class PerBlockLayoutStub {
-	constructor(message) {
-		this.contentContainer = { children: [] };
-		if (message) this.updateContent(message);
-	}
-	// mirrors Pi 0.78: every visible thinking block gets its own child
-	updateContent(message) {
-		const children = [];
-		if (message.content.some(isVisibleBlock)) children.push(new TuiSpacer(1));
-		for (let i = 0; i < message.content.length; i++) {
-			const block = message.content[i];
-			if (block.type === "text" && block.text.trim()) {
-				children.push(new TuiMarkdown(block.text.trim(), 1, 0));
-				continue;
-			}
-			if (block.type !== "thinking" || !block.thinking.trim()) continue;
-			children.push(new TuiMarkdown(block.thinking.trim(), 1, 0));
-			if (message.content.slice(i + 1).some(isVisibleBlock)) children.push(new TuiSpacer(1));
-		}
-		this.contentContainer.children = children;
-	}
-}
-
-// Cold start: the first message the mapper ever sees is an errored one whose trailing core
-// children hide the real layout. A fresh module instance per host proves the resolved layout
-// depends on the host alone, not on message history, order or stop reason.
-const ambiguousMessage = {
-	role: "assistant",
-	stopReason: "error",
-	content: [
-		{ type: "thinking", thinking: "alpha" },
-		{ type: "thinking", thinking: "   " },
-		{ type: "thinking", thinking: "beta" },
-		{ type: "text", text: "final" },
-	],
-};
-const layoutExpectations = [
-	{
-		StubClass: GroupedLayoutStub,
-		label: "grouped (Pi >= 0.84)",
-		runs: [
-			{ kind: "thinking", childIndex: 1, text: "alpha\n\nbeta" },
-			{ kind: "text", childIndex: 3, text: "final" },
-		],
-	},
-	{
-		StubClass: PerBlockLayoutStub,
-		label: "per-block (Pi 0.78)",
-		runs: [
-			{ kind: "thinking", childIndex: 1, text: "alpha" },
-			{ kind: "thinking", childIndex: 3, text: "beta" },
-			{ kind: "text", childIndex: 5, text: "final" },
-		],
-	},
-];
-
-for (const { StubClass, label, runs: expectedRuns } of layoutExpectations) {
-	const coldModule = await importBuilt("messages/assistant-content-runs.js");
-	const component = new StubClass(ambiguousMessage);
-	component.contentContainer.children.push(new TuiSpacer(1), new TuiMarkdown("request failed", 1, 0));
-	const runs = coldModule.getAssistantContentRuns(component, ambiguousMessage);
-	assert(runs.length === expectedRuns.length, `${label} cold start: should resolve ${expectedRuns.length} rendered runs`);
-	for (let i = 0; i < expectedRuns.length; i++) {
-		const expected = expectedRuns[i];
-		assert(
-			runs[i].kind === expected.kind && runs[i].childIndex === expected.childIndex && runs[i].text === expected.text,
-			`${label} cold start: run ${i} should be ${expected.kind} at child ${expected.childIndex}`,
-		);
-	}
-}
-
-// One module instance must keep answering per host, whatever order the hosts arrive in.
-const sharedModule = await importBuilt("messages/assistant-content-runs.js");
-for (const StubClass of [PerBlockLayoutStub, GroupedLayoutStub, PerBlockLayoutStub, GroupedLayoutStub]) {
-	const expectedLength = StubClass === GroupedLayoutStub ? 2 : 3;
-	const runs = sharedModule.getAssistantContentRuns(new StubClass(ambiguousMessage), ambiguousMessage);
-	assert(runs.length === expectedLength, `${StubClass.name}: interleaved hosts must not share layout state`);
-}
-
-// Consumer 3: the streaming markdown cache must seed each rendered run's own child.
 const { installAssistantStreamingMarkdownCache } = await importBuilt("messages/streaming-markdown-cache.js");
 installAssistantStreamingMarkdownCache(GroupedLayoutStub);
-const constructionsBeforeStreaming = GroupedLayoutStub.constructions;
 const streamingStub = new GroupedLayoutStub({
 	role: "assistant",
 	content: [
@@ -342,12 +285,6 @@ const streamingStub = new GroupedLayoutStub({
 		{ type: "text", text: "CACHEDANSWER" },
 	],
 });
-// The host is now patched, so probing re-enters the mapper through updateContent. It must
-// answer from cache instead of probing again: one explicit build plus exactly one probe.
-assert(
-	GroupedLayoutStub.constructions - constructionsBeforeStreaming === 2,
-	`probing a patched host must not recurse (built ${GroupedLayoutStub.constructions - constructionsBeforeStreaming} components)`,
-);
 
 const stubChildren = streamingStub.contentContainer.children;
 assert(stubChildren.length === 4, "grouped stub should build four content children");

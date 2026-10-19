@@ -280,7 +280,7 @@ function replaceStreamingMarkdownChildren(component: any, message: any): void {
 	const states = getStableStates(component);
 	const seen = new Set<string>();
 
-	for (const run of getAssistantContentRuns(component, message)) {
+	for (const run of getAssistantContentRuns(message)) {
 		if (run.kind === "thinking" && component?.hideThinkingBlock) continue;
 		replaceMarkdownChild(component, run.childIndex, `${run.blockIndex}:${run.kind}`, run.text, seen);
 	}

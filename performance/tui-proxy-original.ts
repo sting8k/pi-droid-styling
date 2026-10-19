@@ -2,7 +2,7 @@
  * Proxy-safe capture of the "real" TUI method before an extension wrapper is
  * installed, preserving the wrapper chain.
  *
- * Pi 0.84's InteractiveMode hands extensions a stable TUI Proxy
+ * Pi's InteractiveMode hands extensions a stable TUI Proxy
  * (`createInteractiveTuiReference`). Its `get` trap returns a *fresh* dynamic
  * wrapper on every access that re-reads the current renderer's method at call
  * time, and its `set` trap writes to the current renderer. Capturing a method
@@ -12,8 +12,8 @@
  *
  * To stay safe we resolve the method that actually lives on the renderer's
  * prototype chain and let callers invoke it with the runtime `this` (the
- * current renderer). When the reference is a real renderer (pre-0.84, or any
- * non-proxy) the property is stable, so we capture it directly.
+ * current renderer). When the reference is a real renderer (any non-proxy
+ * reference) the property is stable, so we capture it directly.
  *
  * Because the proxy makes the current method unreachable as a stable reference,
  * installers explicitly record the wrapper they install via

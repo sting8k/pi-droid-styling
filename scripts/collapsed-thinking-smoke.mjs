@@ -2,8 +2,7 @@
 /**
  * US-024 collapsed thinking tail smoke.
  *
- * Runs against the real Pi 0.78 core in node_modules (per-block layout) plus a grouped-layout
- * stub that mirrors the Pi 0.84+ single-child layout, so both host layouts are covered.
+ * Runs against the real Pi 1.x core in node_modules (consecutive thinking blocks render as one child).
  *
  * `WRITE_BASE_GOLDENS=1 node scripts/collapsed-thinking-smoke.mjs` captures the fixtures from
  * the current (pre-change) source into scripts/fixtures/collapsed-thinking-base.json. That file
@@ -144,7 +143,6 @@ const configModule = await import(pathToFileURL(join(buildDir, "config.js")).hre
 const streamingState = await import(pathToFileURL(join(buildDir, "messages", "assistant-streaming-state.js")).href);
 
 const { initTheme, AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
-const { Markdown, Spacer } = await import("@earendil-works/pi-tui");
 initTheme("dark");
 
 const themeFile = join(workDir, "smoke-theme.json");
@@ -178,46 +176,14 @@ function withActiveStream(message, fn) {
 	}
 }
 
-// ---------------------------------------------------------------- grouped-layout stub (Pi 0.84+)
-const isVisibleBlock = (block) => (block.type === "text" && block.text.trim()) || (block.type === "thinking" && block.thinking.trim());
-
-class GroupedLayoutStub {
-	constructor(message, hideThinkingBlock = true, hiddenThinkingLabel = "StubLabel", overrides) {
-		this.hideThinkingBlock = hideThinkingBlock;
-		this.hiddenThinkingLabel = hiddenThinkingLabel;
-		this.thinkingVisibilityOverrides = overrides;
-		this.contentContainer = { children: [] };
-		if (message) this.updateContent(message);
+// Real component with a hidden-thinking label and optional per-run visibility toggles (Pi's own Map).
+function thinkingChild(message, options = {}) {
+	const component = new AssistantMessageComponent(message, options.hideThinkingBlock ?? true, undefined, options.label ?? "Thinking...");
+	if (options.overrides) {
+		for (const [run, hidden] of options.overrides) component.thinkingVisibilityOverrides.set(run, hidden);
+		component.updateContent(message);
 	}
-	// mirrors Pi >= 0.84: consecutive thinking blocks collapse into a single child
-	updateContent(message) {
-		const children = [];
-		if (message.content.some(isVisibleBlock)) children.push(new Spacer(1));
-		for (let i = 0; i < message.content.length; i++) {
-			const block = message.content[i];
-			if (block.type === "text" && block.text.trim()) {
-				children.push(new Markdown(block.text.trim(), 1, 0));
-				continue;
-			}
-			if (block.type !== "thinking") continue;
-			const thinkingBlocks = [];
-			for (; i < message.content.length && message.content[i].type === "thinking"; i++) {
-				if (message.content[i].thinking.trim()) thinkingBlocks.push(message.content[i].thinking.trim());
-			}
-			i--;
-			if (thinkingBlocks.length === 0) continue;
-			children.push(new Markdown(thinkingBlocks.join("\n\n"), 1, 0));
-			if (message.content.slice(i + 1).some(isVisibleBlock)) children.push(new Spacer(1));
-		}
-		this.contentContainer.children = children;
-	}
-}
-
-prefixModule.installAssistantMessagePrefix(activeTheme, GroupedLayoutStub);
-
-function groupedThinkingChild(message, options = {}) {
-	const component = new GroupedLayoutStub(message, options.hideThinkingBlock ?? true, options.label ?? "Thinking...", options.overrides);
-	const runs = runsModule.getAssistantContentRuns(component, message);
+	const runs = runsModule.getAssistantContentRuns(message);
 	return { component, runs, childAt: (index) => component.contentContainer.children[runs[index].childIndex] };
 }
 
@@ -263,7 +229,18 @@ if (WRITE_GOLDENS) {
 }
 
 const goldenBook = JSON.parse(readFileSync(goldenPath, "utf8"));
-const goldens = goldenBook[coreVersion];
+// The devDependency floats across Pi 1.x minors: compare against the newest baseline at or below the
+// running core, so a new Pi release only fails here when it really changes these rows.
+const versionKey = (version) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+const isAtOrBelow = (a, b) => {
+	const [x, y] = [versionKey(a), versionKey(b)];
+	for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i];
+	return true;
+};
+const goldenVersion = Object.keys(goldenBook)
+	.filter((version) => isAtOrBelow(version, coreVersion))
+	.sort((a, b) => (isAtOrBelow(a, b) ? 1 : -1))[0];
+const goldens = goldenVersion === undefined ? undefined : goldenBook[goldenVersion];
 
 // ---------------------------------------------------------------- P1..P11 + config cases
 const LIVE_TAIL = "nên child index phải đi theo rendered run, không phải raw block";
@@ -271,7 +248,7 @@ const LIVE_TAIL = "nên child index phải đi theo rendered run, không phải 
 const hiddenOnly = (thinking, stopReason = "stop") => ({ role: "assistant", content: [{ type: "thinking", thinking }], stopReason });
 const liveMessage = hiddenOnly(LIVE_TAIL);
 
-check("P1 real core (0.78 per-block) live tail", () => {
+check("P1 live tail (single block)", () => {
 	const message = hiddenOnly(LIVE_TAIL);
 	const raw = withActiveStream(message, () => new AssistantMessageComponent(message, true).render(120));
 	const row = rowWith(raw, "Thinking");
@@ -282,14 +259,14 @@ check("P1 real core (0.78 per-block) live tail", () => {
 	assert(raw.length === again.length, "row count must not change");
 });
 
-check("P1 grouped layout live tail (1/2/3 blocks)", () => {
+check("P1 live tail on one grouped child (1/2/3 blocks)", () => {
 	for (const thoughts of [["a"], ["alpha", "beta"], ["alpha", "beta", "gamma"]]) {
 		const message = { role: "assistant", stopReason: "stop", content: thoughts.map((thinking) => ({ type: "thinking", thinking })) };
-		const { childAt } = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking..." }));
+		const { childAt } = withActiveStream(message, () => thinkingChild(message, { label: "Thinking..." }));
 		const plain = childAt(0).render(60).map(stripAnsi).join("\n");
-		assert(plain.includes("Thinking ▸"), `grouped ${thoughts.length}: trimmed label missing: ${plain}`);
-		assert(plain.includes("▸"), `grouped ${thoughts.length}: live marker missing: ${plain}`);
-		assert(plain.includes(`▸ ${thoughts[thoughts.length - 1]}`), `grouped ${thoughts.length}: tail should come from the last block: ${plain}`);
+		assert(plain.includes("Thinking ▸"), `${thoughts.length} blocks: trimmed label missing: ${plain}`);
+		assert(plain.includes("▸"), `${thoughts.length} blocks: live marker missing: ${plain}`);
+		assert(plain.includes(`▸ ${thoughts[thoughts.length - 1]}`), `${thoughts.length} blocks: tail should come from the last block: ${plain}`);
 	}
 });
 
@@ -430,7 +407,7 @@ check("P8 label from hiddenThinkingLabel (trailing progress dots trimmed) + no h
 	assert(!source.includes("Thinking..."), "assistant-prefix.ts must not contain the literal label");
 });
 
-check("P7 visibility overrides (0.85) + no-map fallthrough (0.78)", () => {
+check("P7 per-run visibility overrides + global hide", () => {
 	const message = {
 		role: "assistant",
 		stopReason: "stop",
@@ -440,15 +417,15 @@ check("P7 visibility overrides (0.85) + no-map fallthrough (0.78)", () => {
 			{ type: "thinking", thinking: "hidden-thought" },
 		],
 	};
-	const overridden = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking...", overrides: new Map([[0, false]]) }));
+	const overridden = withActiveStream(message, () => thinkingChild(message, { label: "Thinking...", overrides: new Map([[0, false]]) }));
 	const visibleRow = stripAnsi(overridden.childAt(0).render(60).join("\n"));
 	const hiddenRow = stripAnsi(overridden.childAt(2).render(60).join("\n"));
 	assert(visibleRow.includes("visible-thought") && !visibleRow.includes("Thinking"), `override run 0 should use the visible path: ${visibleRow}`);
 	assert(hiddenRow.includes("Thinking ▸") && hiddenRow.includes("hidden-thought"), `override run 1 should use the tail row: ${hiddenRow}`);
 
-	const noMap = withActiveStream(message, () => groupedThinkingChild(message, { label: "Thinking..." }));
+	const noOverride = withActiveStream(message, () => thinkingChild(message, { label: "Thinking..." }));
 	// run 0 is followed by text, so its collapsed row is settled (·) even while the stream is live
-	assert(stripAnsi(noMap.childAt(0).render(60).join("\n")).includes("Thinking ·"), "a host with no override map must collapse every run");
+	assert(stripAnsi(noOverride.childAt(0).render(60).join("\n")).includes("Thinking ·"), "without a per-run toggle every run follows the global hide setting");
 });
 
 check("P9 updateContent is the only source", () => {
@@ -536,8 +513,8 @@ check("P11 interleaved runs keep prefix/gutter placement", () => {
 	assert(gutterRow.includes("·") && !gutterRow.includes("▸"), "the gutter run is followed by text, so it settled");
 });
 
-check(`P6 label mode + visible thinking stay byte-identical to base ${coreVersion}`, () => {
-	assert(goldens !== undefined, `no base goldens captured for Pi ${coreVersion}`);
+check(`P6 label mode + visible thinking stay byte-identical to base ${goldenVersion} (core ${coreVersion})`, () => {
+	assert(goldens !== undefined, `no base goldens captured at or below Pi ${coreVersion}`);
 	state.setPresentationStyle("reasonix");
 	setConfig({ collapsedThinking: "tail" });
 	for (const fixture of FIXTURES) {
