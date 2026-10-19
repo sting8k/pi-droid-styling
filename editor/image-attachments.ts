@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "os";
  *
  * Paste flow: the host clipboard-image branch calls `editor.insertTextAtCursor(<tmpdir>/
  * pi-clipboard-<uuid>.<ext>)`; BoxEditor diverts that call here — the bytes are copied immediately
- * to `~/.pi/agent/droid-images/<N>.<ext>`, the tmp file is deleted, and a literal `[Image #N] `
+ * to `<session dir>/images/<N>.<ext>`, the tmp file is deleted, and a literal `[Image #N] `
  * token goes into the text buffer. Because the token is plain text, arrow-key history, Backspace
  * deletion, and moving/copying the reference all work with zero custom key routing.
  *
@@ -18,14 +18,15 @@ import { homedir, tmpdir } from "os";
  * Two registries over the same store:
  * - the edit registry (ImageAttachmentList, newest 16): powers submit-time re-send
  * - the global link table (module map): powers OSC 8 hyperlinks in rendered history
- * Both are rebuilt from disk on startup; only the disk sweep (newest 100) ever deletes files.
+ * Both are rebuilt from disk on startup; only the startup sweep (files older than
+ * IMAGE_DISK_RETENTION_DAYS, always keeping the newest so the serial survives) ever deletes files.
  * Submit consumes nothing; /tmp is a pass-through, never a dependency.
  */
 
 export interface ImageAttachment {
 	/** Token number: the N in `[Image #N]`. Globally monotonic, never reused. */
 	id: string;
-	/** Persisted file under droid-images — the single source of truth. */
+	/** Persisted file in the store — the single source of truth. */
 	path: string;
 	mimeType: string;
 	bytes: number;
@@ -171,8 +172,10 @@ function scanPersistedImages(): PersistedEntry[] {
 	const maxId = Number(entries[entries.length - 1].id);
 	if (maxId > attachmentSerial) attachmentSerial = maxId;
 	// Age-based sweep: delete files older than the retention window; survivors keep their links.
+	// The newest file always stays: it is what seeds the serial on the next start, so ids are never
+	// handed out again after every older file has aged out.
 	const cutoff = Date.now() - IMAGE_DISK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-	for (let i = entries.length - 1; i >= 0; i -= 1) {
+	for (let i = entries.length - 2; i >= 0; i -= 1) {
 		if (entries[i].mtimeMs >= cutoff) continue;
 		try {
 			unlinkSync(entries[i].path);

@@ -259,43 +259,41 @@ async function runAttachmentUnitSmoke() {
 }
 
 // ---------------------------------------------------------------------------
-// Submit policy: multimodal vs degraded
+// Submit policy (Pi `input` event): multimodal vs degraded
 // ---------------------------------------------------------------------------
 async function runImageSubmitSmoke() {
-	const { submitEditorImages } = await importBuilt("editor/image-submit.js");
+	const { attachEditorImages } = await importBuilt("editor/image-submit.js");
 	const { ImageAttachmentList } = await importShared("editor/image-attachments.js");
-	const makeDeps = (modalities, log) => ({
-		getModelInputModalities: () => modalities,
-		sendUserMessage: (content) => log.push(content),
-	});
 
 	const list = new ImageAttachmentList();
 	const attached = list.addFromPath(makeHostClipboardImage(1024));
 	assert(attached !== null, "submit fixture attaches");
 	const token = `[Image #${attached.id}]`;
 
-	// Multimodal model: text keeps its token, then base64 image parts.
-	const richLog = [];
-	submitEditorImages(makeDeps(["text", "image"], richLog), `look at ${token} this`, [attached]);
-	assert(richLog.length === 1 && richLog[0].length === 2, "multimodal submit sends text + one image part");
-	assert(richLog[0][0].type === "text" && richLog[0][0].text === `look at ${token} this`, "text keeps the positional token");
-	assert(richLog[0][1].type === "image" && richLog[0][1].data === readFileSync(attached.path).toString("base64"), "image part carries the persisted bytes");
+	// Multimodal model: text keeps its token, base64 image parts are appended to any existing images.
+	const rich = attachEditorImages(`look at ${token} this`, undefined, [attached], ["text", "image"]);
+	assert(rich.action === "transform" && rich.text === `look at ${token} this`, "text keeps the positional token");
+	assert(rich.images.length === 1 && rich.images[0].data === readFileSync(attached.path).toString("base64"), "image part carries the persisted bytes");
+	const existing = { type: "image", data: "AAAA", mimeType: "image/png" };
+	const merged = attachEditorImages(`x ${token}`, [existing], [attached], ["text", "image"]);
+	assert(merged.images.length === 2 && merged.images[0] === existing, "images already on the input are kept first");
 
 	// Text-only model: token replaced by the persisted path inline.
-	const textLog = [];
-	submitEditorImages(makeDeps(["text"], textLog), `look at ${token} this`, [attached]);
-	assert(textLog.length === 1 && textLog[0][0].text === `look at ${attached.path} this`, "text-only degrade replaces the token inline");
+	const textOnly = attachEditorImages(`look at ${token} this`, undefined, [attached], ["text"]);
+	assert(textOnly.action === "transform" && textOnly.text === `look at ${attached.path} this` && textOnly.images === undefined, "text-only degrade replaces the token inline");
 
-	// Unknown modalities (stale session): same degradation.
-	const staleLog = [];
-	submitEditorImages(makeDeps(undefined, staleLog), `x ${token}`, [attached]);
-	assert(staleLog[0][0].text === `x ${attached.path}`, "unknown modalities degrade to inline path text");
+	// Unknown modalities (stale context): same degradation.
+	const stale = attachEditorImages(`x ${token}`, undefined, [attached], undefined);
+	assert(stale.text === `x ${attached.path}`, "unknown modalities degrade to inline path text");
+
+	// No live token, or a command: the host input goes through untouched.
+	assert(attachEditorImages("just text [Image #999]", undefined, [attached], ["image"]).action === "continue", "no resolved token: continue");
+	assert(attachEditorImages(`/skill:x ${token}`, undefined, [attached], ["image"]).action === "continue", "slash input: continue");
 
 	// Multimodal model but the persisted file vanished: degrade instead of failing.
 	rmSync(attached.path, { force: true });
-	const vanishedLog = [];
-	submitEditorImages(makeDeps(["text", "image"], vanishedLog), `x ${token}`, [attached]);
-	assert(vanishedLog[0].length === 1 && vanishedLog[0][0].text === `x ${attached.path}`, "vanished file degrades to inline path text");
+	const vanished = attachEditorImages(`x ${token}`, undefined, [attached], ["text", "image"]);
+	assert(vanished.text === `x ${attached.path}` && vanished.images === undefined, "vanished file degrades to inline path text");
 	console.log("image submit smoke ok");
 }
 
@@ -315,10 +313,13 @@ async function runBoxEditorIntegrationSmoke() {
 	setFullTheme({ sourcePath: join(workDir, "theme.json") }, true);
 	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS));
 
+	const { attachEditorImages } = await importShared("editor/image-submit.js");
 	const tui = { terminal: { rows: 32, columns: 100 }, requestRender() {} };
 	const submissions = [];
-	const imageSubmissions = [];
 	const submitSink = (text) => submissions.push(text);
+	// What Pi's `input` event hands the model for a submitted text (index.ts wires the same call).
+	const deliver = (editor, text) => attachEditorImages(text, undefined, editor.getImageAttachments(), ["text", "image"]);
+	const sessionStore = join(homeDir, ".pi", "agent", "sessions", "--integration--", "images");
 
 	const makeEditor = () => {
 		const editor = new BoxEditor(
@@ -335,17 +336,11 @@ async function runBoxEditorIntegrationSmoke() {
 			resolveUserZoneStyle("gemini"),
 			undefined,
 			undefined,
-			(text, attachments) => {
-				imageSubmissions.push({ text, attachments });
-			},
+			sessionStore,
 		);
 		editor.onSubmit = submitSink;
 		return editor;
 	};
-
-	// The store follows the editor's sessionCwd (Pi session-dir naming), not HOME/droid-images.
-	const sessionSlug = workDir.replace(/^\/\\/, "").replace(/[/\\:]/g, "-");
-	const sessionStore = join(homeDir, ".pi", "agent", "sessions", `--${sessionSlug}--`, "images");
 
 	// Paste diversion: token in text, tmp file consumed, persisted copy kept.
 	const editor = makeEditor();
@@ -385,49 +380,87 @@ async function runBoxEditorIntegrationSmoke() {
 	editor.handleInput("\x7f");
 	assert(editor.getText() === `broken ${forward.token.slice(0, -1)}`, "partial token backspace stays character-wise");
 
-	// Hybrid submit: token stays in the sent text, attachment rides along, file persists.
+	// Submit stays with the host: Enter hands the text (token included) to the host onSubmit, which
+	// owns input history and queueing; the input event then attaches the image behind the token.
 	const secondTmp = makeHostClipboardImage(1024);
 	editor.insertTextAtCursor(secondTmp);
 	const second = tokenOf(editor.getText());
 	editor.setText(`look at ${second.token} closely`);
 	editor.handleInput("\r");
-	assert(imageSubmissions.length === 1, "Enter with a live token reaches the hybrid sender once");
-	assert(imageSubmissions[0].text === `look at ${second.token} closely`, "hybrid text keeps the token");
-	assert(imageSubmissions[0].attachments.length === 1, "hybrid carries the attachment");
-	const secondPath = imageSubmissions[0].attachments[0].path;
-	assert(existsSync(secondPath), "persisted file survives the submit");
+	assert(submissions.length === 1 && submissions[0] === `look at ${second.token} closely`, "Enter goes through the host submit with the token kept");
+	assert(editor.getText() === "", "editor clears after submit");
+	const sent = deliver(editor, submissions[0]);
+	assert(sent.action === "transform" && sent.text === submissions[0] && sent.images.length === 1, "input event attaches the image behind the token");
+	const secondPath = join(sessionStore, `${second.id}.png`);
+	assert(sent.images[0].data === readFileSync(secondPath).toString("base64"), "attached bytes come from the session store");
 	assert(!existsSync(secondTmp), "host tmp file was consumed at paste time");
-	assert(submissions.length === 0, "host text-only submit must not fire");
-	assert(editor.getText() === "", "editor clears after hybrid submit");
 
 	// History re-send: recalled text re-resolves the same attachment.
-	editor.setText(`look at ${second.token} again`);
-	editor.handleInput("\r");
-	assert(imageSubmissions.length === 2, "recalled token re-sends through the hybrid sender");
-	assert(imageSubmissions[1].attachments[0].path === secondPath, "re-send carries the same image");
+	const resent = deliver(editor, `look at ${second.token} again`);
+	assert(resent.images?.length === 1 && resent.images[0].data === sent.images[0].data, "recalled token re-sends the same image");
 
-	// References deleted by the user: plain host submit, nothing else happens.
+	// References deleted by the user, or a slash command: the input goes through untouched.
 	editor.insertTextAtCursor(makeHostClipboardImage(256));
-	editor.setText("just text now");
-	editor.handleInput("\r");
-	assert(imageSubmissions.length === 2, "deleted references must not trigger the hybrid sender");
-	assert(submissions.length === 1 && submissions[0] === "just text now", "plain text went through host submit");
-
-	// Slash command with a token keeps the host path.
-	editor.insertTextAtCursor(makeHostClipboardImage(512));
-	editor.setText("/model");
-	editor.handleInput("\r");
-	assert(imageSubmissions.length === 2, "slash command must not use the hybrid sender");
-	assert(submissions.length === 2 && submissions[1] === "/model", "slash command went through host submit");
+	assert(deliver(editor, "just text now").action === "continue", "deleted references attach nothing");
+	assert(deliver(editor, `/model ${second.token}`).action === "continue", "slash command keeps the host path");
 
 	// Restart restore: a replacement editor rebuilds its registry from the store, so a token
 	// from the previous editor still resolves and re-sends.
 	const editor2 = makeEditor();
-	editor2.setText(`resend ${second.token}`);
-	editor2.handleInput("\r");
-	assert(imageSubmissions.length === 3, "restored registry resolves the older token");
-	assert(imageSubmissions[2].attachments[0].path === secondPath, "restore re-sends the same image");
+	const restored = deliver(editor2, `resend ${second.token}`);
+	assert(restored.images?.length === 1 && restored.images[0].data === sent.images[0].data, "restored registry re-sends the older image");
 	console.log("box editor integration smoke ok");
+}
+
+// ---------------------------------------------------------------------------
+// Process startup: the FIRST editor of a process must scan the session store it was given, and
+// ids must stay unique after every older file has aged out.
+// ---------------------------------------------------------------------------
+async function runStartupStoreSmoke() {
+	// Isolated build: the store state is module-level, so "first editor of the process" needs a
+	// module graph no earlier pass has touched.
+	const startupBuildDir = join(workDir, "build-startup");
+	mkdirSync(startupBuildDir, { recursive: true });
+	writeFileSync(join(startupBuildDir, "package.json"), '{"type":"module"}\n', "utf8");
+	compileChangedSurface(startupBuildDir);
+
+	const homeDir = join(workDir, "home-startup");
+	writeInitialConfig(homeDir, '{"imageAttachments":true}');
+	process.env.HOME = homeDir;
+	process.env.USERPROFILE = homeDir;
+	const store = join(homeDir, ".pi", "agent", "sessions", "--startup--", "images");
+	mkdirSync(store, { recursive: true });
+	for (const id of [1, 2, 3]) writeFileSync(join(store, `${id}.png`), `earlier-session-${id}`, "utf8");
+
+	const { BoxEditor } = await importShared("editor/box-editor.js", startupBuildDir);
+	const { resolveUserZoneStyle } = await importShared("user-zone/designs.js", startupBuildDir);
+	const { setFullTheme } = await importShared("theme/theme-extras.js", startupBuildDir);
+	setFullTheme({ sourcePath: join(workDir, "theme.json") }, true);
+	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS));
+	const tui = { terminal: { rows: 32, columns: 100 }, requestRender() {} };
+	const editor = new BoxEditor(tui, makeTheme(), { matches: () => false }, makeTheme(), workDir,
+		undefined, undefined, undefined, undefined, undefined, resolveUserZoneStyle("gemini"), undefined, undefined, store);
+	editor.insertTextAtCursor(makeHostClipboardImage(16));
+	assert(tokenOf(editor.getText()).id === "4", `first paste of a process continues past the store's ids: ${editor.getText()}`);
+	assert(readFileSync(join(store, "1.png"), "utf8") === "earlier-session-1", "an earlier session's image is never overwritten");
+	assert(editor.getImageAttachments().some((item) => item.id === "3"), "the first editor restores the store it was given");
+
+	// Every file aged out: the sweep keeps the newest, so the next process still seeds past it.
+	const agedStore = join(homeDir, ".pi", "agent", "sessions", "--aged--", "images");
+	mkdirSync(agedStore, { recursive: true });
+	const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+	for (const id of [5, 6, 7]) {
+		writeFileSync(join(agedStore, `${id}.png`), "old", "utf8");
+		utimesSync(join(agedStore, `${id}.png`), old, old);
+	}
+	const fresh = await importBuilt("editor/image-attachments.js", startupBuildDir); // private module instance = new process
+	fresh.setImageStoreDir(agedStore);
+	const list = new fresh.ImageAttachmentList();
+	assert(!existsSync(join(agedStore, "5.png")) && !existsSync(join(agedStore, "6.png")), "aged files are swept");
+	assert(existsSync(join(agedStore, "7.png")), "the newest file survives the sweep");
+	const next = list.addFromPath(makeHostClipboardImage(8));
+	assert(next !== null && next.id === "8", `ids are not reused after the sweep: got #${next?.id}`);
+	console.log("startup store smoke ok");
 }
 
 // ---------------------------------------------------------------------------
@@ -467,11 +500,6 @@ async function runDisabledFeatureSmoke() {
 		undefined,
 		undefined,
 		resolveUserZoneStyle("gemini"),
-		undefined,
-		undefined,
-		() => {
-			throw new Error("hybrid sender must not fire while disabled");
-		},
 	);
 	const pasted = makeHostClipboardImage(64);
 	editor.setText("");
@@ -480,6 +508,7 @@ async function runDisabledFeatureSmoke() {
 	assert(existsSync(pasted), "disabled feature leaves the host tmp file alone");
 	const lines = editor.render(88).map(stripAnsi);
 	assert(!lines.some((line) => /\[Image #\d+\]/.test(stripAnsi(line))), "disabled feature renders no tokens");
+	assert(editor.getImageAttachments().length === 0, "disabled feature resolves no tokens on submit");
 	rmSync(pasted, { force: true });
 	const disabledStore = join(homeDir, ".pi", "agent", "sessions");
 	assert(!existsSync(disabledStore) || !existsSync(join(disabledStore, `--${workDir.replace(/^\/\\/, "").replace(/[/\\:]/g, "-")}--`, "images")), "disabled feature writes no image store");
@@ -502,5 +531,6 @@ await runConfigSmoke("image-attachments-invalid", "{\"imageAttachments\":\"nope\
 await runAttachmentUnitSmoke();
 await runImageSubmitSmoke();
 await runBoxEditorIntegrationSmoke();
+await runStartupStoreSmoke();
 await runDisabledFeatureSmoke();
 console.log("image attachments smoke ok");

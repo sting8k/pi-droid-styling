@@ -1,7 +1,6 @@
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 import { homedir, hostname, userInfo } from "node:os";
-import { join } from "node:path";
 
 import { safeWrapTextWithAnsi, safeTruncateToWidth, safeVisibleWidth } from "../render-budget.js";
 import { fgHex, stripAnsi } from "../theme/ansi.js";
@@ -10,9 +9,7 @@ import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.j
 import { loadConfig, type InputBoxStyle } from "../config.js";
 import {
 	ImageAttachmentList,
-	isCommandLikeInput,
 	isHostClipboardImagePath,
-	resolveImageTokens,
 	setImageStoreDir,
 	type ImageAttachment,
 } from "./image-attachments.js";
@@ -173,14 +170,14 @@ export class BoxEditor extends CustomEditor {
 		private readonly userZoneStyle: UserZoneStyle = resolveUserZoneStyle(undefined),
 		private readonly inputBoxStyle?: InputBoxStyle,
 		private readonly getFooterTokenUsage?: FooterTokenUsageProvider,
-		private readonly onSubmitWithImages?: (text: string, attachments: ImageAttachment[]) => void,
+		/** Where pasted images persist: `<session dir>/images`, from the host session manager. */
+		imageStoreDir?: string,
 	) {
 		super(tui, editorTheme, kb);
-		// Scope the image store to this session directory (Pi groups sessions per cwd under
-		// ~/.pi/agent/sessions/--<cwd>--/); images share the session lifecycle. The path rule
-		// mirrors the host getDefaultSessionDirPath convention and degrades gracefully if it moves.
-		const safeCwd = this.sessionCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
-		setImageStoreDir(join(homedir(), ".pi", "agent", "sessions", `--${safeCwd}--`, "images"));
+		// The store must point at the session directory BEFORE the registry scans it: the scan seeds
+		// the id serial, and a scan of the wrong directory would hand out ids that already exist.
+		if (imageStoreDir) setImageStoreDir(imageStoreDir);
+		this.imageAttachments = new ImageAttachmentList();
 	}
 
 	private color(hex: string, text: string): string {
@@ -1079,13 +1076,18 @@ export class BoxEditor extends CustomEditor {
 	// The host clipboard flow writes <tmpdir>/pi-clipboard-<uuid>.<ext> and then calls
 	// insertTextAtCursor(path); that call is diverted here into a literal `[Image #N]` text token
 	// plus a registry entry. Because the token is plain text, arrow-key history, Backspace deletion,
-	// and moving/copying the reference all work with zero custom key routing. On submit the tokens
-	// are resolved against the registry; unknown tokens stay as literal text and unreferenced
-	// attachments are dropped. With imageAttachments disabled every path below falls through to
-	// the host behavior byte-for-byte.
+	// and moving/copying the reference all work with zero custom key routing. Submit stays with the
+	// host; Pi's `input` event resolves the tokens against getImageAttachments() (index.ts,
+	// editor/image-submit.ts). With imageAttachments disabled every path below falls through to the
+	// host behavior.
 	// ---------------------------------------------------------------------------
 
-	private readonly imageAttachments = new ImageAttachmentList();
+	private readonly imageAttachments: ImageAttachmentList;
+
+	/** Attachments `[Image #N]` tokens may resolve to; empty while the feature is disabled. */
+	getImageAttachments(): readonly ImageAttachment[] {
+		return this.imageAttachmentsEnabled() ? this.imageAttachments.list() : [];
+	}
 
 	private imageAttachmentsEnabled(): boolean {
 		return loadConfig().imageAttachments;
@@ -1111,56 +1113,7 @@ export class BoxEditor extends CustomEditor {
 		} else if (this.imageAttachmentsEnabled() && data === "\x1b[3~") {
 			if (this.deleteWholeImageTokenForward()) return;
 		}
-		if (
-			this.imageAttachmentsEnabled()
-			&& this.imageAttachments.count() > 0
-			&& this.onSubmitWithImages !== undefined
-			&& (data === "\r" || data === "\n" || this.matchesEditorKey(data, "tui.input.submit"))
-		) {
-			this.withImagesOnSubmit(() => super.handleInput(data));
-			return;
-		}
 		super.handleInput(data);
-	}
-
-	/**
-	 * submitValue is private in the host editor, so images ride along by swapping onSubmit for one
-	 * call: super.handleInput() runs the real submit (trim, paste markers, state reset) and invokes
-	 * our shim, which resolves the `[Image #N]` tokens and forwards clean text + attachments to the
-	 * hybrid sender. Nothing is consumed: registry entries and temp files survive the submit so a
-	 * token recalled from input history still resolves and can re-send the same image; the
-	 * registry bounds itself with FIFO eviction instead. When the keypress does not actually submit
-	 * (escaped newline, paste burst) or no token resolves, onSubmit falls through to the host path.
-	 */
-	private withImagesOnSubmit(run: () => void): void {
-		const original = this.onSubmit;
-		this.onSubmit = (submitted: string) => {
-			this.onSubmit = original;
-			if (typeof submitted === "string") {
-				const resolution = resolveImageTokens(submitted, this.imageAttachments.list());
-				// Tokens stay in the sent text (Claude Code / Codex convention): the conversation,
-				// input history, and the model all see the same [Image #N] positional reference.
-				if (resolution.referenced.length > 0 && !isCommandLikeInput(submitted)) {
-					this.onSubmitWithImages?.(submitted, resolution.referenced);
-					return;
-				}
-			}
-			original?.(submitted);
-		};
-		try {
-			run();
-		} finally {
-			this.onSubmit = original;
-		}
-	}
-
-
-	private matchesEditorKey(data: string, action: string): boolean {
-		try {
-			return (this as any).keybindings?.matches?.(data, action) === true;
-		} catch {
-			return false;
-		}
 	}
 
 	/** Backspace deletes a complete `[Image #N] ` (trailing space included) in one stroke. */

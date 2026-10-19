@@ -1,9 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import {
   AssistantMessageComponent,
   BranchSummaryMessageComponent,
   CompactionSummaryMessageComponent,
   CustomMessageComponent,
+  getAgentDir,
   InteractiveMode,
   SkillInvocationMessageComponent,
   ToolExecutionComponent,
@@ -30,6 +32,11 @@ let disposePiTasksWidgetStylingForCurrentSession: (() => void) | undefined;
 const FORCE_THEME_SCAN_INTERVAL_MS = 1000;
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 let setAssistantUpdateRenderRequesterForCurrentSession: SetAssistantUpdateRenderRequester | undefined;
+type ImageInputResult = ReturnType<SessionModules["attachEditorImages"]>;
+/** Resolves `[Image #N]` tokens of the current session's editor; set with the editor. */
+let attachPastedImagesForCurrentSession:
+	| ((text: string, images: Parameters<SessionModules["attachEditorImages"]>[1], modelInput: readonly string[] | undefined) => ImageInputResult)
+	| undefined;
 let sessionModulesPromise: Promise<SessionModules> | undefined;
 
 let renderFrameDebugModulePromise: Promise<RenderFrameDebugModule> | undefined;
@@ -161,8 +168,22 @@ export default function (pi: ExtensionAPI) {
 		workingLoaderController?.stop();
 	});
 
+	// Pasted images ride the host submit: Pi keeps input history, steer/follow-up queueing while
+	// streaming and the compaction queue; this only attaches the images behind `[Image #N]` tokens.
+	pi.on("input", (event, ctx) => {
+		if (event.source !== "interactive" || !attachPastedImagesForCurrentSession) return { action: "continue" };
+		let modelInput: readonly string[] | undefined;
+		try {
+			modelInput = ctx.model?.input;
+		} catch (error) {
+			if (!isStaleContextError(error)) throw error;
+		}
+		return attachPastedImagesForCurrentSession(event.text, event.images, modelInput);
+	});
+
 	pi.on("session_shutdown", (_event, ctx) => {
 		endAssistantStream();
+		attachPastedImagesForCurrentSession = undefined;
 		sessionRunSerial++;
 		profileCount("session.shutdown");
 		flushProfile("session_shutdown");
@@ -208,6 +229,11 @@ export default function (pi: ExtensionAPI) {
 		});
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
+		// Pasted images live next to the sessions they belong to (honors PI_CODING_AGENT_DIR and a custom sessionDir).
+		// In-memory sessions (--no-session) have no directory: use the cwd's default session dir, named as Pi names it.
+		const sessionDir = ctx.sessionManager.getSessionDir()
+			|| join(getAgentDir(), "sessions", `--${sessionCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`);
+		const imageStoreDir = join(sessionDir, "images");
 		modules.setAssistantUpdateRenderRequester(undefined);
 		setCompactStartupHeader(sessionUi, sessionCwd);
 		tracker.resetSession();
@@ -338,23 +364,11 @@ export default function (pi: ExtensionAPI) {
 				userZoneStyle,
 				config.inputBox.style,
 				modules.getFooterTokenUsageLine,
-				// Hybrid image submit: real ImageContent parts when the model accepts image input,
-				// path text otherwise (read-tool compatible). Policy lives in editor/image-submit.ts.
-				(text, attachments) => {
-					modules.submitEditorImages({
-						getModelInputModalities: () => {
-							try {
-								return (ctx.model as { input?: string[] } | undefined)?.input;
-							} catch (error) {
-								if (!isStaleContextError(error)) throw error;
-								return undefined;
-							}
-						},
-						sendUserMessage: (contents) => pi.sendUserMessage(contents),
-					}, text, attachments);
-				},
+				imageStoreDir,
 			);
-				return editor;
+			attachPastedImagesForCurrentSession = (text, images, modelInput) =>
+				modules.attachEditorImages(text, images, editor.getImageAttachments(), modelInput);
+			return editor;
 		});
 	});
 }
