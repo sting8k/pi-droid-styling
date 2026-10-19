@@ -9,7 +9,7 @@ import { resolveUserZoneStyle, type UserZoneStyle } from "../user-zone/designs.j
 import { loadConfig, type InputBoxStyle } from "../config.js";
 import {
 	ImageAttachmentList,
-	isHostClipboardImagePath,
+	pastedImageFilePath,
 	setImageStoreDir,
 	type ImageAttachment,
 } from "./image-attachments.js";
@@ -178,6 +178,14 @@ export class BoxEditor extends CustomEditor {
 		// the id serial, and a scan of the wrong directory would hand out ids that already exist.
 		if (imageStoreDir) setImageStoreDir(imageStoreDir);
 		this.imageAttachments = new ImageAttachmentList();
+		// Terminal paste (Cmd+V) of a copied image file arrives as an escaped path through the host's
+		// private handlePaste, which handleInput calls via `this` — so an instance wrapper sees it.
+		const hostPaste = (this as any).handlePaste;
+		if (typeof hostPaste === "function") {
+			(this as any).handlePaste = (pastedText: string) => {
+				if (!this.insertImageToken(pastedText, (token) => hostPaste.call(this, token))) hostPaste.call(this, pastedText);
+			};
+		}
 	}
 
 	private color(hex: string, text: string): string {
@@ -1094,14 +1102,17 @@ export class BoxEditor extends CustomEditor {
 	}
 
 	insertTextAtCursor(text: string): void {
-		if (this.imageAttachmentsEnabled() && isHostClipboardImagePath(text)) {
-			const attachment = this.imageAttachments.addFromPath(text);
-			if (attachment) {
-				super.insertTextAtCursor(`[Image #${attachment.id}] `);
-				return;
-			}
-		}
-		super.insertTextAtCursor(text);
+		if (!this.insertImageToken(text, (token) => super.insertTextAtCursor(token))) super.insertTextAtCursor(text);
+	}
+
+	/** Turn a pasted image path into a `[Image #N] ` token via `insert`; false leaves it to the host. */
+	private insertImageToken(text: string, insert: (token: string) => void): boolean {
+		if (!this.imageAttachmentsEnabled()) return false;
+		const filePath = pastedImageFilePath(text);
+		const attachment = filePath ? this.imageAttachments.addFromPath(filePath) : null;
+		if (!attachment) return false;
+		insert(`[Image #${attachment.id}] `);
+		return true;
 	}
 
 	handleInput(data: string): void {

@@ -8,7 +8,9 @@ import { homedir, tmpdir } from "os";
  * Paste flow: the host clipboard-image branch calls `editor.insertTextAtCursor(<tmpdir>/
  * pi-clipboard-<uuid>.<ext>)`; BoxEditor diverts that call here — the bytes are copied immediately
  * to `<session dir>/images/<N>.<ext>`, the tmp file is deleted, and a literal `[Image #N] `
- * token goes into the text buffer. Because the token is plain text, arrow-key history, Backspace
+ * token goes into the text buffer. A pasted image *file* path (host Ctrl+V with a file on the
+ * clipboard, or a terminal paste of a copied file) takes the same route but keeps the source.
+ * Because the token is plain text, arrow-key history, Backspace
  * deletion, and moving/copying the reference all work with zero custom key routing.
  *
  * Numbering: ids are globally monotonic and NEVER reused — the serial is seeded from a disk scan
@@ -108,6 +110,27 @@ export function isHostClipboardImagePath(filePath: string): boolean {
 	if (typeof filePath !== "string" || filePath.length === 0) return false;
 	if (dirname(filePath) !== tmpdir()) return false;
 	return HOST_CLIPBOARD_IMAGE_NAME_RE.test(basename(filePath));
+}
+
+/**
+ * The image file a paste refers to, or null. Accepts one path as the host's Ctrl+V file branch
+ * inserts it (raw), or as a terminal pastes a copied file (shell-escaped `\ ` or quoted). The
+ * file must exist and carry an image extension; anything else stays plain text.
+ */
+export function pastedImageFilePath(text: string): string | null {
+	if (typeof text !== "string") return null;
+	let candidate = text.trim();
+	if (!candidate || candidate.includes("\n")) return null;
+	const quoted = /^(['"])(.*)\1$/.exec(candidate);
+	candidate = quoted ? quoted[2]! : candidate.replace(/\\(.)/g, "$1");
+	if (candidate.startsWith("~/")) candidate = join(homedir(), candidate.slice(2));
+	if (!candidate.startsWith("/") || !inferMime(candidate)) return null;
+	try {
+		statSync(candidate);
+		return candidate;
+	} catch {
+		return null;
+	}
 }
 
 /** Inputs that must keep the host submit path (slash commands, `!` bash mode). */
@@ -282,11 +305,11 @@ export class ImageAttachmentList {
 	}
 
 	/**
-	 * Persist a pasted image and register it. Returns null for non-host paths, vanished files, or
-	 * persist failures — the caller then falls back to inserting the raw host path.
+	 * Copy a pasted image file into the store and register it. Only the host's own temp file is
+	 * deleted afterwards; a user's file is never touched. Returns null for non-images, vanished
+	 * files, or persist failures — the caller then falls back to inserting the raw path.
 	 */
 	addFromPath(tmpPath: string): ImageAttachment | null {
-		if (!isHostClipboardImagePath(tmpPath)) return null;
 		const mimeType = inferMime(tmpPath);
 		if (!mimeType) return null;
 		let bytes: number;
@@ -301,7 +324,7 @@ export class ImageAttachmentList {
 		try {
 			mkdirSync(persistedImageDir, { recursive: true });
 			writeFileSync(path, readFileSync(tmpPath));
-			unlinkSync(tmpPath);
+			if (isHostClipboardImagePath(tmpPath)) unlinkSync(tmpPath);
 		} catch {
 			return null;
 		}

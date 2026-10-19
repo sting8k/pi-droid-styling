@@ -185,6 +185,7 @@ async function runAttachmentUnitSmoke() {
 	const {
 		ImageAttachmentList,
 		isHostClipboardImagePath,
+		pastedImageFilePath,
 		isCommandLikeInput,
 		resolveImageTokens,
 		replaceImageTokensWithPaths,
@@ -200,6 +201,19 @@ async function runAttachmentUnitSmoke() {
 	assert(!isHostClipboardImagePath(join(tmpdir(), "notes.txt")), "non-image extension rejected");
 	assert(!isHostClipboardImagePath(join(workDir, `pi-clipboard-${randomUUID()}.png`)), "paths outside tmpdir rejected");
 	assert(!isHostClipboardImagePath(""), "empty path rejected");
+
+	// Pasted image *file* paths: raw (host Ctrl+V file branch), shell-escaped or quoted (terminal paste).
+	const userDir = join(workDir, "Application Support", "look");
+	mkdirSync(userDir, { recursive: true });
+	const userImage = join(userDir, "shot.png");
+	writeFileSync(userImage, Buffer.alloc(8, 7));
+	assert(pastedImageFilePath(userImage) === userImage, "raw image file path accepted");
+	assert(pastedImageFilePath(` ${userImage.replace(/ /g, "\\ ")} `) === userImage, "shell-escaped path accepted");
+	assert(pastedImageFilePath(`'${userImage}'`) === userImage, "quoted path accepted");
+	assert(pastedImageFilePath(join(userDir, "missing.png")) === null, "missing file rejected");
+	assert(pastedImageFilePath(`${userImage}\n${userImage}`) === null, "multi-path paste stays text");
+	writeFileSync(join(userDir, "notes.txt"), "x");
+	assert(pastedImageFilePath(join(userDir, "notes.txt")) === null, "non-image file rejected");
 
 	// Command gating.
 	assert(isCommandLikeInput("/model"), "slash command gates image submit");
@@ -365,6 +379,24 @@ async function runBoxEditorIntegrationSmoke() {
 	assert(editor.getText() === `${atomic.token} `, "atomic fixture holds a fresh token");
 	editor.handleInput("\x7f");
 	assert(editor.getText() === "", "one backspace removes the entire token plus its trailing space");
+
+	// A user's image file (host Ctrl+V file branch) becomes a token; the source file is kept.
+	const userFile = join(workDir, "Application Support", "look", "pasted.png");
+	writeFileSync(userFile, Buffer.alloc(16, 3));
+	editor.setText("");
+	editor.insertTextAtCursor(userFile);
+	assert(/^\[Image #\d+\] $/.test(editor.getText()), `user image file path becomes a token: ${JSON.stringify(editor.getText())}`);
+	assert(existsSync(userFile), "user image file is copied, never deleted");
+
+	// Terminal paste (Cmd+V) of a copied file: bracketed paste carrying a shell-escaped path.
+	editor.setText("look ");
+	editor.handleInput(`\x1b[200~${userFile.replace(/ /g, "\\ ")}\x1b[201~`);
+	assert(/^look \[Image #\d+\] $/.test(editor.getText()), `bracketed paste of an image path becomes a token: ${JSON.stringify(editor.getText())}`);
+	assert(existsSync(userFile), "terminal-pasted user file is kept");
+	editor.setText("");
+	editor.handleInput("\x1b[200~plain words\x1b[201~");
+	assert(editor.getText() === "plain words", "bracketed paste of plain text is untouched");
+	editor.setText("");
 
 	// Forward Delete removes a whole token sitting right after the cursor.
 	editor.insertTextAtCursor(makeHostClipboardImage(64));
