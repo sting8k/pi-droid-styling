@@ -3,7 +3,7 @@ import { getOriginalTuiMethod, rememberTuiMethodWrapper } from "./performance/tu
 
 /**
  * Add one-column horizontal padding to the entire TUI output.
- * Regular mode wraps TUI.render; Pi 0.84 fullscreen wraps the layout root.
+ * Regular mode (`--tui-mode regular`) wraps TUI.render; fullscreen mode wraps the layout root.
  */
 
 

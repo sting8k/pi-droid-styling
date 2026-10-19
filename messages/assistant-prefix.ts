@@ -211,15 +211,15 @@ function patchThinkingChildren(component: any, runs: AssistantContentRun[], mess
 	let thinkingOrdinal = 0;
 	const content = Array.isArray(message?.content) ? message.content : [];
 	const label = typeof component?.hiddenThinkingLabel === "string" ? trimLabelProgressDots(component.hiddenThinkingLabel) : null;
-	const visibilityOverrides = component?.thinkingVisibilityOverrides;
+	const visibilityOverrides = component.thinkingVisibilityOverrides as Map<number, boolean>;
 
 	for (let i = 0; i < runs.length; i++) {
 		const run = runs[i];
 		if (run.kind !== "thinking") continue;
 		const hasTextAfter = runs.slice(i + 1).some((nextRun) => nextRun.kind === "text");
 		const mode = hasTextAfter ? (turnMarkerUsed ? "gutter" : "prefix") : "plain";
-		const override = typeof visibilityOverrides?.get === "function" ? visibilityOverrides.get(thinkingOrdinal) : undefined;
-		const hidden = override ?? Boolean(component?.hideThinkingBlock);
+		// Same rule as Pi's own AssistantMessageComponent: a per-run toggle wins over the global setting.
+		const hidden = visibilityOverrides.get(thinkingOrdinal) ?? Boolean(component.hideThinkingBlock);
 		const live = liveStream && !hasBlockAfter(content, run.endBlockIndex);
 		makeThinkingChildPlain(component?.contentContainer?.children?.[run.childIndex], mode, { component, run, hidden, live, label });
 		if (mode === "prefix") turnMarkerUsed = true;
@@ -293,7 +293,7 @@ export function installAssistantMessagePrefix(theme: any, componentClass: any = 
 
 			if (!message || !Array.isArray(message.content)) return;
 
-			const runs = getAssistantContentRuns(this, message);
+			const runs = getAssistantContentRuns(message);
 			patchThinkingChildren(this, runs, message, liveStream);
 
 			const firstTextRunIndex = runs.findIndex((run) => run.kind === "text");

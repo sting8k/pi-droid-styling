@@ -63,12 +63,12 @@
     "image": "https://raw.githubusercontent.com/sting8k/pi-droid-styling/main/screenshots/image.png"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.78.0 <2.0.0",
-    "@earendil-works/pi-tui": ">=0.78.0 <2.0.0"
+    "@earendil-works/pi-coding-agent": ">=1.0.0 <2.0.0",
+    "@earendil-works/pi-tui": ">=1.0.0 <2.0.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.78.0",
-    "@earendil-works/pi-tui": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@earendil-works/pi-tui": "^1.1.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {

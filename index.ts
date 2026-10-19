@@ -12,7 +12,7 @@ import {
 import { getConfigIssue, loadConfig } from "./config.js";
 import { registerToolCallTags } from "./tool-tags/register-tool-call-tags.js";
 import { recordToolCallTimingEnd, recordToolCallTimingStart } from "./tool-tags/elapsed.js";
-import { installStartupUiPatch, setCompactStartupHeader, suppressStartupModelScopeLog } from "./startup-ui.js";
+import { installStartupUiPatch, setStartupUiTheme, suppressStartupModelScopeLog } from "./startup-ui.js";
 import { installInteractiveChatVirtualization } from "./performance/virtualize-chat.js";
 import { registerCompanionThemes } from "./theme/companion-themes.js";
 import { beginAssistantStream, endAssistantStream, trackAssistantStreamMessage } from "./messages/assistant-streaming-state.js";
@@ -209,7 +209,7 @@ export default function (pi: ExtensionAPI) {
 		const sessionUi = ctx.ui;
 		const sessionCwd = ctx.cwd;
 		modules.setAssistantUpdateRenderRequester(undefined);
-		setCompactStartupHeader(sessionUi, sessionCwd);
+		setStartupUiTheme(sessionUi);
 		tracker.resetSession();
 		workingLoaderController?.dispose();
 		workingLoaderController = undefined;

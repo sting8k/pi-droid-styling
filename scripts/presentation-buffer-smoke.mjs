@@ -2,7 +2,7 @@
 /**
  * US-025 presentation-buffer / finished-cache smoke.
  *
- * Drives the real Pi 0.78 AssistantMessageComponent with `installAssistantUpdateDebounce` and
+ * Drives the real Pi AssistantMessageComponent with `installAssistantUpdateDebounce` and
  * `installFinishedRenderCache` installed in the same order index.ts uses, on top of a spy that
  * records every delegate (`orig`) call. Stream state comes from the real
  * messages/assistant-streaming-state.ts seam.

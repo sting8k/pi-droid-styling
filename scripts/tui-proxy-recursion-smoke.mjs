@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Smoke test: TUI method patches are safe under the Pi 0.84 InteractiveMode
+ * Smoke test: TUI method patches are safe under the Pi InteractiveMode
  * proxy (`createInteractiveTuiReference`).
  *
  * Background: the proxy `get` returns a fresh dynamic wrapper on every access
@@ -66,28 +66,10 @@ async function importBuilt(relativePath) {
 	return import(pathToFileURL(join(buildDir, relativePath)).href);
 }
 
-// Pi 0.84 createInteractiveTuiReference, reproduced faithfully.
-function createInteractiveTuiReference(getTui) {
-	return new Proxy({}, {
-		get: (_target, property) => {
-			const tui = getTui();
-			const value = Reflect.get(tui, property, tui);
-			if (typeof value !== "function") return value;
-			return (...args) => {
-				const tui = getTui();
-				const method = Reflect.get(tui, property, tui);
-				if (typeof method !== "function") throw new TypeError(`TUI property ${String(property)} is not callable`);
-				return Reflect.apply(method, tui, args);
-			};
-		},
-		set: (_target, property, value) => {
-			const tui = getTui();
-			return Reflect.set(tui, property, value, tui);
-		},
-		has: (_target, property) => Reflect.has(getTui(), property),
-		getPrototypeOf: () => Reflect.getPrototypeOf(getTui()),
-	});
-}
+// Pi's own createInteractiveTuiReference (not on the package's public exports, so loaded by path).
+const { createInteractiveTuiReference } = await import(
+	new URL("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/tui-renderer.js", import.meta.url).href
+);
 
 // Real renderer with base methods on the prototype (mirrors TuiMainScreen).
 class FakeRenderer {
@@ -185,9 +167,9 @@ function installAllWrappers(tui) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Proxy path (Pi 0.84): install through the proxy, drive the real renderer.
+// 1. Proxy path: install through the proxy, drive the real renderer.
 // ---------------------------------------------------------------------------
-console.log("Proxy path (Pi 0.84):");
+console.log("Proxy path:");
 {
 	const renderer = new FakeRenderer();
 	let current = renderer;
@@ -234,9 +216,9 @@ console.log("Proxy path (Pi 0.84):");
 }
 
 // ---------------------------------------------------------------------------
-// 2. Real (non-proxy) path (pre-0.84): install on the renderer directly.
+// 2. Real (non-proxy) renderer path: install on the renderer directly.
 // ---------------------------------------------------------------------------
-console.log("Real renderer path (pre-0.84):");
+console.log("Real renderer path:");
 {
 	const renderer = new FakeRenderer();
 	installAllWrappers(renderer);
@@ -248,10 +230,10 @@ console.log("Real renderer path (pre-0.84):");
 }
 
 // ---------------------------------------------------------------------------
-// 3. Fullscreen layout padding (Pi 0.84 TuiAltScreen). Fullscreen bypasses
+// 3. Fullscreen layout padding (TuiAltScreen). Fullscreen bypasses
 //    TUI.render(), so padding must wrap the persistent layout root instead.
 // ---------------------------------------------------------------------------
-console.log("Fullscreen layout padding path (Pi 0.84):");
+console.log("Fullscreen layout padding path:");
 {
 	const layoutNode = Symbol.for("@earendil-works/pi-tui/layout-node");
 	const originalNode = { type: "vstack", entries: [], gap: 0, align: "stretch" };
