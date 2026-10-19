@@ -21,6 +21,8 @@ const stubPath = join(workDir, "node-stubs.d.ts");
 const tsc = join(repoRoot, "node_modules", "typescript", "lib", "tsc.js");
 const home = join(workDir, "home");
 const configPath = join(home, ".pi", "agent", "pi-droid-styling.json");
+// Rows are checked on the first render of a live component; the streamed reveal (scripts/reveal-smoke.mjs) is off here.
+process.env.PI_REDUCED_MOTION = "1";
 const goldenPath = join(repoRoot, "scripts", "fixtures", "collapsed-thinking-base.json");
 const WRITE_GOLDENS = process.env.WRITE_BASE_GOLDENS === "1";
 const coreVersion = JSON.parse(readFileSync(join(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), "utf8")).version;

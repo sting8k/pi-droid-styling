@@ -26,6 +26,7 @@
  */
 
 import { attachComponentToStream } from "../messages/assistant-streaming-state.js";
+import { isRevealEnabled, setRevealRenderRequester } from "../messages/reveal.js";
 import { profileCount, profileDuration, profileNow, profileSample } from "./profiler.js";
 
 const PATCHED = Symbol.for("pi-droid-styling.debounce-update-content.patched");
@@ -61,6 +62,7 @@ const graphemeSegmenter = typeof Segmenter === "function"
 export function setAssistantUpdateRenderRequester(requester: (() => void) | undefined): void {
 	requestRender = requester;
 	requestRenderGeneration++;
+	setRevealRenderRequester(requester);
 }
 
 type TextEntry = {
@@ -172,6 +174,8 @@ function computeBacklog(component: any): number {
 
 function computeRevealChars(backlog: number): number {
 	if (backlog <= 0) return 0;
+	// The render-level reveal (messages/reveal.ts) paces the text; this tick only coalesces updates.
+	if (isRevealEnabled()) return backlog;
 	const catchup = Math.ceil(backlog / TARGET_CATCHUP_FRAMES);
 	return Math.min(backlog, Math.max(MIN_REVEAL_CHARS, Math.min(MAX_REVEAL_CHARS, catchup)));
 }

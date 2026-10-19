@@ -91,6 +91,8 @@ Config is stored at `~/.pi/agent/pi-droid-styling.json`:
 | `transparentBackground` | `true`, `false` | `false` | Stop painting the page/frame background, tool boxes, user messages, and the input box, and reset OSC 11, so the terminal's own background (wallpaper, blur) shows through. Selections and diff accents stay opaque. Dim/blur is tuned on the terminal side (Ghostty `background-image`, kitty `background_image`, WezTerm `window_background_image`). |
 | `visibleChatTail` | `0` or more | `30` | Render only the newest N chat items for speed. Use `0` to render everything. |
 
+Streamed answers appear character by character, with the newest characters fading in on truecolor themes. Finished and resumed messages always show at once. Set `PI_REDUCED_MOTION=1` to show streamed text in chunks instead.
+
 ## Profiling
 
 Render profiling is disabled by default. To capture render/update/git metrics plus memory, CPU delta, and event-loop utilization:
