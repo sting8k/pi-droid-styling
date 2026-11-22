@@ -126,6 +126,33 @@ function playFrames(component, rows, limitMs, done) {
 	expect("ended and caught up: state released", !reveal.isRevealing(component));
 }
 
+// ── bursty stream (a server that flushes big chunks every ~400ms): steady pace, no stop between chunks ──
+{
+	const component = liveComponent();
+	let text = "";
+	const arrivals = []; // [char count after the chunk, arrival time]
+	const shown = [];
+	let nextChunkAt = clock;
+	const start = clock;
+	for (let chunk = 0; clock - start < 4000; ) {
+		if (clock >= nextChunkAt) {
+			text += burst.repeat(2).slice(0, chunk % 2 ? 500 : 700);
+			arrivals.push([text.length, clock]);
+			nextChunkAt += chunk % 2 ? 350 : 450;
+			chunk++;
+		}
+		shown.push([clock, visibleChars(reveal.revealBody(component, rowsOf(text)))]);
+		advance(FRAME);
+	}
+	const settled = shown.filter(([at]) => at - start >= 1000);
+	const stops = settled.filter(([, chars], i) => i > 0 && chars === settled[i - 1][1]).length;
+	const lag = Math.max(...settled.map(([at, chars]) => at - (arrivals.find(([count]) => count >= chars) ?? [0, at])[1]));
+	expect("bursty stream: the text never stands still between chunks", stops === 0, `${stops} still frames`);
+	expect("bursty stream: lag stays under 600ms", lag <= 600, `${lag}ms`);
+	streaming.endAssistantStream();
+	advance(1000);
+}
+
 // ── fade: the newest chars sit between faint and their own color ──
 {
 	const component = liveComponent();
