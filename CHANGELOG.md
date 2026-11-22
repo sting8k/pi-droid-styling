@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1 - 2026-11-22
+
+### Fixed
+- When a provider sends text in large bursts, a streamed answer now keeps moving at a steady pace instead of racing through each burst and then standing still until the next one. On fast streams the fade-in covers more characters, so text fades in rather than popping in.
+
 ## 3.0.0 - 2026-10-19
 
 ### Breaking
